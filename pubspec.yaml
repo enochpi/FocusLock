@@ -1,0 +1,39 @@
+name: focus_life
+description: A focus app with life progression
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # App monitoring
+  app_usage: ^3.0.0
+  device_apps: ^2.2.0
+
+  # Background service
+  flutter_background_service: ^5.0.0
+  workmanager: ^0.5.2
+
+  # Storage
+  shared_preferences: ^2.2.2
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
+  # State management
+  provider: ^6.1.1
+
+  cupertino_icons: ^1.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  hive_generator: ^2.0.1
+  build_runner: ^2.4.7
+  flutter_lints: ^2.0.0
+
+flutter:
+  uses-material-design: trued_runner: ^2.5.4
