@@ -59,6 +59,31 @@ class StorageService {
       print("❌ Error saving farm: $e");
     }
   }
+  Future<void> saveCaveDecorations(CaveDecorations decorations) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final json = jsonEncode(decorations.toJson());
+      await prefs.setString('cave_decorations', json);
+      print("💾 Cave decorations saved!");
+    } catch (e) {
+      print("❌ Error saving decorations: $e");
+    }
+  }
+
+  Future<CaveDecorations> loadCaveDecorations() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final json = prefs.getString('cave_decorations');
+
+      if (json != null) {
+        print("📂 Cave decorations loaded!");
+        return CaveDecorations.fromJson(jsonDecode(json));
+      }
+    } catch (e) {
+      print("❌ Error loading decorations: $e");
+    }
+    return CaveDecorations();
+  }
 
   // Load farm
   Future<Farm> loadFarm() async {
