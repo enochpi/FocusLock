@@ -4,7 +4,7 @@ class DecorationItem {
   String emoji;
   int cost;
   bool isOwned;
-  String category; // 'bed', 'light', 'floor', 'decoration'
+  String category;
   String? imagePath;
 
   DecorationItem({
@@ -41,9 +41,9 @@ class DecorationItem {
 class PlacementSpot {
   String id;
   String category;
-  double x; // Position in cave
+  double x;
   double y;
-  String? equippedItemId; // What's currently placed here
+  String? equippedItemId;
 
   PlacementSpot({
     required this.id,
@@ -88,7 +88,7 @@ class CaveDecorations {
         emoji: '🔦',
         cost: 30,
         category: 'light',
-        isOwned: true, // Start with basic torch
+        isOwned: false, // CHANGED FROM true
       ),
       DecorationItem(
         id: 'campfire',
@@ -124,9 +124,9 @@ class CaveDecorations {
         id: 'sleeping_bag',
         name: 'Sleeping Bag',
         emoji: '🎒',
-        cost: 0,
+        cost: 50, // CHANGED FROM 0
         category: 'bed',
-        isOwned: true, // Start with this
+        isOwned: false, // CHANGED FROM true
       ),
       DecorationItem(
         id: 'straw_bed',
@@ -190,14 +190,6 @@ class CaveDecorations {
 
       // DECORATIONS
       DecorationItem(
-        id: 'no_decoration',
-        name: 'Empty',
-        emoji: '⬜',
-        cost: 0,
-        category: 'decoration',
-        isOwned: true,
-      ),
-      DecorationItem(
         id: 'shelf',
         name: 'Shelf',
         emoji: '📚',
@@ -243,7 +235,7 @@ class CaveDecorations {
         category: 'light',
         x: 150,
         y: 80,
-        equippedItemId: 'torch', // Start with torch
+        equippedItemId: null, // CHANGED FROM 'torch'
       ),
 
       // Bed spot (bottom right)
@@ -252,7 +244,7 @@ class CaveDecorations {
         category: 'bed',
         x: 220,
         y: 450,
-        equippedItemId: 'sleeping_bag', // Start with sleeping bag
+        equippedItemId: null, // CHANGED FROM 'sleeping_bag'
       ),
 
       // Floor (background, always equipped)
@@ -286,19 +278,16 @@ class CaveDecorations {
     ];
   }
 
-  // Get items by category
   List<DecorationItem> getItemsByCategory(String category) {
     return availableItems.where((item) => item.category == category).toList();
   }
 
-  // Get owned items by category
   List<DecorationItem> getOwnedItemsByCategory(String category) {
     return availableItems
         .where((item) => item.category == category && item.isOwned)
         .toList();
   }
 
-  // Purchase item
   bool purchaseItem(String itemId, int playerMoney) {
     DecorationItem? item = availableItems.firstWhere((i) => i.id == itemId);
     if (!item.isOwned && playerMoney >= item.cost) {
@@ -308,19 +297,16 @@ class CaveDecorations {
     return false;
   }
 
-  // Equip item to spot
   void equipItem(String spotId, String itemId) {
     PlacementSpot? spot = spots.firstWhere((s) => s.id == spotId);
     spot.equippedItemId = itemId;
   }
 
-  // Unequip item from spot
   void unequipSpot(String spotId) {
     PlacementSpot? spot = spots.firstWhere((s) => s.id == spotId);
     spot.equippedItemId = null;
   }
 
-  // Get equipped item for a spot
   DecorationItem? getEquippedItem(String spotId) {
     PlacementSpot? spot = spots.firstWhere((s) => s.id == spotId);
     if (spot.equippedItemId != null) {
@@ -329,7 +315,6 @@ class CaveDecorations {
     return null;
   }
 
-  // Get lighting level for brightness
   int get lightingLevel {
     PlacementSpot? lightSpot = spots.firstWhere((s) => s.category == 'light');
     if (lightSpot.equippedItemId == null) return 0;

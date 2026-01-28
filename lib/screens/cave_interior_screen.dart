@@ -19,15 +19,20 @@ class CaveInteriorScreen extends StatefulWidget {
 class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
   StorageService storage = StorageService();
 
+  // Pan and Zoom controls
+  double offsetX = 0.0;
+  double offsetY = 0.0;
+  double scale = 1.0;
+
   Color get backgroundColor {
     int level = widget.decorations.lightingLevel;
     switch (level) {
-      case 0: return Color(0xFF0a0a0a);
-      case 1: return Color(0xFF1a1a1a);
-      case 2: return Color(0xFF2a2a2a);
-      case 3: return Color(0xFF3a3a3a);
-      case 4: return Color(0xFF4a4a4a);
-      default: return Color(0xFF0a0a0a);
+      case 0: return Color(0xFF2a2a2a);
+      case 1: return Color(0xFF3a3a3a);
+      case 2: return Color(0xFF4a4a4a);
+      case 3: return Color(0xFF5a5a5a);
+      case 4: return Color(0xFF6a6a6a);
+      default: return Color(0xFF2a2a2a);
     }
   }
 
@@ -57,12 +62,8 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Get floor item for background
-    PlacementSpot? floorSpot = widget.decorations.spots
-        .firstWhere((s) => s.category == 'floor');
-
     return Scaffold(
-      backgroundColor: backgroundColor,
+      backgroundColor: Color(0xFF0a0a0a),
       appBar: AppBar(
         backgroundColor: Colors.black,
         title: Text("My Cave"),
@@ -81,99 +82,37 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          // Background gradient
-          Container(
-            decoration: BoxDecoration(
-              gradient: RadialGradient(
-                center: Alignment.center,
-                radius: 0.8,
-                colors: [
-                  backgroundColor,
-                  backgroundColor.withOpacity(0.7),
-                  Colors.black,
-                ],
-              ),
-            ),
-          ),
+      body: GestureDetector(
+        onScaleStart: (details) {
+          // Starting point for pan/zoom
+        },
+        onScaleUpdate: (details) {
+          setState(() {
+            // Zoom
+            scale = (scale * details.scale).clamp(0.5, 3.0);
 
-          // All placement spots
-          ...widget.decorations.spots.map((spot) {
-            if (spot.category == 'floor') return SizedBox.shrink();
-            return _buildPlacementSpot(spot);
-          }).toList(),
-
-          // Instructions
-          Positioned(
-            bottom: 20,
-            left: 20,
-            right: 20,
-            child: Container(
-              padding: EdgeInsets.all(15),
-              decoration: BoxDecoration(
-                color: Colors.black87,
-                borderRadius: BorderRadius.circular(15),
-                border: Border.all(color: Colors.white24, width: 2),
-              ),
-              child: Text(
-                "Tap [+] to add items • Tap items to change/remove",
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white70, fontSize: 14),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPlacementSpot(PlacementSpot spot) {
-    DecorationItem? equippedItem = widget.decorations.getEquippedItem(spot.id);
-    bool isEmpty = equippedItem == null;
-
-    return Positioned(
-      left: spot.x,
-      top: spot.y,
-      child: GestureDetector(
-        onTap: () => openItemPicker(spot),
+            // Pan
+            offsetX += details.focalPointDelta.dx;
+            offsetY += details.focalPointDelta.dy;
+          });
+        },
         child: Container(
-          width: 80,
-          height: 80,
-          decoration: BoxDecoration(
-            color: isEmpty ? Colors.white24 : Colors.transparent,
-            borderRadius: BorderRadius.circular(15),
-            border: Border.all(
-              color: isEmpty ? Colors.white54 : Colors.transparent,
-              width: 2,
-              style: BorderStyle.solid,
+          width: double.infinity,
+          height: double.infinity,
+          color: Color(0xFF0a0a0a),
+          child: Transform.translate(
+            offset: Offset(offsetX, offsetY),
+            child: Transform.scale(
+              scale: scale,
+              child: CustomPaint(
+                size: Size(MediaQuery.of(context).size.width, MediaQuery.of(context).size.height),
+                painter: TwoWallCornerPainter(
+                  backgroundColor: backgroundColor,
+                  lightLevel: widget.decorations.lightingLevel,
+                  decorations: widget.decorations,
+                ),
+              ),
             ),
-          ),
-          child: isEmpty
-              ? Icon(Icons.add_circle, size: 40, color: Colors.white54)
-              : Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                equippedItem.emoji,
-                style: TextStyle(fontSize: 50),
-              ),
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  equippedItem.name,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 8,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
           ),
         ),
       ),
@@ -181,7 +120,252 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
   }
 }
 
-// Item Picker Bottom Sheet
+// TWO WALL CORNER PAINTER
+class TwoWallCornerPainter extends CustomPainter {
+  final Color backgroundColor;
+  final int lightLevel;
+  final CaveDecorations decorations;
+
+  TwoWallCornerPainter({
+    required this.backgroundColor,
+    required this.lightLevel,
+    required this.decorations,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final centerX = size.width / 2;
+    final centerY = size.height / 2;
+
+    // Room dimensions
+    final wallWidth = 300.0;
+    final wallHeight = 350.0;
+    final cornerDepth = 180.0;
+
+    // BACK WALL (main wall)
+    _drawBackWall(canvas, centerX, centerY, wallWidth, wallHeight);
+
+    // LEFT WALL (side wall creating corner)
+    _drawLeftWall(canvas, centerX, centerY, wallWidth, wallHeight, cornerDepth);
+
+    // FLOOR
+    _drawFloor(canvas, centerX, centerY, wallWidth, wallHeight, cornerDepth);
+
+    // Draw decorations
+    _drawDecorations(canvas, centerX, centerY);
+  }
+
+  void _drawBackWall(Canvas canvas, double cx, double cy, double width, double height) {
+    final paint = Paint()
+      ..color = backgroundColor
+      ..style = PaintingStyle.fill;
+
+    final backWallRect = Rect.fromCenter(
+      center: Offset(cx, cy - 50),
+      width: width,
+      height: height,
+    );
+
+    canvas.drawRect(backWallRect, paint);
+
+    // Border
+    canvas.drawRect(
+      backWallRect,
+      Paint()
+        ..color = Colors.black
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4,
+    );
+
+    // Stone texture
+    _drawStoneTexture(
+      canvas,
+      cx - width / 2,
+      cy - 50 - height / 2,
+      width,
+      height,
+    );
+  }
+
+  void _drawLeftWall(Canvas canvas, double cx, double cy, double width, double height, double depth) {
+    final paint = Paint()
+      ..color = backgroundColor.withOpacity(0.7)
+      ..style = PaintingStyle.fill;
+
+    final leftWallPath = Path()
+      ..moveTo(cx - width / 2, cy - 50 - height / 2) // Top back
+      ..lineTo(cx - width / 2 - depth, cy - 50 - height / 2 + 50) // Top front
+      ..lineTo(cx - width / 2 - depth, cy - 50 + height / 2 + 50) // Bottom front
+      ..lineTo(cx - width / 2, cy - 50 + height / 2) // Bottom back
+      ..close();
+
+    canvas.drawPath(leftWallPath, paint);
+
+    // Border
+    canvas.drawPath(
+      leftWallPath,
+      Paint()
+        ..color = Colors.black
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4,
+    );
+
+    // Stone texture on left wall
+    _drawStoneTexture(
+      canvas,
+      cx - width / 2 - depth,
+      cy - 50 - height / 2 + 50,
+      depth,
+      height,
+    );
+  }
+
+  void _drawFloor(Canvas canvas, double cx, double cy, double width, double height, double depth) {
+    final paint = Paint()
+      ..color = Color(0xFF4a3f2f)
+      ..style = PaintingStyle.fill;
+
+    final floorPath = Path()
+      ..moveTo(cx - width / 2, cy - 50 + height / 2) // Back left corner
+      ..lineTo(cx + width / 2, cy - 50 + height / 2) // Back right
+      ..lineTo(cx + width / 2 + 100, cy - 50 + height / 2 + 150) // Front right
+      ..lineTo(cx - width / 2 - depth + 100, cy - 50 + height / 2 + 150) // Front left
+      ..close();
+
+    canvas.drawPath(floorPath, paint);
+
+    // Border
+    canvas.drawPath(
+      floorPath,
+      Paint()
+        ..color = Colors.black
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4,
+    );
+
+    // Floor grid lines
+    _drawFloorGrid(canvas, cx, cy, width, height, depth);
+  }
+
+  void _drawStoneTexture(Canvas canvas, double x, double y, double width, double height) {
+    final texturePaint = Paint()
+      ..color = Colors.black.withOpacity(0.15)
+      ..style = PaintingStyle.fill;
+
+    // Random stone spots
+    final random = [
+      (0.15, 0.2, 10.0),
+      (0.4, 0.35, 12.0),
+      (0.7, 0.25, 9.0),
+      (0.25, 0.6, 11.0),
+      (0.8, 0.65, 13.0),
+      (0.5, 0.8, 8.0),
+      (0.35, 0.45, 10.0),
+      (0.65, 0.55, 9.0),
+    ];
+
+    for (var spot in random) {
+      canvas.drawCircle(
+        Offset(x + width * spot.$1, y + height * spot.$2),
+        spot.$3,
+        texturePaint,
+      );
+    }
+
+    // Cracks
+    final crackPaint = Paint()
+      ..color = Colors.black.withOpacity(0.2)
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+
+    canvas.drawLine(
+      Offset(x + width * 0.3, y + height * 0.1),
+      Offset(x + width * 0.4, y + height * 0.3),
+      crackPaint,
+    );
+
+    canvas.drawLine(
+      Offset(x + width * 0.6, y + height * 0.4),
+      Offset(x + width * 0.7, y + height * 0.6),
+      crackPaint,
+    );
+  }
+
+  void _drawFloorGrid(Canvas canvas, double cx, double cy, double width, double height, double depth) {
+    final linePaint = Paint()
+      ..color = Colors.black.withOpacity(0.25)
+      ..strokeWidth = 2;
+
+    final startY = cy - 50 + height / 2;
+
+    // Horizontal lines (going into distance)
+    for (int i = 0; i <= 4; i++) {
+      double progress = i / 4;
+      double currentY = startY + (150 * progress);
+
+      canvas.drawLine(
+        Offset(cx - width / 2 - depth + 100 + (depth * progress * 0.3), currentY),
+        Offset(cx + width / 2 + 100 - (100 * progress * 0.3), currentY),
+        linePaint,
+      );
+    }
+
+    // Vertical lines (perspective)
+    for (int i = 0; i <= 3; i++) {
+      double xProgress = i / 3;
+      canvas.drawLine(
+        Offset(cx - width / 2 + (width * xProgress), startY),
+        Offset(cx - width / 2 - depth + 100 + ((width + depth) * xProgress), startY + 150),
+        linePaint,
+      );
+    }
+  }
+
+  void _drawDecorations(Canvas canvas, double cx, double cy) {
+    // Draw equipped items
+    DecorationItem? bed = decorations.getEquippedItem('bed_main');
+    if (bed != null) {
+      _drawEmoji(canvas, bed.emoji, cx + 80, cy + 150, 50);
+    }
+
+    DecorationItem? light = decorations.getEquippedItem('light_main');
+    if (light != null) {
+      _drawEmoji(canvas, light.emoji, cx, cy - 200, 40);
+    }
+
+    DecorationItem? deco1 = decorations.getEquippedItem('decoration_1');
+    if (deco1 != null) {
+      _drawEmoji(canvas, deco1.emoji, cx - 100, cy - 50, 45);
+    }
+
+    DecorationItem? deco2 = decorations.getEquippedItem('decoration_2');
+    if (deco2 != null) {
+      _drawEmoji(canvas, deco2.emoji, cx + 100, cy - 50, 45);
+    }
+
+    DecorationItem? deco3 = decorations.getEquippedItem('decoration_3');
+    if (deco3 != null) {
+      _drawEmoji(canvas, deco3.emoji, cx - 50, cy + 150, 45);
+    }
+  }
+
+  void _drawEmoji(Canvas canvas, String emoji, double x, double y, double size) {
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: emoji,
+        style: TextStyle(fontSize: size),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+    textPainter.paint(canvas, Offset(x - textPainter.width / 2, y - textPainter.height / 2));
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+// Item Picker Sheet
 class ItemPickerSheet extends StatelessWidget {
   final Character character;
   final CaveDecorations decorations;
@@ -205,7 +389,6 @@ class ItemPickerSheet extends StatelessWidget {
       padding: EdgeInsets.all(20),
       child: Column(
         children: [
-          // Header
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -223,12 +406,8 @@ class ItemPickerSheet extends StatelessWidget {
               ),
             ],
           ),
-
           Divider(color: Colors.white24),
-
           SizedBox(height: 10),
-
-          // Tabs
           DefaultTabController(
             length: 2,
             child: Expanded(
@@ -243,14 +422,10 @@ class ItemPickerSheet extends StatelessWidget {
                       Tab(text: "Shop (${allItems.length})"),
                     ],
                   ),
-
                   Expanded(
                     child: TabBarView(
                       children: [
-                        // OWNED TAB
                         _buildItemGrid(ownedItems, true, context),
-
-                        // SHOP TAB
                         _buildItemGrid(allItems, false, context),
                       ],
                     ),
@@ -282,10 +457,8 @@ class ItemPickerSheet extends StatelessWidget {
         return GestureDetector(
           onTap: () {
             if (isOwned) {
-              // Equip directly
               onItemSelected(item.id);
             } else {
-              // Try to buy
               if (alreadyOwned) {
                 onItemSelected(item.id);
               } else if (canAfford) {

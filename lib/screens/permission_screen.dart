@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:app_usage/app_usage.dart';
-import 'package:app_settings/app_settings.dart';  // ADD THIS
-import 'home_screen.dart';
+import 'package:app_settings/app_settings.dart';
+import 'main_game_screen.dart'; // CHANGED FROM home_screen.dart!
 
 class PermissionScreen extends StatefulWidget {
   @override
@@ -26,7 +26,7 @@ class _PermissionScreenState extends State<PermissionScreen> {
       // If we got here, permission is granted!
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => HomeScreen()),
+        MaterialPageRoute(builder: (context) => MainGameScreen()), // CHANGED FROM HomeScreen()!
       );
     } catch (e) {
       // Permission not granted

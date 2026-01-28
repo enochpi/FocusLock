@@ -2,17 +2,21 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import '../models/character.dart';
 import '../models/farm.dart';
+import '../models/cave_decorations.dart'; // ADD THIS
 import '../services/storage_service.dart';
 import 'focus_active_screen.dart';
+import 'cave_interior_screen.dart'; // ADD THIS
 
 class CaveSceneScreen extends StatefulWidget {
   final Character character;
   final Farm farm;
+  final CaveDecorations decorations; // ADD THIS
   final VoidCallback onUpdate;
 
   CaveSceneScreen({
     required this.character,
     required this.farm,
+    required this.decorations, // ADD THIS
     required this.onUpdate,
   });
 
@@ -23,15 +27,10 @@ class CaveSceneScreen extends StatefulWidget {
 class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderStateMixin {
   StorageService storage = StorageService();
 
-  // Character position
   double alexX = 150;
   double alexY = 300;
-
-  // Character facing direction
   bool facingRight = true;
-
-  // Animation
-  AnimationController? _walkController;  // Add ? to make it nullable
+  AnimationController? _walkController;
   bool isWalking = false;
 
   @override
@@ -45,31 +44,44 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
 
   @override
   void dispose() {
-    _walkController?.dispose();  // Add ? to safely dispose
+    _walkController?.dispose();
     super.dispose();
   }
 
   void moveAlexTo(double x, double y) {
     setState(() {
-      // Update facing direction
       if (x > alexX) {
         facingRight = true;
       } else if (x < alexX) {
         facingRight = false;
       }
 
-      alexX = x - 30; // Center on tap
-      alexY = y - 60; // Adjust for character height
+      alexX = x - 30;
+      alexY = y - 60;
       isWalking = true;
     });
 
-    // Stop walking animation after a moment
     Future.delayed(Duration(milliseconds: 500), () {
       if (mounted) {
         setState(() {
           isWalking = false;
         });
       }
+    });
+  }
+
+  void openCave() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CaveInteriorScreen(
+          character: widget.character,
+          decorations: widget.decorations,
+        ),
+      ),
+    ).then((_) {
+      setState(() {});
+      widget.onUpdate();
     });
   }
 
@@ -101,7 +113,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
     return SafeArea(
       child: Column(
         children: [
-          // Top Bar - Coins & Stats
+          // Top Bar
           Container(
             padding: EdgeInsets.all(15),
             decoration: BoxDecoration(
@@ -124,7 +136,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
             ),
           ),
 
-          // Cave Scene (Touchable)
+          // Cave Scene
           Expanded(
             child: GestureDetector(
               onTapDown: (details) {
@@ -146,60 +158,63 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                     center: Alignment(0.3, -0.5),
                     radius: 1.2,
                     colors: [
-                      Color(0xFF4a4a4a), // Lighter center (cave opening light)
-                      Color(0xFF2d2d2d), // Mid tone
-                      Color(0xFF1a1a1a), // Dark edges
-                      Color(0xFF0a0a0a), // Very dark corners
+                      Color(0xFF4a4a4a),
+                      Color(0xFF2d2d2d),
+                      Color(0xFF1a1a1a),
+                      Color(0xFF0a0a0a),
                     ],
                     stops: [0.0, 0.3, 0.6, 1.0],
                   ),
                 ),
                 child: Stack(
                   children: [
-                    // Cave decorations
                     ..._buildCaveDecorations(),
 
-                    // Garden area at top
+                    // CAVE ENTRANCE
                     Positioned(
-                      top: 20,
-                      left: 20,
-                      right: 20,
-                      child: Container(
-                        padding: EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.5),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.brown, width: 2),
-                        ),
-                        child: Column(
-                          children: [
-                            Row(
+                      top: 50,
+                      left: MediaQuery.of(context).size.width / 2 - 60,
+                      child: GestureDetector(
+                        onTap: openCave,
+                        child: Container(
+                          width: 120,
+                          height: 100,
+                          decoration: BoxDecoration(
+                            color: Color(0xFF1a1a1a),
+                            borderRadius: BorderRadius.vertical(
+                              top: Radius.circular(60),
+                            ),
+                            border: Border.all(color: Colors.brown[800]!, width: 3),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black87,
+                                blurRadius: 15,
+                                spreadRadius: 5,
+                              ),
+                            ],
+                          ),
+                          child: Center(
+                            child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
+                                Text("🏔️", style: TextStyle(fontSize: 40)),
+                                SizedBox(height: 5),
                                 Text(
-                                  "🌱 Garden",
+                                  "Enter Cave",
                                   style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 16,
+                                    color: Colors.white70,
+                                    fontSize: 10,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
                               ],
                             ),
-                            SizedBox(height: 10),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                              children: [
-                                for (int i = 0; i < 5; i++)
-                                  _buildGardenPlot(i),
-                              ],
-                            ),
-                          ],
+                          ),
                         ),
                       ),
                     ),
 
-                    // Alex (movable character)
+                    // Alex
                     AnimatedPositioned(
                       duration: Duration(milliseconds: 300),
                       curve: Curves.easeInOut,
@@ -208,7 +223,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                       child: _buildAlex(),
                     ),
 
-                    // Instruction text
+                    // Instruction
                     Positioned(
                       bottom: 120,
                       left: 0,
@@ -221,7 +236,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: Text(
-                            "Tap anywhere to move ${widget.character.name}",
+                            "Tap anywhere to move • Tap cave to enter",
                             style: TextStyle(
                               color: Colors.white70,
                               fontSize: 14,
@@ -274,11 +289,9 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
     );
   }
 
-  // Build Alex character sprite
   Widget _buildAlex() {
     return Column(
       children: [
-        // Name tag
         Container(
           padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
@@ -295,8 +308,6 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
           ),
         ),
         SizedBox(height: 5),
-
-        // Character body
         AnimatedBuilder(
           animation: _walkController ?? AnimationController(vsync: this, duration: Duration.zero),
           builder: (context, child) {
@@ -312,7 +323,6 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                   height: 80,
                   child: Stack(
                     children: [
-                      // Head
                       Positioned(
                         top: 0,
                         left: 15,
@@ -320,7 +330,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                           width: 30,
                           height: 30,
                           decoration: BoxDecoration(
-                            color: Color(0xFFffdbac), // Skin tone
+                            color: Color(0xFFffdbac),
                             shape: BoxShape.circle,
                             border: Border.all(color: Colors.brown[800]!, width: 2),
                           ),
@@ -332,8 +342,6 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                           ),
                         ),
                       ),
-
-                      // Body (ragged clothing)
                       Positioned(
                         top: 28,
                         left: 10,
@@ -341,7 +349,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                           width: 40,
                           height: 35,
                           decoration: BoxDecoration(
-                            color: Color(0xFF5d4e37), // Dull brown/gray
+                            color: Color(0xFF5d4e37),
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(color: Colors.brown[900]!, width: 2),
                           ),
@@ -350,8 +358,6 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                           ),
                         ),
                       ),
-
-                      // Legs
                       Positioned(
                         top: 60,
                         left: 15,
@@ -387,10 +393,8 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
     );
   }
 
-  // Cave decorations (rocks, shadows, etc.)
   List<Widget> _buildCaveDecorations() {
     return [
-      // Cave rocks/walls
       Positioned(
         top: 50,
         left: 10,
@@ -411,8 +415,6 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
         right: 40,
         child: _buildRock(45, 55),
       ),
-
-      // Small campfire in corner
       Positioned(
         bottom: 180,
         left: 50,
@@ -501,7 +503,6 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
   }
 }
 
-// Custom painter for ragged clothing effect
 class RaggedClothPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
@@ -510,7 +511,6 @@ class RaggedClothPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
 
-    // Draw some ragged lines on clothing
     canvas.drawLine(Offset(5, 10), Offset(15, 15), paint);
     canvas.drawLine(Offset(20, 8), Offset(25, 18), paint);
     canvas.drawLine(Offset(10, 25), Offset(18, 30), paint);
@@ -520,7 +520,6 @@ class RaggedClothPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-// Timer Picker Dialog (unchanged)
 class TimerPickerDialog extends StatefulWidget {
   @override
   _TimerPickerDialogState createState() => _TimerPickerDialogState();
