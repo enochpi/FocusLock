@@ -88,7 +88,6 @@ class CaveDecorations {
         emoji: '🔦',
         cost: 30,
         category: 'light',
-        isOwned: false, // CHANGED FROM true
       ),
       DecorationItem(
         id: 'campfire',
@@ -124,9 +123,8 @@ class CaveDecorations {
         id: 'sleeping_bag',
         name: 'Sleeping Bag',
         emoji: '🎒',
-        cost: 50, // CHANGED FROM 0
+        cost: 50,
         category: 'bed',
-        isOwned: false, // CHANGED FROM true
       ),
       DecorationItem(
         id: 'straw_bed',
@@ -235,7 +233,6 @@ class CaveDecorations {
         category: 'light',
         x: 150,
         y: 80,
-        equippedItemId: null, // CHANGED FROM 'torch'
       ),
 
       // Bed spot (bottom right)
@@ -244,7 +241,6 @@ class CaveDecorations {
         category: 'bed',
         x: 220,
         y: 450,
-        equippedItemId: null, // CHANGED FROM 'sleeping_bag'
       ),
 
       // Floor (background, always equipped)

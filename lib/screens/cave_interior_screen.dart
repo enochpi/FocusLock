@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
+import 'dart:math' as math;
 import '../models/character.dart';
 import '../models/cave_decorations.dart';
 import '../services/storage_service.dart';
@@ -19,10 +21,17 @@ class CaveInteriorScreen extends StatefulWidget {
 class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
   StorageService storage = StorageService();
 
-  // Pan and Zoom controls
+  // Rotation control
+  double rotationX = 0.25;
+  double rotationY = 0.35;
+
+  // Pan control
   double offsetX = 0.0;
   double offsetY = 0.0;
-  double scale = 1.0;
+
+  // For tracking gestures
+  Offset? _lastDragPosition;
+  double _scale = 1.0;
 
   Color get backgroundColor {
     int level = widget.decorations.lightingLevel;
@@ -36,7 +45,199 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
     }
   }
 
-  void openItemPicker(PlacementSpot spot) {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Color(0xFF0a0a0a),
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        title: Text("My Cave"),
+        actions: [
+          // Reset view button
+          IconButton(
+            icon: Icon(Icons.center_focus_strong),
+            onPressed: () {
+              setState(() {
+                rotationX = 0.25;
+                rotationY = 0.35;
+                offsetX = 0.0;
+                offsetY = 0.0;
+                _scale = 1.0;
+              });
+            },
+            tooltip: "Reset View",
+          ),
+          Padding(
+            padding: EdgeInsets.all(12),
+            child: Center(
+              child: Text(
+                "💰 \$${widget.character.money}",
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+      body: Listener(
+        // Mouse wheel for zoom
+        onPointerSignal: (event) {
+          if (event is PointerScrollEvent) {
+            setState(() {
+              _scale = (_scale - event.scrollDelta.dy * 0.001).clamp(0.7, 2.0);
+            });
+          }
+        },
+        child: GestureDetector(
+          // Rotate and pan with drag
+          onScaleStart: (details) {
+            _lastDragPosition = details.focalPoint;
+          },
+          onScaleUpdate: (details) {
+            setState(() {
+              // Zoom (pinch)
+              if (details.scale != 1.0) {
+                _scale = (_scale * details.scale).clamp(0.7, 2.0);
+              }
+
+              // Pan and rotate
+              if (_lastDragPosition != null) {
+                double dx = details.focalPoint.dx - _lastDragPosition!.dx;
+                double dy = details.focalPoint.dy - _lastDragPosition!.dy;
+
+                // Right mouse button or two-finger: pan
+                // Left mouse button or one-finger: rotate
+                if (details.pointerCount == 2) {
+                  // Pan
+                  offsetX += dx;
+                  offsetY += dy;
+                } else {
+                  // Rotate (LIMITED range)
+                  rotationY += dx * 0.005;
+                  rotationX += dy * 0.005;
+
+                  // TIGHT clamp - just subtle movement
+                  rotationX = rotationX.clamp(0.0, 0.5);
+                  rotationY = rotationY.clamp(0.1, 0.6);
+                }
+              }
+              _lastDragPosition = details.focalPoint;
+            });
+          },
+          onScaleEnd: (details) {
+            _lastDragPosition = null;
+          },
+          // Tap to open decoration menu
+          onTapUp: (details) {
+            _handleTap(details.localPosition);
+          },
+          child: Center(
+            child: Transform.translate(
+              offset: Offset(offsetX, offsetY),
+              child: Transform.scale(
+                scale: _scale,
+                child: Container(
+                  width: 400,
+                  height: 500,
+                  child: CustomPaint(
+                    size: Size(400, 500),
+                    painter: ThickWallCubePainter(
+                      backgroundColor: backgroundColor,
+                      lightLevel: widget.decorations.lightingLevel,
+                      decorations: widget.decorations,
+                      rotationX: rotationX,
+                      rotationY: rotationY,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _handleTap(Offset position) {
+    // Adjust for scale and offset
+    double adjustedX = (position.dx - MediaQuery.of(context).size.width / 2 - offsetX) / _scale + 200;
+    double adjustedY = (position.dy - MediaQuery.of(context).size.height / 2 - offsetY) / _scale + 250;
+
+    // Screen center
+    double cx = 200.0;
+    double cy = 250.0;
+
+    // Project 3D positions of placement spots to screen coordinates
+    double tapRadius = 35.0;
+
+    // Helper function to project and check
+    bool checkSpot(double x3d, double y3d, double z3d) {
+      Offset projected = _project3D(x3d, y3d, z3d, cx, cy);
+      return _isNear(adjustedX, adjustedY, projected.dx, projected.dy, tapRadius);
+    }
+
+    // Bed spot
+    if (checkSpot(60, -150, 80) &&
+        widget.decorations.getEquippedItem('bed_main') == null) {
+      _openItemPicker('bed_main');
+      return;
+    }
+
+    // Table spot
+    if (checkSpot(-20, -150, 40) &&
+        widget.decorations.getEquippedItem('decoration_3') == null) {
+      _openItemPicker('decoration_3');
+      return;
+    }
+
+    // Light spot
+    if (checkSpot(0, 80, -150) &&
+        widget.decorations.getEquippedItem('light_main') == null) {
+      _openItemPicker('light_main');
+      return;
+    }
+
+    // Wall decoration 1
+    if (checkSpot(-80, 0, -150) &&
+        widget.decorations.getEquippedItem('decoration_1') == null) {
+      _openItemPicker('decoration_1');
+      return;
+    }
+
+    // Wall decoration 2
+    if (checkSpot(150, 0, -50) &&
+        widget.decorations.getEquippedItem('decoration_2') == null) {
+      _openItemPicker('decoration_2');
+      return;
+    }
+  }
+
+  Offset _project3D(double x, double y, double z, double cx, double cy) {
+    // Same rotation math as in painter
+    double cosX = math.cos(rotationX);
+    double sinX = math.sin(rotationX);
+    double y1 = y * cosX - z * sinX;
+    double z1 = y * sinX + z * cosX;
+
+    double cosY = math.cos(rotationY);
+    double sinY = math.sin(rotationY);
+    double x2 = x * cosY + z1 * sinY;
+    double y2 = y1;
+
+    return Offset(cx + x2, cy - y2);
+  }
+
+  bool _isNear(double x, double y, double targetX, double targetY, double radius) {
+    double dx = x - targetX;
+    double dy = y - targetY;
+    return (dx * dx + dy * dy) < (radius * radius);
+  }
+
+  void _openItemPicker(String spotId) {
+    PlacementSpot spot = widget.decorations.spots.firstWhere((s) => s.id == spotId);
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Color(0xFF16213e),
@@ -59,77 +260,22 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
       ),
     );
   }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Color(0xFF0a0a0a),
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        title: Text("My Cave"),
-        actions: [
-          Padding(
-            padding: EdgeInsets.all(12),
-            child: Center(
-              child: Text(
-                "💰 \$${widget.character.money}",
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-      body: GestureDetector(
-        onScaleStart: (details) {
-          // Starting point for pan/zoom
-        },
-        onScaleUpdate: (details) {
-          setState(() {
-            // Zoom
-            scale = (scale * details.scale).clamp(0.5, 3.0);
-
-            // Pan
-            offsetX += details.focalPointDelta.dx;
-            offsetY += details.focalPointDelta.dy;
-          });
-        },
-        child: Container(
-          width: double.infinity,
-          height: double.infinity,
-          color: Color(0xFF0a0a0a),
-          child: Transform.translate(
-            offset: Offset(offsetX, offsetY),
-            child: Transform.scale(
-              scale: scale,
-              child: CustomPaint(
-                size: Size(MediaQuery.of(context).size.width, MediaQuery.of(context).size.height),
-                painter: TwoWallCornerPainter(
-                  backgroundColor: backgroundColor,
-                  lightLevel: widget.decorations.lightingLevel,
-                  decorations: widget.decorations,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
-// TWO WALL CORNER PAINTER
-class TwoWallCornerPainter extends CustomPainter {
+// SIMPLE TWO-WALL PAINTER with placement spots
+class ThickWallCubePainter extends CustomPainter {
   final Color backgroundColor;
   final int lightLevel;
   final CaveDecorations decorations;
+  final double rotationX;
+  final double rotationY;
 
-  TwoWallCornerPainter({
+  ThickWallCubePainter({
     required this.backgroundColor,
     required this.lightLevel,
     required this.decorations,
+    required this.rotationX,
+    required this.rotationY,
   });
 
   @override
@@ -137,215 +283,275 @@ class TwoWallCornerPainter extends CustomPainter {
     final centerX = size.width / 2;
     final centerY = size.height / 2;
 
-    // Room dimensions
-    final wallWidth = 300.0;
-    final wallHeight = 350.0;
-    final cornerDepth = 180.0;
+    // Cube size
+    final cubeSize = 150.0;
 
-    // BACK WALL (main wall)
-    _drawBackWall(canvas, centerX, centerY, wallWidth, wallHeight);
-
-    // LEFT WALL (side wall creating corner)
-    _drawLeftWall(canvas, centerX, centerY, wallWidth, wallHeight, cornerDepth);
-
-    // FLOOR
-    _drawFloor(canvas, centerX, centerY, wallWidth, wallHeight, cornerDepth);
-
-    // Draw decorations
-    _drawDecorations(canvas, centerX, centerY);
-  }
-
-  void _drawBackWall(Canvas canvas, double cx, double cy, double width, double height) {
-    final paint = Paint()
-      ..color = backgroundColor
-      ..style = PaintingStyle.fill;
-
-    final backWallRect = Rect.fromCenter(
-      center: Offset(cx, cy - 50),
-      width: width,
-      height: height,
-    );
-
-    canvas.drawRect(backWallRect, paint);
-
-    // Border
-    canvas.drawRect(
-      backWallRect,
-      Paint()
-        ..color = Colors.black
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 4,
-    );
-
-    // Stone texture
-    _drawStoneTexture(
-      canvas,
-      cx - width / 2,
-      cy - 50 - height / 2,
-      width,
-      height,
-    );
-  }
-
-  void _drawLeftWall(Canvas canvas, double cx, double cy, double width, double height, double depth) {
-    final paint = Paint()
-      ..color = backgroundColor.withOpacity(0.7)
-      ..style = PaintingStyle.fill;
-
-    final leftWallPath = Path()
-      ..moveTo(cx - width / 2, cy - 50 - height / 2) // Top back
-      ..lineTo(cx - width / 2 - depth, cy - 50 - height / 2 + 50) // Top front
-      ..lineTo(cx - width / 2 - depth, cy - 50 + height / 2 + 50) // Bottom front
-      ..lineTo(cx - width / 2, cy - 50 + height / 2) // Bottom back
-      ..close();
-
-    canvas.drawPath(leftWallPath, paint);
-
-    // Border
-    canvas.drawPath(
-      leftWallPath,
-      Paint()
-        ..color = Colors.black
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 4,
-    );
-
-    // Stone texture on left wall
-    _drawStoneTexture(
-      canvas,
-      cx - width / 2 - depth,
-      cy - 50 - height / 2 + 50,
-      depth,
-      height,
-    );
-  }
-
-  void _drawFloor(Canvas canvas, double cx, double cy, double width, double height, double depth) {
-    final paint = Paint()
-      ..color = Color(0xFF4a3f2f)
-      ..style = PaintingStyle.fill;
-
-    final floorPath = Path()
-      ..moveTo(cx - width / 2, cy - 50 + height / 2) // Back left corner
-      ..lineTo(cx + width / 2, cy - 50 + height / 2) // Back right
-      ..lineTo(cx + width / 2 + 100, cy - 50 + height / 2 + 150) // Front right
-      ..lineTo(cx - width / 2 - depth + 100, cy - 50 + height / 2 + 150) // Front left
-      ..close();
-
-    canvas.drawPath(floorPath, paint);
-
-    // Border
-    canvas.drawPath(
-      floorPath,
-      Paint()
-        ..color = Colors.black
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 4,
-    );
-
-    // Floor grid lines
-    _drawFloorGrid(canvas, cx, cy, width, height, depth);
-  }
-
-  void _drawStoneTexture(Canvas canvas, double x, double y, double width, double height) {
-    final texturePaint = Paint()
-      ..color = Colors.black.withOpacity(0.15)
-      ..style = PaintingStyle.fill;
-
-    // Random stone spots
-    final random = [
-      (0.15, 0.2, 10.0),
-      (0.4, 0.35, 12.0),
-      (0.7, 0.25, 9.0),
-      (0.25, 0.6, 11.0),
-      (0.8, 0.65, 13.0),
-      (0.5, 0.8, 8.0),
-      (0.35, 0.45, 10.0),
-      (0.65, 0.55, 9.0),
+    // Define corners
+    final corners = [
+      [-1.0, -1.0, -1.0], // 0: Back bottom left
+      [1.0, -1.0, -1.0],  // 1: Back bottom right
+      [1.0, 1.0, -1.0],   // 2: Back top right
+      [-1.0, 1.0, -1.0],  // 3: Back top left
+      [-1.0, -1.0, 1.0],  // 4: Front bottom left
+      [1.0, -1.0, 1.0],   // 5: Front bottom right
+      [1.0, 1.0, 1.0],    // 6: Front top right
     ];
 
-    for (var spot in random) {
-      canvas.drawCircle(
-        Offset(x + width * spot.$1, y + height * spot.$2),
-        spot.$3,
-        texturePaint,
+    // Rotate and project corners
+    List<Offset> p = corners.map((corner) {
+      return _rotateAndProject(
+        corner[0] * cubeSize,
+        corner[1] * cubeSize,
+        corner[2] * cubeSize,
+        rotationX,
+        rotationY,
+        centerX,
+        centerY,
       );
-    }
+    }).toList();
 
-    // Cracks
-    final crackPaint = Paint()
-      ..color = Colors.black.withOpacity(0.2)
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
+    // Draw simple 2 walls + floor
+    _drawSimpleRoom(canvas, p);
+    _drawDecorations(canvas, p, centerX, centerY);
+    _drawPlacementSpots(canvas, centerX, centerY);
+  }
 
-    canvas.drawLine(
-      Offset(x + width * 0.3, y + height * 0.1),
-      Offset(x + width * 0.4, y + height * 0.3),
-      crackPaint,
+  Offset _rotateAndProject(
+      double x,
+      double y,
+      double z,
+      double rotX,
+      double rotY,
+      double cx,
+      double cy,
+      ) {
+    // Rotate around X axis
+    double cosX = cos(rotX);
+    double sinX = sin(rotX);
+    double y1 = y * cosX - z * sinX;
+    double z1 = y * sinX + z * cosX;
+
+    // Rotate around Y axis
+    double cosY = cos(rotY);
+    double sinY = sin(rotY);
+    double x2 = x * cosY + z1 * sinY;
+    double z2 = -x * sinY + z1 * cosY;
+
+    return Offset(cx + x2, cy - y1);
+  }
+
+  void _drawSimpleRoom(Canvas canvas, List<Offset> p) {
+    // Floor - warmer brown
+    _drawFace(
+      canvas,
+      [p[0], p[1], p[5], p[4]],
+      Color(0xFF5a4a3a), // Warmer brown floor
+      "Floor",
     );
 
-    canvas.drawLine(
-      Offset(x + width * 0.6, y + height * 0.4),
-      Offset(x + width * 0.7, y + height * 0.6),
-      crackPaint,
+    // Back wall - better cave stone color
+    _drawFace(
+      canvas,
+      [p[0], p[1], p[2], p[3]],
+      Color(0xFF4a4440), // Better gray-brown stone
+      "Back",
+    );
+
+    // Right wall - slightly darker
+    _drawFace(
+      canvas,
+      [p[1], p[5], p[6], p[2]],
+      Color(0xFF3d3935), // Darker stone
+      "Right",
     );
   }
 
-  void _drawFloorGrid(Canvas canvas, double cx, double cy, double width, double height, double depth) {
-    final linePaint = Paint()
-      ..color = Colors.black.withOpacity(0.25)
-      ..strokeWidth = 2;
+  void _drawFace(Canvas canvas, List<Offset> points, Color color, String label) {
+    final path = Path()
+      ..moveTo(points[0].dx, points[0].dy)
+      ..lineTo(points[1].dx, points[1].dy)
+      ..lineTo(points[2].dx, points[2].dy)
+      ..lineTo(points[3].dx, points[3].dy)
+      ..close();
 
-    final startY = cy - 50 + height / 2;
+    // Fill
+    canvas.drawPath(path, Paint()..color = color);
 
-    // Horizontal lines (going into distance)
-    for (int i = 0; i <= 4; i++) {
-      double progress = i / 4;
-      double currentY = startY + (150 * progress);
+    // Border
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = Color(0xFF2a2622)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5,
+    );
 
-      canvas.drawLine(
-        Offset(cx - width / 2 - depth + 100 + (depth * progress * 0.3), currentY),
-        Offset(cx + width / 2 + 100 - (100 * progress * 0.3), currentY),
-        linePaint,
-      );
-    }
-
-    // Vertical lines (perspective)
-    for (int i = 0; i <= 3; i++) {
-      double xProgress = i / 3;
-      canvas.drawLine(
-        Offset(cx - width / 2 + (width * xProgress), startY),
-        Offset(cx - width / 2 - depth + 100 + ((width + depth) * xProgress), startY + 150),
-        linePaint,
-      );
+    // Add texture
+    if (label == "Floor") {
+      _drawFloorGrid(canvas, points);
+    } else {
+      _drawStoneTexture(canvas, points);
     }
   }
 
-  void _drawDecorations(Canvas canvas, double cx, double cy) {
-    // Draw equipped items
-    DecorationItem? bed = decorations.getEquippedItem('bed_main');
-    if (bed != null) {
-      _drawEmoji(canvas, bed.emoji, cx + 80, cy + 150, 50);
+  void _drawStoneTexture(Canvas canvas, List<Offset> points) {
+    final texturePaint = Paint()
+      ..color = Colors.black.withOpacity(0.2);
+
+    // Stone spots
+    for (int i = 0; i < 8; i++) {
+      double t1 = (i * 0.17 + 0.1);
+      double t2 = ((i * 0.23 + 0.2) % 1.0);
+
+      Offset spot = Offset(
+        points[0].dx * (1 - t1) + points[2].dx * t1,
+        points[0].dy * (1 - t2) + points[2].dy * t2,
+      );
+
+      canvas.drawCircle(spot, 6, texturePaint);
+    }
+  }
+
+  void _drawFloorGrid(Canvas canvas, List<Offset> points) {
+    final gridPaint = Paint()
+      ..color = Color(0xFF3d2f22).withOpacity(0.5)
+      ..strokeWidth = 1.5;
+
+    // Grid lines
+    for (int i = 1; i < 4; i++) {
+      double t = i / 4;
+
+      Offset start = Offset.lerp(points[0], points[1], t)!;
+      Offset end = Offset.lerp(points[3], points[2], t)!;
+      canvas.drawLine(start, end, gridPaint);
+
+      start = Offset.lerp(points[0], points[3], t)!;
+      end = Offset.lerp(points[1], points[2], t)!;
+      canvas.drawLine(start, end, gridPaint);
+    }
+  }
+
+  void _drawPlacementSpots(Canvas canvas, double cx, double cy) {
+    // Define 3D positions for each placement spot
+    // Then project them just like the walls/floor
+
+    // Bed spot - on floor, front right
+    if (decorations.getEquippedItem('bed_main') == null) {
+      Offset bedPos = _rotateAndProject(60, -150, 80, rotationX, rotationY, cx, cy);
+      _drawPlusSign(canvas, bedPos.dx, bedPos.dy, "Bed");
     }
 
+    // Table spot - on floor, center
+    if (decorations.getEquippedItem('decoration_3') == null) {
+      Offset tablePos = _rotateAndProject(-20, -150, 40, rotationX, rotationY, cx, cy);
+      _drawPlusSign(canvas, tablePos.dx, tablePos.dy, "Table");
+    }
+
+    // Light spot - on back wall, top center
+    if (decorations.getEquippedItem('light_main') == null) {
+      Offset lightPos = _rotateAndProject(0, 80, -150, rotationX, rotationY, cx, cy);
+      _drawPlusSign(canvas, lightPos.dx, lightPos.dy, "Light");
+    }
+
+    // Wall decoration 1 - on back wall, left side
+    if (decorations.getEquippedItem('decoration_1') == null) {
+      Offset deco1Pos = _rotateAndProject(-80, 0, -150, rotationX, rotationY, cx, cy);
+      _drawPlusSign(canvas, deco1Pos.dx, deco1Pos.dy, "Decor");
+    }
+
+    // Wall decoration 2 - on right wall
+    if (decorations.getEquippedItem('decoration_2') == null) {
+      Offset deco2Pos = _rotateAndProject(150, 0, -50, rotationX, rotationY, cx, cy);
+      _drawPlusSign(canvas, deco2Pos.dx, deco2Pos.dy, "Decor");
+    }
+  }
+
+  void _drawPlusSign(Canvas canvas, double x, double y, String label) {
+    // Circle background
+    canvas.drawCircle(
+      Offset(x, y),
+      25,
+      Paint()
+        ..color = Color(0xFF00d4ff).withOpacity(0.2)
+        ..style = PaintingStyle.fill,
+    );
+
+    // Circle border
+    canvas.drawCircle(
+      Offset(x, y),
+      25,
+      Paint()
+        ..color = Color(0xFF00d4ff)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2,
+    );
+
+    // Plus sign
+    final plusPaint = Paint()
+      ..color = Color(0xFF00d4ff)
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+
+    // Horizontal line
+    canvas.drawLine(Offset(x - 10, y), Offset(x + 10, y), plusPaint);
+    // Vertical line
+    canvas.drawLine(Offset(x, y - 10), Offset(x, y + 10), plusPaint);
+
+    // Label text
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+    textPainter.paint(
+      canvas,
+      Offset(x - textPainter.width / 2, y + 30),
+    );
+  }
+
+  void _drawDecorations(Canvas canvas, List<Offset> projected, double cx, double cy) {
+    // Draw placed decorations at 3D positions
+
+    // Light - on back wall, top center
     DecorationItem? light = decorations.getEquippedItem('light_main');
     if (light != null) {
-      _drawEmoji(canvas, light.emoji, cx, cy - 200, 40);
+      Offset lightPos = _rotateAndProject(0, 80, -150, rotationX, rotationY, cx, cy);
+      _drawEmoji(canvas, light.emoji, lightPos.dx, lightPos.dy, 40);
     }
 
+    // Bed - on floor, front right
+    DecorationItem? bed = decorations.getEquippedItem('bed_main');
+    if (bed != null) {
+      Offset bedPos = _rotateAndProject(60, -150, 80, rotationX, rotationY, cx, cy);
+      _drawEmoji(canvas, bed.emoji, bedPos.dx, bedPos.dy, 50);
+    }
+
+    // Decoration 1 - on back wall, left
     DecorationItem? deco1 = decorations.getEquippedItem('decoration_1');
     if (deco1 != null) {
-      _drawEmoji(canvas, deco1.emoji, cx - 100, cy - 50, 45);
+      Offset deco1Pos = _rotateAndProject(-80, 0, -150, rotationX, rotationY, cx, cy);
+      _drawEmoji(canvas, deco1.emoji, deco1Pos.dx, deco1Pos.dy, 35);
     }
 
+    // Decoration 2 - on right wall
     DecorationItem? deco2 = decorations.getEquippedItem('decoration_2');
     if (deco2 != null) {
-      _drawEmoji(canvas, deco2.emoji, cx + 100, cy - 50, 45);
+      Offset deco2Pos = _rotateAndProject(150, 0, -50, rotationX, rotationY, cx, cy);
+      _drawEmoji(canvas, deco2.emoji, deco2Pos.dx, deco2Pos.dy, 35);
     }
 
+    // Decoration 3 - on floor, center
     DecorationItem? deco3 = decorations.getEquippedItem('decoration_3');
     if (deco3 != null) {
-      _drawEmoji(canvas, deco3.emoji, cx - 50, cy + 150, 45);
+      Offset deco3Pos = _rotateAndProject(-20, -150, 40, rotationX, rotationY, cx, cy);
+      _drawEmoji(canvas, deco3.emoji, deco3Pos.dx, deco3Pos.dy, 35);
     }
   }
 
@@ -358,14 +564,20 @@ class TwoWallCornerPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
     );
     textPainter.layout();
-    textPainter.paint(canvas, Offset(x - textPainter.width / 2, y - textPainter.height / 2));
+    textPainter.paint(
+      canvas,
+      Offset(x - textPainter.width / 2, y - textPainter.height / 2),
+    );
   }
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
 
-// Item Picker Sheet
+double cos(double radians) => math.cos(radians);
+double sin(double radians) => math.sin(radians);
+
+// ITEM PICKER SHEET
 class ItemPickerSheet extends StatelessWidget {
   final Character character;
   final CaveDecorations decorations;
