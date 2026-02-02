@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import '../models/character.dart';
+import '../services/currency_service.dart';
+import '../services/upgrade_service.dart';
+import '../services/furniture_service.dart';
 
 class GardenFocusScreen extends StatefulWidget {
   final Character character;
@@ -17,6 +20,9 @@ class GardenFocusScreen extends StatefulWidget {
 
 class _GardenFocusScreenState extends State<GardenFocusScreen>
     with TickerProviderStateMixin {
+  final CurrencyService currency = CurrencyService(); // ← MOVED HERE
+  final UpgradeService upgrades = UpgradeService();
+  final FurnitureService furniture = FurnitureService();
   late AnimationController _characterController;
   bool _isWorking = false;
   int _remainingSeconds = 0;
@@ -55,32 +61,159 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     }
   }
 
-  void _finishSession() {
-    // Reward money
+  /// Calculate peas earned so far (for partial completion)
+  int _calculatePeasSoFar() {
+    int elapsedMinutes = widget.focusDurationMinutes - (_remainingSeconds ~/ 60);
+    double multiplier = upgrades.getTotalMultiplier();
+    return CurrencyService.calculatePeasFromFocus(
+      elapsedMinutes,
+      upgradeMultiplier: multiplier,
+    );
+  }
+
+  void _finishSession() async {
+    // Get ALL multipliers
+    double upgradeMultiplier = upgrades.getTotalMultiplier();
+    double furnitureBoost = furniture.getTotalBoost(); // ← ADD
+
+    // Combine boosts
+    double totalMultiplier = upgradeMultiplier + furnitureBoost;
+
+    // Calculate peas with everything
+    int peasEarned = CurrencyService.calculatePeasFromFocus(
+      widget.focusDurationMinutes,
+      upgradeMultiplier: totalMultiplier, // ← USE COMBINED
+    );
+
+    await currency.addPeas(peasEarned);
+
+    // Reward money AND track focus minutes (keep existing functionality)
     int earnings = widget.focusDurationMinutes * 5; // $5 per minute
     widget.character.earnMoney(earnings);
+    widget.character.addFocusMinutes(widget.focusDurationMinutes);
 
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (context) => AlertDialog(
-        backgroundColor: Color(0xFF16213e),
-        title: Text(
-          "Focus Session Complete! 🎉",
-          style: TextStyle(color: Colors.white),
+        backgroundColor: Color(0xFF2d2d2d),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
         ),
-        content: Text(
-          "Great work! You earned \$$earnings",
-          style: TextStyle(color: Colors.white70),
+        title: Text(
+          "Focus Complete! 🎉",
+          style: TextStyle(color: Colors.white),
+          textAlign: TextAlign.center,
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              "You earned:",
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.white70,
+              ),
+            ),
+            SizedBox(height: 16),
+
+            // Peas earned (main reward)
+            Container(
+              padding: EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Color(0xFF4CAF50).withOpacity(0.2),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Color(0xFF4CAF50),
+                  width: 2,
+                ),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    "$peasEarned 🌱",
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF4CAF50),
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    "Peas",
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.white70,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            SizedBox(height: 12),
+            Text(
+              "${widget.focusDurationMinutes} min + 10% bonus!",
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.white60,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+
+            SizedBox(height: 16),
+
+            // Additional info (money + focus minutes)
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    "Also earned: \$$earnings",
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    "+${widget.focusDurationMinutes} focus minutes",
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
         actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context); // Close dialog
-              Navigator.pop(context); // Return to cave
-            },
-            child: Text(
-              "Back to Cave",
-              style: TextStyle(color: Color(0xFF00d4ff)),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context); // Close dialog
+                Navigator.pop(context); // Return to cave scene
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Color(0xFF4CAF50),
+                padding: EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Text(
+                "Awesome!",
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
             ),
           ),
         ],
@@ -148,34 +281,144 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
             child: Center(
               child: ElevatedButton(
                 onPressed: () {
+                  // Calculate current progress
+                  int peasSoFar = _calculatePeasSoFar();
+                  int elapsedMinutes = widget.focusDurationMinutes - (_remainingSeconds ~/ 60);
+                  int peasLost = (peasSoFar * 0.20).floor(); // 20% penalty
+                  int peasKept = peasSoFar - peasLost;
+
                   showDialog(
                     context: context,
                     builder: (context) => AlertDialog(
                       backgroundColor: Color(0xFF16213e),
-                      title: Text(
-                        "Stop Focus Session?",
-                        style: TextStyle(color: Colors.white),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
                       ),
-                      content: Text(
-                        "You won't earn any money if you stop early.",
-                        style: TextStyle(color: Colors.white70),
+                      title: Row(
+                        children: [
+                          Text("⚠️", style: TextStyle(fontSize: 28)),
+                          SizedBox(width: 12),
+                          Text(
+                            "Stop Focus Session?",
+                            style: TextStyle(color: Colors.white, fontSize: 18),
+                          ),
+                        ],
+                      ),
+                      content: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Progress so far
+                          Container(
+                            padding: EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Color(0xFF4CAF50).withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  "Earned so far:",
+                                  style: TextStyle(color: Colors.white70),
+                                ),
+                                Text(
+                                  "$peasSoFar 🌱",
+                                  style: TextStyle(
+                                    color: Color(0xFF4CAF50),
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            "$elapsedMinutes of ${widget.focusDurationMinutes} minutes completed",
+                            style: TextStyle(
+                              color: Colors.white60,
+                              fontSize: 12,
+                            ),
+                          ),
+                          SizedBox(height: 16),
+
+                          // Penalty warning
+                          Container(
+                            padding: EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.red.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.red.withOpacity(0.5)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  "If you stop now:",
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Text("❌", style: TextStyle(fontSize: 16)),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      "Lose $peasLost peas (20% penalty)",
+                                      style: TextStyle(color: Colors.red[300]),
+                                    ),
+                                  ],
+                                ),
+                                SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    Text("✅", style: TextStyle(fontSize: 16)),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      "Keep $peasKept peas",
+                                      style: TextStyle(color: Color(0xFF4CAF50)),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.pop(context),
                           child: Text(
                             "Keep Focusing",
-                            style: TextStyle(color: Color(0xFF00d4ff)),
+                            style: TextStyle(
+                              color: Color(0xFF00d4ff),
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                         TextButton(
-                          onPressed: () {
-                            Navigator.pop(context); // Close dialog
+                          onPressed: () async {
+                            // Stop early - apply penalty
+                            if (peasKept > 0) {
+                              await currency.addPeas(peasKept);
+                            }
+
+                            // Add focus minutes (partial)
+                            widget.character.addFocusMinutes(elapsedMinutes);
+
+                            Navigator.pop(context); // Close warning dialog
                             Navigator.pop(context); // Return to cave
                           },
                           child: Text(
                             "Stop",
-                            style: TextStyle(color: Colors.red),
+                            style: TextStyle(
+                              color: Colors.red,
+                              fontSize: 16,
+                            ),
                           ),
                         ),
                       ],
@@ -240,7 +483,7 @@ class GardenPainter extends CustomPainter {
     _drawPlants(canvas, w, h);
   }
 
-  void _drawClouds(Canvas canvas, Size w, double h) {
+  void _drawClouds(Canvas canvas, double w, double h) {
     final cloudPaint = Paint()
       ..color = Colors.white.withOpacity(0.7);
 

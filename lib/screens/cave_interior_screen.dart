@@ -4,6 +4,9 @@ import 'dart:math' as math;
 import '../models/character.dart';
 import '../models/cave_decorations.dart';
 import '../services/storage_service.dart';
+import 'shop_screen.dart';
+import '../services/furniture_service.dart';
+import '../widgets/furniture_selection_dialog.dart';
 
 class CaveInteriorScreen extends StatefulWidget {
   final Character character;
@@ -20,10 +23,12 @@ class CaveInteriorScreen extends StatefulWidget {
 
 class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
   StorageService storage = StorageService();
+  final FurnitureService furnitureService = FurnitureService(); // ← ADD THIS
 
   // Rotation control
   double rotationX = 0.25;
   double rotationY = 0.35;
+  // ... rest of your variables
 
   // Pan control
   double offsetX = 0.0;
@@ -43,6 +48,56 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
       case 4: return Color(0xFF6a6a6a);
       default: return Color(0xFF2a2a2a);
     }
+  }
+  // Method to open furniture dialog
+  Future<void> _openFurnitureDialog(String spotId, FurnitureType type) async {
+    Furniture? current = furnitureService.getPlacedFurniture(spotId);
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => FurnitureSelectionDialog(
+        spotId: spotId,
+        furnitureType: type,
+        currentFurniture: current,
+      ),
+    );
+
+    if (result == true) {
+      setState(() {}); // Refresh UI
+    }
+  }
+
+// Build furniture spot widget
+  Widget _buildFurnitureSpot(String spotId, FurnitureType type) {
+    Furniture? current = furnitureService.getPlacedFurniture(spotId); // ← current
+
+    return GestureDetector(
+      onTap: () => _openFurnitureDialog(spotId, type),
+      child: Container(
+        width: 60,
+        height: 60,
+        decoration: BoxDecoration(
+          color: current != null  // ← CHANGED
+              ? Color(0xFF4CAF50).withOpacity(0.3)
+              : Colors.black.withOpacity(0.5),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: current != null ? Color(0xFF4CAF50) : Colors.white30,  // ← CHANGED
+            width: 2,
+          ),
+        ),
+        child: Center(
+          child: Text(
+            current != null ? current.emoji : '+',  // ← CHANGED (both places)
+            style: TextStyle(
+              fontSize: current != null ? 32 : 24,  // ← CHANGED
+              color: current != null ? Colors.white : Colors.white54,  // ← CHANGED
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -81,81 +136,127 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
           ),
         ],
       ),
-      body: Listener(
-        // Mouse wheel for zoom
-        onPointerSignal: (event) {
-          if (event is PointerScrollEvent) {
-            setState(() {
-              _scale = (_scale - event.scrollDelta.dy * 0.001).clamp(0.7, 2.0);
-            });
-          }
-        },
-        child: GestureDetector(
-          // Rotate and pan with drag
-          onScaleStart: (details) {
-            _lastDragPosition = details.focalPoint;
-          },
-          onScaleUpdate: (details) {
-            setState(() {
-              // Zoom (pinch)
-              if (details.scale != 1.0) {
-                _scale = (_scale * details.scale).clamp(0.7, 2.0);
+      body: Stack(  // ← WRAP IN STACK
+        children: [
+          // YOUR EXISTING CAVE (unchanged)
+          Listener(
+            // Mouse wheel for zoom
+            onPointerSignal: (event) {
+              if (event is PointerScrollEvent) {
+                setState(() {
+                  _scale = (_scale - event.scrollDelta.dy * 0.001).clamp(0.7, 2.0);
+                });
               }
+            },
+            child: GestureDetector(
+              // Rotate and pan with drag
+              onScaleStart: (details) {
+                _lastDragPosition = details.focalPoint;
+              },
+              onScaleUpdate: (details) {
+                setState(() {
+                  // Zoom (pinch)
+                  if (details.scale != 1.0) {
+                    _scale = (_scale * details.scale).clamp(0.7, 2.0);
+                  }
 
-              // Pan and rotate
-              if (_lastDragPosition != null) {
-                double dx = details.focalPoint.dx - _lastDragPosition!.dx;
-                double dy = details.focalPoint.dy - _lastDragPosition!.dy;
+                  // Pan and rotate
+                  if (_lastDragPosition != null) {
+                    double dx = details.focalPoint.dx - _lastDragPosition!.dx;
+                    double dy = details.focalPoint.dy - _lastDragPosition!.dy;
 
-                // Right mouse button or two-finger: pan
-                // Left mouse button or one-finger: rotate
-                if (details.pointerCount == 2) {
-                  // Pan
-                  offsetX += dx;
-                  offsetY += dy;
-                } else {
-                  // Rotate (LIMITED range)
-                  rotationY += dx * 0.005;
-                  rotationX += dy * 0.005;
+                    // Right mouse button or two-finger: pan
+                    // Left mouse button or one-finger: rotate
+                    if (details.pointerCount == 2) {
+                      // Pan
+                      offsetX += dx;
+                      offsetY += dy;
+                    } else {
+                      // Rotate (LIMITED range)
+                      rotationY += dx * 0.005;
+                      rotationX += dy * 0.005;
 
-                  // TIGHT clamp - just subtle movement
-                  rotationX = rotationX.clamp(0.0, 0.5);
-                  rotationY = rotationY.clamp(0.1, 0.6);
-                }
-              }
-              _lastDragPosition = details.focalPoint;
-            });
-          },
-          onScaleEnd: (details) {
-            _lastDragPosition = null;
-          },
-          // Tap to open decoration menu
-          onTapUp: (details) {
-            _handleTap(details.localPosition);
-          },
-          child: Center(
-            child: Transform.translate(
-              offset: Offset(offsetX, offsetY),
-              child: Transform.scale(
-                scale: _scale,
-                child: Container(
-                  width: 400,
-                  height: 500,
-                  child: CustomPaint(
-                    size: Size(400, 500),
-                    painter: ThickWallCubePainter(
-                      backgroundColor: backgroundColor,
-                      lightLevel: widget.decorations.lightingLevel,
-                      decorations: widget.decorations,
-                      rotationX: rotationX,
-                      rotationY: rotationY,
+                      // TIGHT clamp - just subtle movement
+                      rotationX = rotationX.clamp(0.0, 0.5);
+                      rotationY = rotationY.clamp(0.1, 0.6);
+                    }
+                  }
+                  _lastDragPosition = details.focalPoint;
+                });
+              },
+              onScaleEnd: (details) {
+                _lastDragPosition = null;
+              },
+              // Tap to open decoration menu
+              onTapUp: (details) {
+                _handleTap(details.localPosition);
+              },
+              child: Center(
+                child: Transform.translate(
+                  offset: Offset(offsetX, offsetY),
+                  child: Transform.scale(
+                    scale: _scale,
+                    child: Container(
+                      width: 400,
+                      height: 500,
+                      child: CustomPaint(
+                        size: Size(400, 500),
+                        painter: ThickWallCubePainter(
+                          backgroundColor: backgroundColor,
+                          lightLevel: widget.decorations.lightingLevel,
+                          decorations: widget.decorations,
+                          rotationX: rotationX,
+                          rotationY: rotationY,
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
+          ), // ← End of Listener
+
+          // NEW FURNITURE BUTTONS - ADD THESE:
+
+          // Bed spot (top-left)
+          Positioned(
+            top: 80,
+            left: 30,
+            child: _buildFurnitureSpot('bed_spot', FurnitureType.bed),
           ),
-        ),
+
+          // Desk spot (top-right)
+          Positioned(
+            top: 80,
+            right: 30,
+            child: _buildFurnitureSpot('desk_spot', FurnitureType.desk),
+          ),
+
+          // Kitchen spot (bottom-left)
+          Positioned(
+            bottom: 120,
+            left: 30,
+            child: _buildFurnitureSpot('kitchen_spot', FurnitureType.kitchen),
+          ),
+
+          // Decoration spot (bottom-right)
+          Positioned(
+            bottom: 120,
+            right: 30,
+            child: _buildFurnitureSpot('decoration_spot', FurnitureType.decoration),
+          ),
+        ], // ← End of Stack children
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => ShopScreen()), // ← No parameters!
+          ).then((_) => setState(() {}));
+        },
+        backgroundColor: Color(0xFF4CAF50),
+        icon: Icon(Icons.store, color: Colors.white),
+        label: Text('Shop', style: TextStyle(color: Colors.white)),
       ),
     );
   }
@@ -282,8 +383,6 @@ class ThickWallCubePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final centerX = size.width / 2;
     final centerY = size.height / 2;
-
-    // Cube size
     final cubeSize = 150.0;
 
     // Define corners
@@ -295,9 +394,10 @@ class ThickWallCubePainter extends CustomPainter {
       [-1.0, -1.0, 1.0],  // 4: Front bottom left
       [1.0, -1.0, 1.0],   // 5: Front bottom right
       [1.0, 1.0, 1.0],    // 6: Front top right
+      [-1.0, 1.0, 1.0],   // 7: Front top left
     ];
 
-    // Rotate and project corners
+    // Rotate and project
     List<Offset> p = corners.map((corner) {
       return _rotateAndProject(
         corner[0] * cubeSize,
@@ -310,10 +410,176 @@ class ThickWallCubePainter extends CustomPainter {
       );
     }).toList();
 
-    // Draw simple 2 walls + floor
-    _drawSimpleRoom(canvas, p);
+    // Draw room with thickness!
+    _drawEnhancedRoom(canvas, p, size);
+
+    // Draw furniture
+    _drawBaseFurniture(canvas, centerX, centerY);
     _drawDecorations(canvas, p, centerX, centerY);
-    _drawPlacementSpots(canvas, centerX, centerY);
+  }
+
+  void _drawEnhancedRoom(Canvas canvas, List<Offset> p, Size size) {
+    // 1. FLOOR with visible edge
+    _drawFloorWithThickness(canvas, p);
+
+    // 2. WALLS with visible edges
+    _drawWallsWithThickness(canvas, p);
+
+    // 3. CORNER LINES (makes structure clear)
+    _drawStructureLines(canvas, p);
+  }
+
+  void _drawFloorWithThickness(Canvas canvas, List<Offset> p) {
+    // Main floor
+    final floorPath = Path()
+      ..moveTo(p[0].dx, p[0].dy)
+      ..lineTo(p[1].dx, p[1].dy)
+      ..lineTo(p[5].dx, p[5].dy)
+      ..lineTo(p[4].dx, p[4].dy)
+      ..close();
+
+    canvas.drawPath(floorPath, Paint()..color = Color(0xFF5a4a3a));
+
+    // Floor EDGE (thickness strip at front)
+    final floorEdge = Path()
+      ..moveTo(p[4].dx, p[4].dy)
+      ..lineTo(p[5].dx, p[5].dy)
+      ..lineTo(p[5].dx, p[5].dy + 16) // ← Thickness offset
+      ..lineTo(p[4].dx, p[4].dy + 16)
+      ..close();
+
+    canvas.drawPath(floorEdge, Paint()..color = Color(0xFF4a3a2a)); // Darker edge
+
+    // Grid on floor
+    final gridPaint = Paint()
+      ..color = Color(0xFF3d2f22)
+      ..strokeWidth = 1.5;
+
+    for (int i = 1; i < 6; i++) {
+      double t = i / 6;
+      Offset left = Offset.lerp(p[4], p[0], t)!;
+      Offset right = Offset.lerp(p[5], p[1], t)!;
+      canvas.drawLine(left, right, gridPaint);
+
+      Offset front = Offset.lerp(p[4], p[5], t)!;
+      Offset back = Offset.lerp(p[0], p[1], t)!;
+      canvas.drawLine(front, back, gridPaint);
+    }
+
+    // Floor outline
+    canvas.drawPath(
+      floorPath,
+      Paint()
+        ..color = Color(0xFF2a2622)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3,
+    );
+  }
+
+  void _drawWallsWithThickness(Canvas canvas, List<Offset> p) {
+    // BACK WALL - Main face
+    final backWall = Path()
+      ..moveTo(p[0].dx, p[0].dy)
+      ..lineTo(p[1].dx, p[1].dy)
+      ..lineTo(p[2].dx, p[2].dy)
+      ..lineTo(p[3].dx, p[3].dy)
+      ..close();
+
+    canvas.drawPath(backWall, Paint()..color = Color(0xFF4a4440));
+
+    // BACK WALL - Left edge (thickness)
+    final backLeftEdge = Path()
+      ..moveTo(p[0].dx, p[0].dy)
+      ..lineTo(p[0].dx - 10, p[0].dy + 6) // ← Thickness offset
+      ..lineTo(p[3].dx - 10, p[3].dy + 6)
+      ..lineTo(p[3].dx, p[3].dy)
+      ..close();
+
+    canvas.drawPath(backLeftEdge, Paint()..color = Color(0xFF3a3430)); // Darker
+
+    // BACK WALL - Top edge (thickness)
+    final backTopEdge = Path()
+      ..moveTo(p[3].dx, p[3].dy)
+      ..lineTo(p[2].dx, p[2].dy)
+      ..lineTo(p[2].dx, p[2].dy - 10) // ← Thickness offset
+      ..lineTo(p[3].dx, p[3].dy - 10)
+      ..close();
+
+    canvas.drawPath(backTopEdge, Paint()..color = Color(0xFF3a3430));
+
+    // RIGHT WALL - Main face
+    final rightWall = Path()
+      ..moveTo(p[1].dx, p[1].dy)
+      ..lineTo(p[5].dx, p[5].dy)
+      ..lineTo(p[6].dx, p[6].dy)
+      ..lineTo(p[2].dx, p[2].dy)
+      ..close();
+
+    canvas.drawPath(rightWall, Paint()..color = Color(0xFF3d3935));
+
+    // RIGHT WALL - Right edge (thickness)
+    final rightEdge = Path()
+      ..moveTo(p[5].dx, p[5].dy)
+      ..lineTo(p[5].dx + 10, p[5].dy + 6) // ← Thickness offset
+      ..lineTo(p[6].dx + 10, p[6].dy + 6)
+      ..lineTo(p[6].dx, p[6].dy)
+      ..close();
+
+    canvas.drawPath(rightEdge, Paint()..color = Color(0xFF2d2925)); // Darker
+
+    // RIGHT WALL - Top edge (thickness)
+    final rightTopEdge = Path()
+      ..moveTo(p[2].dx, p[2].dy)
+      ..lineTo(p[6].dx, p[6].dy)
+      ..lineTo(p[6].dx, p[6].dy - 10) // ← Thickness offset
+      ..lineTo(p[2].dx, p[2].dy - 10)
+      ..close();
+
+    canvas.drawPath(rightTopEdge, Paint()..color = Color(0xFF2d2925));
+  }
+
+  void _drawStructureLines(Canvas canvas, List<Offset> p) {
+    final linePaint = Paint()
+      ..color = Color(0xFF2a2622)
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+
+    // Main corner edges (makes structure super clear)
+    canvas.drawLine(p[0], p[3], linePaint); // Back left vertical
+    canvas.drawLine(p[1], p[2], linePaint); // Back right vertical
+    canvas.drawLine(p[5], p[6], linePaint); // Front right vertical
+    canvas.drawLine(p[0], p[1], linePaint); // Back bottom horizontal
+    canvas.drawLine(p[3], p[2], linePaint); // Back top horizontal
+    canvas.drawLine(p[4], p[5], linePaint); // Front bottom horizontal
+  }
+
+  void _drawEdgeHighlights(Canvas canvas, List<Offset> p) {
+    final highlightPaint = Paint()
+      ..color = Color(0xFF8D7A6B).withOpacity(0.6)
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+
+    // Top edges (lighter = closer to "light source")
+    canvas.drawLine(p[3], p[2], highlightPaint);
+    canvas.drawLine(p[2], p[6], highlightPaint);
+
+    // Vertical edges
+    canvas.drawLine(p[3], p[0], highlightPaint..strokeWidth = 1.5);
+    canvas.drawLine(p[2], p[1], highlightPaint..strokeWidth = 1.5);
+  }
+
+  void _drawCornerShadows(Canvas canvas, List<Offset> p) {
+    final shadowPaint = Paint()
+      ..color = Colors.black.withOpacity(0.3)
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, 8);
+
+    // Back corners (darker = more depth)
+    canvas.drawCircle(p[0], 15, shadowPaint);
+    canvas.drawCircle(p[1], 15, shadowPaint);
+
+    // Floor front corners (lighter)
+    canvas.drawCircle(p[4], 10, shadowPaint..color = Colors.black.withOpacity(0.2));
+    canvas.drawCircle(p[5], 10, shadowPaint);
   }
 
   Offset _rotateAndProject(
@@ -339,180 +605,137 @@ class ThickWallCubePainter extends CustomPainter {
 
     return Offset(cx + x2, cy - y1);
   }
+  void _drawBaseFurniture(Canvas canvas, double cx, double cy) {
+    // 1. BED FRAME OUTLINE (front-right floor)
+    _drawBedFrame(canvas, cx, cy);
 
-  void _drawSimpleRoom(Canvas canvas, List<Offset> p) {
-    // Floor - warmer brown
-    _drawFace(
-      canvas,
-      [p[0], p[1], p[5], p[4]],
-      Color(0xFF5a4a3a), // Warmer brown floor
-      "Floor",
-    );
+    // 2. TABLE OUTLINE (center floor)
+    _drawTableOutline(canvas, cx, cy);
 
-    // Back wall - better cave stone color
-    _drawFace(
-      canvas,
-      [p[0], p[1], p[2], p[3]],
-      Color(0xFF4a4440), // Better gray-brown stone
-      "Back",
-    );
+    // 3. FIRE PIT (front-left floor)
+    _drawFirePit(canvas, cx, cy);
 
-    // Right wall - slightly darker
-    _drawFace(
-      canvas,
-      [p[1], p[5], p[6], p[2]],
-      Color(0xFF3d3935), // Darker stone
-      "Right",
-    );
+    // 4. FLOOR RUG (center)
+    _drawFloorRug(canvas, cx, cy);
+
+    // 5. WALL TORCH HOLDERS (back wall)
+    _drawTorchHolders(canvas, cx, cy);
   }
 
-  void _drawFace(Canvas canvas, List<Offset> points, Color color, String label) {
-    final path = Path()
-      ..moveTo(points[0].dx, points[0].dy)
-      ..lineTo(points[1].dx, points[1].dy)
-      ..lineTo(points[2].dx, points[2].dy)
-      ..lineTo(points[3].dx, points[3].dy)
+  void _drawBedFrame(Canvas canvas, double cx, double cy) {
+    // Simple rectangular bed frame outline
+    Offset corner1 = _rotateAndProject(40, -150, 60, rotationX, rotationY, cx, cy);
+    Offset corner2 = _rotateAndProject(80, -150, 60, rotationX, rotationY, cx, cy);
+    Offset corner3 = _rotateAndProject(80, -150, 100, rotationX, rotationY, cx, cy);
+    Offset corner4 = _rotateAndProject(40, -150, 100, rotationX, rotationY, cx, cy);
+
+    final bedPaint = Paint()
+      ..color = Color(0xFF8D6E63).withOpacity(0.6)
+      ..strokeWidth = 3
+      ..style = PaintingStyle.stroke;
+
+    Path bedPath = Path()
+      ..moveTo(corner1.dx, corner1.dy)
+      ..lineTo(corner2.dx, corner2.dy)
+      ..lineTo(corner3.dx, corner3.dy)
+      ..lineTo(corner4.dx, corner4.dy)
       ..close();
 
-    // Fill
-    canvas.drawPath(path, Paint()..color = color);
+    canvas.drawPath(bedPath, bedPaint);
+  }
+
+  void _drawTableOutline(Canvas canvas, double cx, double cy) {
+    // Simple square table outline
+    Offset corner1 = _rotateAndProject(-30, -150, 30, rotationX, rotationY, cx, cy);
+    Offset corner2 = _rotateAndProject(-10, -150, 30, rotationX, rotationY, cx, cy);
+    Offset corner3 = _rotateAndProject(-10, -150, 50, rotationX, rotationY, cx, cy);
+    Offset corner4 = _rotateAndProject(-30, -150, 50, rotationX, rotationY, cx, cy);
+
+    final tablePaint = Paint()
+      ..color = Color(0xFF795548).withOpacity(0.5)
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+
+    Path tablePath = Path()
+      ..moveTo(corner1.dx, corner1.dy)
+      ..lineTo(corner2.dx, corner2.dy)
+      ..lineTo(corner3.dx, corner3.dy)
+      ..lineTo(corner4.dx, corner4.dy)
+      ..close();
+
+    canvas.drawPath(tablePath, tablePaint);
+  }
+
+  void _drawFirePit(Canvas canvas, double cx, double cy) {
+    // Stone circle for fire
+    Offset center = _rotateAndProject(-80, -150, 80, rotationX, rotationY, cx, cy);
+
+    final stonePaint = Paint()
+      ..color = Color(0xFF616161).withOpacity(0.7)
+      ..strokeWidth = 4
+      ..style = PaintingStyle.stroke;
+
+    canvas.drawCircle(center, 20, stonePaint);
+
+    // Inner circle
+    canvas.drawCircle(center, 15, Paint()..color = Color(0xFF424242).withOpacity(0.5));
+  }
+
+  void _drawFloorRug(Canvas canvas, double cx, double cy) {
+    // Simple rectangular rug pattern
+    Offset corner1 = _rotateAndProject(-40, -150, 20, rotationX, rotationY, cx, cy);
+    Offset corner2 = _rotateAndProject(30, -150, 20, rotationX, rotationY, cx, cy);
+    Offset corner3 = _rotateAndProject(30, -150, 80, rotationX, rotationY, cx, cy);
+    Offset corner4 = _rotateAndProject(-40, -150, 80, rotationX, rotationY, cx, cy);
+
+    final rugPaint = Paint()
+      ..color = Color(0xFF6D4C41).withOpacity(0.4);
+
+    Path rugPath = Path()
+      ..moveTo(corner1.dx, corner1.dy)
+      ..lineTo(corner2.dx, corner2.dy)
+      ..lineTo(corner3.dx, corner3.dy)
+      ..lineTo(corner4.dx, corner4.dy)
+      ..close();
+
+    canvas.drawPath(rugPath, rugPaint);
 
     // Border
     canvas.drawPath(
-      path,
+      rugPath,
       Paint()
-        ..color = Color(0xFF2a2622)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5,
+        ..color = Color(0xFF5D4037)
+        ..strokeWidth = 2
+        ..style = PaintingStyle.stroke,
     );
-
-    // Add texture
-    if (label == "Floor") {
-      _drawFloorGrid(canvas, points);
-    } else {
-      _drawStoneTexture(canvas, points);
-    }
   }
 
-  void _drawStoneTexture(Canvas canvas, List<Offset> points) {
-    final texturePaint = Paint()
-      ..color = Colors.black.withOpacity(0.2);
+  void _drawTorchHolders(Canvas canvas, double cx, double cy) {
+    // Left wall torch holder
+    Offset holder1 = _rotateAndProject(-80, 0, -150, rotationX, rotationY, cx, cy);
+    _drawTorchBracket(canvas, holder1);
 
-    // Stone spots
-    for (int i = 0; i < 8; i++) {
-      double t1 = (i * 0.17 + 0.1);
-      double t2 = ((i * 0.23 + 0.2) % 1.0);
-
-      Offset spot = Offset(
-        points[0].dx * (1 - t1) + points[2].dx * t1,
-        points[0].dy * (1 - t2) + points[2].dy * t2,
-      );
-
-      canvas.drawCircle(spot, 6, texturePaint);
-    }
+    // Right wall torch holder
+    Offset holder2 = _rotateAndProject(80, 0, -150, rotationX, rotationY, cx, cy);
+    _drawTorchBracket(canvas, holder2);
   }
 
-  void _drawFloorGrid(Canvas canvas, List<Offset> points) {
-    final gridPaint = Paint()
-      ..color = Color(0xFF3d2f22).withOpacity(0.5)
-      ..strokeWidth = 1.5;
-
-    // Grid lines
-    for (int i = 1; i < 4; i++) {
-      double t = i / 4;
-
-      Offset start = Offset.lerp(points[0], points[1], t)!;
-      Offset end = Offset.lerp(points[3], points[2], t)!;
-      canvas.drawLine(start, end, gridPaint);
-
-      start = Offset.lerp(points[0], points[3], t)!;
-      end = Offset.lerp(points[1], points[2], t)!;
-      canvas.drawLine(start, end, gridPaint);
-    }
-  }
-
-  void _drawPlacementSpots(Canvas canvas, double cx, double cy) {
-    // Define 3D positions for each placement spot
-    // Then project them just like the walls/floor
-
-    // Bed spot - on floor, front right
-    if (decorations.getEquippedItem('bed_main') == null) {
-      Offset bedPos = _rotateAndProject(60, -150, 80, rotationX, rotationY, cx, cy);
-      _drawPlusSign(canvas, bedPos.dx, bedPos.dy, "Bed");
-    }
-
-    // Table spot - on floor, center
-    if (decorations.getEquippedItem('decoration_3') == null) {
-      Offset tablePos = _rotateAndProject(-20, -150, 40, rotationX, rotationY, cx, cy);
-      _drawPlusSign(canvas, tablePos.dx, tablePos.dy, "Table");
-    }
-
-    // Light spot - on back wall, top center
-    if (decorations.getEquippedItem('light_main') == null) {
-      Offset lightPos = _rotateAndProject(0, 80, -150, rotationX, rotationY, cx, cy);
-      _drawPlusSign(canvas, lightPos.dx, lightPos.dy, "Light");
-    }
-
-    // Wall decoration 1 - on back wall, left side
-    if (decorations.getEquippedItem('decoration_1') == null) {
-      Offset deco1Pos = _rotateAndProject(-80, 0, -150, rotationX, rotationY, cx, cy);
-      _drawPlusSign(canvas, deco1Pos.dx, deco1Pos.dy, "Decor");
-    }
-
-    // Wall decoration 2 - on right wall
-    if (decorations.getEquippedItem('decoration_2') == null) {
-      Offset deco2Pos = _rotateAndProject(150, 0, -50, rotationX, rotationY, cx, cy);
-      _drawPlusSign(canvas, deco2Pos.dx, deco2Pos.dy, "Decor");
-    }
-  }
-
-  void _drawPlusSign(Canvas canvas, double x, double y, String label) {
-    // Circle background
-    canvas.drawCircle(
-      Offset(x, y),
-      25,
-      Paint()
-        ..color = Color(0xFF00d4ff).withOpacity(0.2)
-        ..style = PaintingStyle.fill,
-    );
-
-    // Circle border
-    canvas.drawCircle(
-      Offset(x, y),
-      25,
-      Paint()
-        ..color = Color(0xFF00d4ff)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-    // Plus sign
-    final plusPaint = Paint()
-      ..color = Color(0xFF00d4ff)
+  void _drawTorchBracket(Canvas canvas, Offset pos) {
+    final bracketPaint = Paint()
+      ..color = Color(0xFF424242)
       ..strokeWidth = 3
       ..strokeCap = StrokeCap.round;
 
-    // Horizontal line
-    canvas.drawLine(Offset(x - 10, y), Offset(x + 10, y), plusPaint);
-    // Vertical line
-    canvas.drawLine(Offset(x, y - 10), Offset(x, y + 10), plusPaint);
-
-    // Label text
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: label,
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
+    // Simple L-shape bracket
+    canvas.drawLine(
+      Offset(pos.dx, pos.dy - 10),
+      Offset(pos.dx, pos.dy + 10),
+      bracketPaint,
     );
-    textPainter.layout();
-    textPainter.paint(
-      canvas,
-      Offset(x - textPainter.width / 2, y + 30),
+    canvas.drawLine(
+      Offset(pos.dx, pos.dy + 10),
+      Offset(pos.dx + 8, pos.dy + 10),
+      bracketPaint,
     );
   }
 
@@ -650,6 +873,8 @@ class ItemPickerSheet extends StatelessWidget {
       ),
     );
   }
+  // Method to open furniture dialog
+
 
   Widget _buildItemGrid(List<DecorationItem> items, bool isOwned, BuildContext context) {
     return GridView.builder(

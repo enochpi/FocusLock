@@ -45,7 +45,7 @@ class _MainGameScreenState extends State<MainGameScreen> {
   }
 
   List<Widget> get _screens => [
-    ShopScreen(character: character, farm: farm),
+    ShopScreen(),
     CaveSceneScreen(
       character: character,
       farm: farm,
