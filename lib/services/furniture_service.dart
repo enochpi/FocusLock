@@ -1,9 +1,10 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
-enum FurnitureType {
+enum FurnitureCategory {
   bed,
   desk,
+  chair,
   kitchen,
   decoration,
 }
@@ -15,8 +16,7 @@ class Furniture {
   final String description;
   final int cost;
   final double boost;
-  final FurnitureType type;
-  final int requiredHouseTier; // 0 = cave, 1 = cabin, etc.
+  final FurnitureCategory category;
 
   Furniture({
     required this.id,
@@ -25,35 +25,8 @@ class Furniture {
     required this.description,
     required this.cost,
     required this.boost,
-    required this.type,
-    this.requiredHouseTier = 0,
+    required this.category,
   });
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-    'emoji': emoji,
-    'description': description,
-    'cost': cost,
-    'boost': boost,
-    'type': type.toString(),
-    'requiredHouseTier': requiredHouseTier,
-  };
-}
-
-class FurnitureSpot {
-  final String id;
-  final FurnitureType type;
-  String? placedFurnitureId; // null = empty spot
-
-  FurnitureSpot({
-    required this.id,
-    required this.type,
-    this.placedFurnitureId,
-  });
-
-  bool get isEmpty => placedFurnitureId == null;
-  bool get hasItem => placedFurnitureId != null;
 }
 
 class FurnitureService {
@@ -61,158 +34,192 @@ class FurnitureService {
   factory FurnitureService() => _instance;
   FurnitureService._internal();
 
-  // All available furniture in the game
+  // Placed furniture (spot_id -> furniture_id)
+  Map<String, String?> placedFurniture = {
+    // BEDS (only 1)
+    'bed_spot': null,
+
+    // DESKS (multiple spots)
+    'desk_spot': null,
+
+    // CHAIRS (multiple spots)
+    'chair_spot': null,
+
+    // KITCHEN (only 1)
+    'kitchen_spot': null,
+
+    // DECORATIONS (multiple - can stack)
+    'decoration_spot_1': null,
+    'decoration_spot_2': null,
+    'decoration_spot_3': null,
+    'decoration_spot_4': null,
+    'decoration_spot_5': null,
+    'decoration_spot_6': null,
+  };
+
+  Set<String> ownedFurniture = {};
+
+  // All furniture
   final List<Furniture> allFurniture = [
-    // ========== BEDS (Better sleep = boost) ==========
+    // ========== BEDS (Only 1 at a time) ==========
     Furniture(
       id: 'hay_bed',
       name: 'Hay Bed',
       emoji: '🛏️',
-      description: '+3% boost',
+      description: '+10% peas',
       cost: 20,
-      boost: 0.03,
-      type: FurnitureType.bed,
-      requiredHouseTier: 0,
+      boost: 0.10,
+      category: FurnitureCategory.bed,
     ),
     Furniture(
       id: 'simple_cot',
       name: 'Simple Cot',
       emoji: '🛏️',
-      description: '+5% boost',
+      description: '+20% peas',
       cost: 50,
-      boost: 0.05,
-      type: FurnitureType.bed,
-      requiredHouseTier: 0,
+      boost: 0.25,
+      category: FurnitureCategory.bed,
     ),
     Furniture(
       id: 'wood_bed',
       name: 'Wood Frame Bed',
       emoji: '🛏️',
-      description: '+8% boost',
+      description: '+35% peas',
       cost: 100,
-      boost: 0.08,
-      type: FurnitureType.bed,
-      requiredHouseTier: 1, // Requires cabin
+      boost: 0.35,
+      category: FurnitureCategory.bed,
     ),
 
-    // ========== DESKS (Focus space = boost) ==========
+    // ========== DESKS ==========
+    Furniture(
+      id: 'simple_desk',
+      name: 'Simple Desk',
+      emoji: '📚', // ← CHANGED from 🪑
+      description: '+8% peas',
+      cost: 30,
+      boost: 0.08,
+      category: FurnitureCategory.desk,
+    ),
+    Furniture(
+      id: 'oak_desk',
+      name: 'Oak Desk',
+      emoji: '📚', // ← CHANGED from 🪑
+      description: '+15% peas',
+      cost: 80,
+      boost: 0.15,
+      category: FurnitureCategory.desk,
+    ),
+    Furniture(
+      id: 'executive_desk',
+      name: 'Executive Desk',
+      emoji: '📚', // ← CHANGED from 🪑
+      description: '+40% peas',
+      cost: 150,
+      boost: 0.40,
+      category: FurnitureCategory.desk,
+    ),
+
+    // ========== CHAIRS ==========
     Furniture(
       id: 'old_stool',
       name: 'Old Stool',
       emoji: '🪑',
-      description: '+2% boost',
+      description: '+4 peas',
       cost: 15,
-      boost: 0.02,
-      type: FurnitureType.desk,
-      requiredHouseTier: 0,
+      boost: 0.04,
+      category: FurnitureCategory.chair,
     ),
     Furniture(
-      id: 'wooden_bench',
-      name: 'Wooden Bench',
+      id: 'wooden_chair',
+      name: 'Wooden Chair',
       emoji: '🪑',
-      description: '+3% boost',
+      description: '+15% peas',
       cost: 40,
-      boost: 0.03,
-      type: FurnitureType.desk,
-      requiredHouseTier: 0,
+      boost: 0.15,
+      category: FurnitureCategory.chair,
     ),
     Furniture(
-      id: 'simple_desk',
-      name: 'Simple Desk',
+      id: 'comfy_chair',
+      name: 'Comfy Chair',
       emoji: '🪑',
-      description: '+5% boost',
-      cost: 80,
-      boost: 0.05,
-      type: FurnitureType.desk,
-      requiredHouseTier: 1, // Requires cabin
+      description: '+25% peas',
+      cost: 90,
+      boost: 0.25,
+      category: FurnitureCategory.chair,
     ),
 
-    // ========== KITCHEN (Energy = boost) ==========
+    // ========== KITCHEN ==========
     Furniture(
       id: 'campfire',
       name: 'Campfire',
       emoji: '🔥',
-      description: '+2% boost',
+      description: '+15% peas',
       cost: 25,
-      boost: 0.02,
-      type: FurnitureType.kitchen,
-      requiredHouseTier: 0,
+      boost: 0.15,
+      category: FurnitureCategory.kitchen,
     ),
     Furniture(
       id: 'simple_stove',
       name: 'Simple Stove',
       emoji: '🍳',
-      description: '+4% boost',
+      description: '+30% peas',
       cost: 60,
-      boost: 0.04,
-      type: FurnitureType.kitchen,
-      requiredHouseTier: 0,
+      boost: 0.30,
+      category: FurnitureCategory.kitchen,
     ),
     Furniture(
       id: 'wood_stove',
       name: 'Wood Stove',
       emoji: '🍳',
-      description: '+6% boost',
+      description: '+6% peas',
       cost: 120,
-      boost: 0.06,
-      type: FurnitureType.kitchen,
-      requiredHouseTier: 1, // Requires cabin
+      boost: 0.45,
+      category: FurnitureCategory.kitchen,
     ),
 
-    // ========== DECORATIONS (Comfort = boost) ==========
+    // ========== DECORATIONS (Can have multiple) ==========
     Furniture(
-      id: 'small_plant',
-      name: 'Small Plant',
-      emoji: '🪴',
-      description: '+1% boost',
-      cost: 10,
-      boost: 0.01,
-      type: FurnitureType.decoration,
-      requiredHouseTier: 0,
-    ),
-    Furniture(
-      id: 'torch',
-      name: 'Wall Torch',
-      emoji: '🔦',
-      description: '+2% boost',
+      id: 'hanging_plant',
+      name: 'Hanging Plant',
+      emoji: '🌿',
+      description: '+9% peas',
       cost: 20,
-      boost: 0.02,
-      type: FurnitureType.decoration,
-      requiredHouseTier: 0,
+      boost: 0.9,
+      category: FurnitureCategory.decoration,
     ),
     Furniture(
-      id: 'painting',
+      id: 'wall_torch',
+      name: 'Wall Torch',
+      emoji: '🔥',
+      description: '+14% peas',
+      cost: 30,
+      boost: 0.14,
+      category: FurnitureCategory.decoration,
+    ),
+    Furniture(
+      id: 'simple_painting',
       name: 'Simple Painting',
       emoji: '🖼️',
-      description: '+3% boost',
-      cost: 45,
-      boost: 0.03,
-      type: FurnitureType.decoration,
-      requiredHouseTier: 0,
+      description: '+20% peas',
+      cost: 50,
+      boost: 0.20,
+      category: FurnitureCategory.decoration,
+    ),
+    Furniture(
+      id: 'wall_crystal',
+      name: 'Wall Crystal',
+      emoji: '💎',
+      description: '+35% peas',
+      cost: 120,
+      boost: 0.35,
+      category: FurnitureCategory.decoration,
     ),
   ];
 
-  // Furniture spots in the cave
-  final List<FurnitureSpot> spots = [
-    FurnitureSpot(id: 'bed_spot', type: FurnitureType.bed),
-    FurnitureSpot(id: 'desk_spot', type: FurnitureType.desk),
-    FurnitureSpot(id: 'kitchen_spot', type: FurnitureType.kitchen),
-    FurnitureSpot(id: 'decoration_spot', type: FurnitureType.decoration),
-  ];
-
-  /// Initialize - Load saved furniture placements
   Future<void> init() async {
-    await loadPlacements();
+    await loadFurniture();
   }
 
-  /// Get all furniture of a specific type
-  List<Furniture> getFurnitureByType(FurnitureType type, {int houseTier = 0}) {
-    return allFurniture
-        .where((f) => f.type == type && f.requiredHouseTier <= houseTier)
-        .toList();
-  }
-
-  /// Get furniture by ID
   Furniture? getFurnitureById(String id) {
     try {
       return allFurniture.firstWhere((f) => f.id == id);
@@ -221,74 +228,75 @@ class FurnitureService {
     }
   }
 
-  /// Get spot by ID
-  FurnitureSpot? getSpotById(String id) {
-    try {
-      return spots.firstWhere((s) => s.id == id);
-    } catch (e) {
-      return null;
-    }
+  Furniture? getPlacedFurniture(String spotId) {
+    String? furnitureId = placedFurniture[spotId];
+    if (furnitureId == null) return null;
+    return getFurnitureById(furnitureId);
   }
 
-  /// Get spot by type
-  FurnitureSpot? getSpotByType(FurnitureType type) {
-    try {
-      return spots.firstWhere((s) => s.type == type);
-    } catch (e) {
-      return null;
-    }
+  List<Furniture> getFurnitureByCategory(FurnitureCategory category) {
+    return allFurniture.where((f) => f.category == category).toList();
   }
 
-  /// Place furniture in a spot
-  Future<bool> placeFurniture(String spotId, String furnitureId, int currentCoins) async {
-    FurnitureSpot? spot = getSpotById(spotId);
+  bool isSpotEmpty(String spotId) {
+    return placedFurniture[spotId] == null;
+  }
+
+  // Place furniture (different logic for beds vs others)
+  Future<bool> placeFurnitureInSpot(String spotId, String furnitureId, int currentCoins) async {
+    if (!placedFurniture.containsKey(spotId)) return false;
+
     Furniture? furniture = getFurnitureById(furnitureId);
-
-    if (spot == null || furniture == null) return false;
-    if (spot.type != furniture.type) return false; // Wrong type for this spot
-    if (currentCoins < furniture.cost) return false; // Can't afford
-
-    spot.placedFurnitureId = furnitureId;
-    await savePlacements();
-    return true;
-  }
-
-  /// Remove furniture from a spot
-  Future<void> removeFurniture(String spotId) async {
-    FurnitureSpot? spot = getSpotById(spotId);
-    if (spot != null) {
-      spot.placedFurnitureId = null;
-      await savePlacements();
-    }
-  }
-  /// Upgrade furniture (remove old, place new)
-  /// Upgrade furniture (remove old, place new)
-  Future<bool> upgradeFurniture(String spotId, String newFurnitureId, int currentCoins) async {
-    FurnitureSpot? spot = getSpotById(spotId);
-    Furniture? furniture = getFurnitureById(newFurnitureId);
-
-    if (spot == null || furniture == null) return false;
+    if (furniture == null) return false;
     if (currentCoins < furniture.cost) return false;
 
-    // Place new furniture (replaces old automatically)
-    spot.placedFurnitureId = newFurnitureId;
-    await savePlacements();
+    // For beds: replace any existing bed
+    if (furniture.category == FurnitureCategory.bed) {
+      placedFurniture['bed_spot'] = furnitureId;
+    } else {
+      placedFurniture[spotId] = furnitureId;
+    }
+
+    await saveFurniture();
     return true;
   }
 
-  /// Get furniture placed in a spot
-  Furniture? getPlacedFurniture(String spotId) {
-    FurnitureSpot? spot = getSpotById(spotId);
-    if (spot == null || spot.isEmpty) return null;
-    return getFurnitureById(spot.placedFurnitureId!);
+  // Find first empty spot for a category
+  String? findEmptySpot(FurnitureCategory category) {
+    switch (category) {
+      case FurnitureCategory.bed:
+        return placedFurniture['bed_spot'] == null ? 'bed_spot' : null;
+
+      case FurnitureCategory.desk:
+        return placedFurniture['desk_spot'] == null ? 'desk_spot' : null;  // ← CHECK THIS!
+
+      case FurnitureCategory.chair:
+        return placedFurniture['chair_spot'] == null ? 'chair_spot' : null;
+
+      case FurnitureCategory.kitchen:
+        return placedFurniture['kitchen_spot'] == null ? 'kitchen_spot' : null;
+
+      case FurnitureCategory.decoration:
+        for (int i = 1; i <= 6; i++) {
+          String spot = 'decoration_spot_$i';
+          if (placedFurniture[spot] == null) return spot;
+        }
+        return null;
+    }
   }
 
-  /// Calculate total boost from all placed furniture
+  Future<void> removeFurniture(String spotId) async {
+    if (placedFurniture.containsKey(spotId)) {
+      placedFurniture[spotId] = null;
+      await saveFurniture();
+    }
+  }
+
   double getTotalBoost() {
     double total = 0.0;
-    for (var spot in spots) {
-      if (spot.hasItem) {
-        Furniture? furniture = getFurnitureById(spot.placedFurnitureId!);
+    for (String? furnitureId in placedFurniture.values) {
+      if (furnitureId != null) {
+        Furniture? furniture = getFurnitureById(furnitureId);
         if (furniture != null) {
           total += furniture.boost;
         }
@@ -297,91 +305,56 @@ class FurnitureService {
     return total;
   }
 
-  /// Get boost percentage string
   String getBoostString() {
-    double boost = getTotalBoost() * 100;
-    if (boost == 0) return "No bonus yet";
-    return "+${boost.toStringAsFixed(0)}%";
+    double boost = getTotalBoost();
+    if (boost == 0) return "No furniture bonus";
+    return "+${(boost * 100).toStringAsFixed(0)}%";
   }
 
-  /// Get multiplier for calculations (1.0 + boost)
-  double getMultiplier() {
-    return 1.0 + getTotalBoost();
-  }
-
-  /// Check if can afford furniture
-  bool canAfford(Furniture furniture, int currentCoins) {
-    return currentCoins >= furniture.cost;
-  }
-
-  /// Save furniture placements
-  Future<void> savePlacements() async {
+  Future<void> saveFurniture() async {
     final prefs = await SharedPreferences.getInstance();
-    Map<String, String> placements = {};
 
-    for (var spot in spots) {
-      if (spot.hasItem) {
-        placements[spot.id] = spot.placedFurnitureId!;
+    // Save placed furniture
+    Map<String, String> saveData = {};
+    placedFurniture.forEach((spotId, furnitureId) {
+      if (furnitureId != null) {
+        saveData[spotId] = furnitureId;
       }
-    }
+    });
+    await prefs.setString('placed_furniture', json.encode(saveData));
 
-    await prefs.setString('furniture_placements', json.encode(placements));
+    // Save owned furniture - NEW!
+    await prefs.setStringList('owned_furniture', ownedFurniture.toList());
   }
 
-  /// Load furniture placements
-  Future<void> loadPlacements() async {
+  Future<void> loadFurniture() async {
     final prefs = await SharedPreferences.getInstance();
-    String? savedData = prefs.getString('furniture_placements');
 
+    // Load placed furniture
+    String? savedData = prefs.getString('placed_furniture');
     if (savedData != null) {
-      Map<String, dynamic> placements = json.decode(savedData);
-
-      for (var spot in spots) {
-        if (placements.containsKey(spot.id)) {
-          spot.placedFurnitureId = placements[spot.id];
-        }
+      try {
+        Map<String, dynamic> loadedData = json.decode(savedData);
+        placedFurniture.updateAll((key, value) => null);
+        loadedData.forEach((spotId, furnitureId) {
+          if (placedFurniture.containsKey(spotId)) {
+            placedFurniture[spotId] = furnitureId.toString();
+          }
+        });
+      } catch (e) {
+        print('Error loading furniture: $e');
       }
+    }
+
+    // Load owned furniture - NEW!
+    List<String>? ownedList = prefs.getStringList('owned_furniture');
+    if (ownedList != null) {
+      ownedFurniture = ownedList.toSet();
     }
   }
 
-  /// Reset all furniture (for testing)
   Future<void> reset() async {
-    for (var spot in spots) {
-      spot.placedFurnitureId = null;
-    }
-    await savePlacements();
-  }
-
-  /// Get summary of placed furniture
-  Map<String, int> getPlacementSummary() {
-    Map<String, int> summary = {
-      'total': 0,
-      'beds': 0,
-      'desks': 0,
-      'kitchen': 0,
-      'decorations': 0,
-    };
-
-    for (var spot in spots) {
-      if (spot.hasItem) {
-        summary['total'] = summary['total']! + 1;
-        switch (spot.type) {
-          case FurnitureType.bed:
-            summary['beds'] = summary['beds']! + 1;
-            break;
-          case FurnitureType.desk:
-            summary['desks'] = summary['desks']! + 1;
-            break;
-          case FurnitureType.kitchen:
-            summary['kitchen'] = summary['kitchen']! + 1;
-            break;
-          case FurnitureType.decoration:
-            summary['decorations'] = summary['decorations']! + 1;
-            break;
-        }
-      }
-    }
-
-    return summary;
+    placedFurniture.updateAll((key, value) => null);
+    await saveFurniture();
   }
 }
