@@ -45,3 +45,4 @@ flutter:
   assets:
     - assets/animations/cave.riv
     - assets/animations/garden.riv
+    - assets/animations/bob_idle.riv

@@ -3,16 +3,20 @@ import 'package:app_usage/app_usage.dart';
 import 'screens/permission_screen.dart';
 import 'screens/main_game_screen.dart';
 import 'services/currency_service.dart';
-import 'services/upgrade_service.dart'; // ← ADD THIS
+import 'services/upgrade_service.dart';
 import 'services/furniture_service.dart';
+import 'services/settings_service.dart';  // ← ADD
+import 'services/streak_service.dart';    // ← ADD
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Initialize services
   await CurrencyService().init();
-  await UpgradeService().init(); // ← ADD THIS LINE
+  await UpgradeService().init();
   await FurnitureService().init();
+  await SettingsService().init();  // ← ADD
+  await StreakService().init();    // ← ADD
 
   runApp(MyApp());
 }

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:focus_life/services/streak_service.dart';
 import 'dart:math' as math;
 import '../models/character.dart';
 import '../services/currency_service.dart';
 import '../services/upgrade_service.dart';
+
 
 class GardenFocusScreen extends StatefulWidget {
   final Character character;
@@ -72,6 +74,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
   void _finishSession() async {
     // Get upgrade multiplier (furniture boost is applied automatically inside calculatePeasFromFocus)
     double upgradeMultiplier = upgrades.getTotalMultiplier();
+    await StreakService().recordFocusSession();
 
     // Calculate peas (furniture boost applied inside this method)
     int peasEarned = CurrencyService.calculatePeasFromFocus(

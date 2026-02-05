@@ -8,13 +8,14 @@ import '../models/farm.dart';
 import '../models/cave_decorations.dart';
 import '../services/storage_service.dart';
 import 'focus_active_screen.dart';
-import 'garden_focus_screen.dart'; // ✅ ADD THIS LINE!
+import 'garden_focus_screen.dart';
 import 'cave_interior_screen.dart';
 import '../services/currency_service.dart';
 import '../widgets/converter_dialog.dart';
 import '../services/currency_service.dart';
 import '../services/upgrade_service.dart';
 import '../services/furniture_service.dart';
+import '../services/facts_service.dart';
 
 class CaveSceneScreen extends StatefulWidget {
   final Character character;
@@ -498,14 +499,17 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                     ),
 
                     // Alex
+                    // Alex (tappable for facts!)
                     AnimatedPositioned(
                       duration: Duration(milliseconds: 300),
                       curve: Curves.easeInOut,
                       left: alexX,
                       top: alexY,
-                      child: _buildAlex(),
+                      child: GestureDetector(
+                        onTap: () => _showRandomFact(),  // ← ADD THIS
+                        child: _buildAlex(),
+                      ),
                     ),
-
                     // Animated Butterfly
                     if (showButterfly && _butterflyController != null)
                       AnimatedBuilder(
@@ -545,10 +549,68 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
       ),
     );
   }
+  void _showRandomFact() {
+    final FactsService facts = FactsService();
+    String fact = facts.getRandomFact();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Color(0xFF16213e),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Row(
+          children: [
+            Text('🤯', style: TextStyle(fontSize: 32)),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Did You Know?',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          fact,
+          style: TextStyle(
+            color: Colors.white70,
+            fontSize: 16,
+            height: 1.5,
+          ),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Color(0xFF00d4ff),
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: Text(
+              'Cool! 😎',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildAlex() {
     return Column(
       children: [
+        // Name tag
         Container(
           padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
@@ -565,86 +627,20 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
           ),
         ),
         SizedBox(height: 5),
-        AnimatedBuilder(
-          animation: _walkController ?? AnimationController(vsync: this, duration: Duration.zero),
-          builder: (context, child) {
-            double bounce = isWalking && _walkController != null ? _walkController!.value * 3 : 0;
 
-            return Transform.translate(
-              offset: Offset(0, -bounce),
-              child: Transform(
-                alignment: Alignment.center,
-                transform: Matrix4.identity()..scale(facingRight ? 1.0 : -1.0, 1.0),
-                child: Container(
-                  width: 60,
-                  height: 80,
-                  child: Stack(
-                    children: [
-                      Positioned(
-                        top: 0,
-                        left: 15,
-                        child: Container(
-                          width: 30,
-                          height: 30,
-                          decoration: BoxDecoration(
-                            color: Color(0xFFffdbac),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.brown[800]!, width: 2),
-                          ),
-                          child: Center(
-                            child: Text(
-                              "👁️",
-                              style: TextStyle(fontSize: 12),
-                            ),
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        top: 28,
-                        left: 10,
-                        child: Container(
-                          width: 40,
-                          height: 35,
-                          decoration: BoxDecoration(
-                            color: Color(0xFF5d4e37),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.brown[900]!, width: 2),
-                          ),
-                          child: CustomPaint(
-                            painter: RaggedClothPainter(),
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        top: 60,
-                        left: 15,
-                        child: Container(
-                          width: 10,
-                          height: 20,
-                          decoration: BoxDecoration(
-                            color: Color(0xFF4a3f2f),
-                            borderRadius: BorderRadius.circular(5),
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        top: 60,
-                        left: 35,
-                        child: Container(
-                          width: 10,
-                          height: 20,
-                          decoration: BoxDecoration(
-                            color: Color(0xFF4a3f2f),
-                            borderRadius: BorderRadius.circular(5),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
+        // Bob Rive animation
+        Transform(
+          alignment: Alignment.center,
+          transform: Matrix4.identity()..scale(facingRight ? 1.0 : -1.0, 1.0),
+          child: SizedBox(
+            width: 140,   // ← INCREASED from 60
+            height: 170, // ← INCREASED from 80
+            child: RiveAnimation.asset(
+              'assets/animations/bob_idle.riv',
+              fit: BoxFit.contain,
+              stateMachines: ['State Machine 1'],
+            ),
+          ),
         ),
       ],
     );
