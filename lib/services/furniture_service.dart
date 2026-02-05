@@ -184,7 +184,7 @@ class FurnitureService {
       emoji: '🌿',
       description: '+9% peas',
       cost: 20,
-      boost: 0.9,
+      boost: 0.09,
       category: FurnitureCategory.decoration,
     ),
     Furniture(
@@ -303,6 +303,9 @@ class FurnitureService {
       }
     }
     return total;
+  }
+  double getBoostMultiplier() {
+    return 1.0 + getTotalBoost();
   }
 
   String getBoostString() {

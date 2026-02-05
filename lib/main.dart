@@ -3,7 +3,6 @@ import 'package:app_usage/app_usage.dart';
 import 'screens/permission_screen.dart';
 import 'screens/main_game_screen.dart';
 import 'services/currency_service.dart';
-import 'services/currency_service.dart';
 import 'services/upgrade_service.dart'; // ← ADD THIS
 import 'services/furniture_service.dart';
 

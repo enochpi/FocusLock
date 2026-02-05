@@ -12,6 +12,9 @@ import 'garden_focus_screen.dart'; // ✅ ADD THIS LINE!
 import 'cave_interior_screen.dart';
 import '../services/currency_service.dart';
 import '../widgets/converter_dialog.dart';
+import '../services/currency_service.dart';
+import '../services/upgrade_service.dart';
+import '../services/furniture_service.dart';
 
 class CaveSceneScreen extends StatefulWidget {
   final Character character;
@@ -830,55 +833,155 @@ class GrassTexturePainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-// ✅ UPDATED DIALOG - Shows garden earnings
+// ========== TIMER PICKER DIALOG WITH SLIDER ==========
 class TimerPickerDialog extends StatefulWidget {
   @override
   _TimerPickerDialogState createState() => _TimerPickerDialogState();
 }
 
 class _TimerPickerDialogState extends State<TimerPickerDialog> {
-  int selectedMinutes = 25;
+  double selectedMinutes = 25.0;
 
   @override
   Widget build(BuildContext context) {
-    int earnings = selectedMinutes * 5; // ✅ $5 per minute in garden
+    int minutes = selectedMinutes.round();
+
+    // PEA earnings (with all boosts!)
+    int peaEarnings = CurrencyService.calculatePeasFromFocus(
+      minutes,
+      upgradeMultiplier: UpgradeService().getTotalMultiplier(),
+    );
 
     return AlertDialog(
       backgroundColor: Color(0xFF16213e),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+      ),
       title: Text(
-        "Work in Garden 🌱", // ✅ Updated title
-        style: TextStyle(color: Colors.white),
+        'Choose Focus Duration',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 20,
+          fontWeight: FontWeight.bold,
+        ),
+        textAlign: TextAlign.center,
       ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Selected time display
           Text(
-            "$selectedMinutes minutes",
+            '$minutes',
             style: TextStyle(
-              color: Color(0xFF00d4ff),
-              fontSize: 32,
+              color: Color(0xFF4CAF50),
+              fontSize: 48,
               fontWeight: FontWeight.bold,
             ),
           ),
-          SizedBox(height: 20),
-          Slider(
-            value: selectedMinutes.toDouble(),
-            min: 1,
-            max: 120,
-            divisions: 119,
-            activeColor: Color(0xFF00d4ff),
-            onChanged: (value) {
-              setState(() {
-                selectedMinutes = value.toInt();
-              });
-            },
-          ),
           Text(
-            "Earn \$$earnings 🌱", // ✅ Shows garden earnings
+            'minutes',
             style: TextStyle(
-              color: Colors.greenAccent,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
+              color: Colors.white70,
+              fontSize: 16,
+            ),
+          ),
+
+          SizedBox(height: 20),
+
+          // Slider
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: Color(0xFF4CAF50),
+              inactiveTrackColor: Color(0xFF2d3e5f),
+              thumbColor: Color(0xFF4CAF50),
+              overlayColor: Color(0xFF4CAF50).withOpacity(0.3),
+              thumbShape: RoundSliderThumbShape(enabledThumbRadius: 12),
+              trackHeight: 6,
+            ),
+            child: Slider(
+              value: selectedMinutes,
+              min: 1,
+              max: 600,
+              divisions: 599, // 5, 10, 15, 20, ..., 120
+              onChanged: (value) {
+                setState(() {
+                  selectedMinutes = value;
+                });
+              },
+            ),
+          ),
+
+          // Min/Max labels
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('1 min', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                Text('600 min (10 hrs)', style: TextStyle(color: Colors.white54, fontSize: 12)),
+              ],
+            ),
+          ),
+
+          SizedBox(height: 24),
+
+          // Estimated earnings display
+          // Estimated earnings display
+          // Estimated earnings display
+          Container(
+            padding: EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Color(0xFF4CAF50).withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Color(0xFF4CAF50), width: 2),
+            ),
+            child: Column(
+              children: [
+                Text(
+                  'You will earn:',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
+                ),
+                SizedBox(height: 8),
+
+                // Final peas (BIG)
+                Text(
+                  '~$peaEarnings 🌱',
+                  style: TextStyle(
+                    color: Color(0xFF4CAF50),
+                    fontSize: 36,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  'peas',
+                  style: TextStyle(
+                    color: Colors.white60,
+                    fontSize: 14,
+                  ),
+                ),
+
+                SizedBox(height: 12),
+
+                // Furniture boost percentage
+                Text(
+                  FurnitureService().getBoostString(),
+                  style: TextStyle(
+                    color: Colors.amber,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  'Furniture Boost',
+                  style: TextStyle(
+                    color: Colors.white54,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -886,16 +989,62 @@ class _TimerPickerDialogState extends State<TimerPickerDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: Text("Cancel", style: TextStyle(color: Colors.white54)),
-        ),
-        ElevatedButton(
-          onPressed: () => Navigator.pop(context, selectedMinutes),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Color(0xFF00d4ff),
+          child: Text(
+            'Cancel',
+            style: TextStyle(color: Colors.white54, fontSize: 16),
           ),
-          child: Text("Start Working", style: TextStyle(color: Colors.white)), // ✅ Updated text
+        ),
+        // CORRECT:
+        ElevatedButton(
+          onPressed: () => Navigator.pop(context, selectedMinutes.round()), // ← Explicitly round to int
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Color(0xFF4CAF50),
+            padding: EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          child: Text(
+            'Start Focus',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
         ),
       ],
+    );
+  }
+
+  Widget _buildQuickButton(int minutes) {
+    bool isSelected = selectedMinutes.round() == minutes;
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          selectedMinutes = minutes.toDouble();
+        });
+      },
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? Color(0xFF4CAF50) : Color(0xFF1e2a47),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? Color(0xFF4CAF50) : Color(0xFF2d3e5f),
+            width: 2,
+          ),
+        ),
+        child: Text(
+          '${minutes}m',
+          style: TextStyle(
+            color: isSelected ? Colors.white : Colors.white70,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            fontSize: 14,
+          ),
+        ),
+      ),
     );
   }
 }

@@ -1,4 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import 'furniture_service.dart';
 
 class CurrencyService {
   static final CurrencyService _instance = CurrencyService._internal();
@@ -16,13 +17,27 @@ class CurrencyService {
   // Constants
   static const int PEAS_PER_COIN = 100;
 
-  /// Calculate peas earned from focus duration (with 10% time bonus)
+  /// Calculate peas earned from focus duration (with double time bonus + furniture boost)
   static int calculatePeasFromFocus(int minutes, {double upgradeMultiplier = 1.0}) {
-    // Base peas = minutes
-    // Time bonus = 10% of minutes
-    // Upgrade multiplier = from purchased upgrades
-    // Formula: minutes * 1.1 (time bonus) * upgradeMultiplier
-    return (minutes * 1.1 * upgradeMultiplier).floor();
+    // Base peas = 1 per minute
+    int basePeas = minutes;
+
+    // Time bonus 1: +1 pea per 3 minutes
+    int timeBonus1 = minutes ~/ 3;
+
+    // Time bonus 2: +2 peas per 5 minutes (stacks with bonus 1!)
+    int timeBonus2 = (minutes ~/ 5) * 2;
+
+    // Total base (before multipliers)
+    int totalBase = basePeas + timeBonus1 + timeBonus2;
+
+    // Get furniture boost multiplier
+    double furnitureMultiplier = FurnitureService().getBoostMultiplier();
+
+    // Apply furniture boost AND upgrade multiplier
+    int finalPeas = (totalBase * furnitureMultiplier * upgradeMultiplier).round();
+
+    return finalPeas;
   }
 
   /// Initialize - Load saved currencies
