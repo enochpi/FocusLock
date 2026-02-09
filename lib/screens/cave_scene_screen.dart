@@ -549,6 +549,11 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
       ),
     );
   }
+  // ============================================================
+// ✅ COMPLETE UPDATED METHOD
+// Replace the _showRandomFact() method in cave_scene_screen.dart
+// ============================================================
+
   void _showRandomFact() {
     final FactsService facts = FactsService();
     String fact = facts.getRandomFact();
@@ -562,28 +567,75 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
         ),
         title: Row(
           children: [
-            Text('🤯', style: TextStyle(fontSize: 32)),
-            SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Did You Know?',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
+            // Character avatar (large emoji circle)
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: Color(0xFF00d4ff).withOpacity(0.2),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Color(0xFF00d4ff),
+                  width: 2,
                 ),
+              ),
+              child: Center(
+                child: Text(
+                  '😊', // ← Change this to any emoji you want!
+                  style: TextStyle(fontSize: 30),
+                ),
+              ),
+            ),
+            SizedBox(width: 12),
+
+            // Character name + "says..."
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.character.name, // ← This shows "Bob", "Fred", etc.
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    'says...',
+                    style: TextStyle(
+                      color: Colors.white54,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
         ),
-        content: Text(
-          fact,
-          style: TextStyle(
-            color: Colors.white70,
-            fontSize: 16,
-            height: 1.5,
+
+        // The fact itself in a styled box
+        content: Container(
+          padding: EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Color(0xFF0f3460).withOpacity(0.5),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: Color(0xFF00d4ff).withOpacity(0.3),
+              width: 2,
+            ),
+          ),
+          child: Text(
+            fact,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              height: 1.5,
+            ),
           ),
         ),
+
+        // Close button
         actions: [
           ElevatedButton(
             onPressed: () => Navigator.pop(context),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:app_usage/app_usage.dart';
+import 'package:focus_life/services/achievements_service.dart';
 import 'screens/permission_screen.dart';
 import 'screens/main_game_screen.dart';
 import 'services/currency_service.dart';
@@ -17,7 +18,8 @@ void main() async {
   await FurnitureService().init();
   await SettingsService().init();  // ← ADD
   await StreakService().init();    // ← ADD
-
+  AchievementsService().initialize();
+  await AchievementsService().loadFromStorage();
   runApp(MyApp());
 }
 
