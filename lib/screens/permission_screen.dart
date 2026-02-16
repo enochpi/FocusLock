@@ -14,27 +14,29 @@ class _PermissionScreenState extends State<PermissionScreen> {
   bool isChecking = false;
 
   Future<void> checkPermission() async {
-    setState(() {
-      isChecking = true;
-    });
+    await Future.delayed(const Duration(seconds: 1));
 
     try {
-      // Try to get app usage data
       DateTime endDate = DateTime.now();
       DateTime startDate = endDate.subtract(const Duration(seconds: 1));
 
       List<AppUsageInfo> infos = await AppUsage().getAppUsage(startDate, endDate);
 
-      // If we got here, permission is granted!
+      if (!mounted) return;
+
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => const MainGameScreen()), // CHANGED FROM HomeScreen()!
+        MaterialPageRoute(builder: (context) => const MainGameScreen()),
       );
     } catch (e) {
-      // Permission not granted
-      setState(() {
-        isChecking = false;
-      });
+      debugPrint('❌ Permission check failed: $e');
+
+      if (!mounted) return;
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const PermissionScreen()),
+      );
     }
   }
 

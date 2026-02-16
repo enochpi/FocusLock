@@ -1,26 +1,59 @@
 import 'package:flutter/material.dart';
 import 'package:app_usage/app_usage.dart';
+import 'package:focus_life/services/app_monitor_service.dart';
 import 'screens/permission_screen.dart';
 import 'screens/main_game_screen.dart';
 import 'services/currency_service.dart';
 import 'services/upgrade_service.dart';
 import 'services/furniture_service.dart';
-import 'services/settings_service.dart';  // ← ADD
-import 'services/streak_service.dart';    // ← ADD
+import 'services/settings_service.dart';
+import 'services/streak_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize services
+  // ✅ Initialize all services with error handling
   try {
     await CurrencyService().init();
+    debugPrint('✅ CurrencyService initialized');
   } catch (e) {
-    debugPrint('CurrencyService init error: $e');
+    debugPrint('❌ CurrencyService init failed: $e');
   }
-  await UpgradeService().init();
-  await FurnitureService().init();
-  await SettingsService().init();  // ← ADD
-  await StreakService().init();    // ← ADD
+
+  try {
+    await UpgradeService().init();
+    debugPrint('✅ UpgradeService initialized');
+  } catch (e) {
+    debugPrint('❌ UpgradeService init failed: $e');
+  }
+
+  try {
+    await FurnitureService().init();
+    debugPrint('✅ FurnitureService initialized');
+  } catch (e) {
+    debugPrint('❌ FurnitureService init failed: $e');
+  }
+
+  try {
+    await SettingsService().init();
+    debugPrint('✅ SettingsService initialized');
+  } catch (e) {
+    debugPrint('❌ SettingsService init failed: $e');
+  }
+
+  try {
+    await StreakService().init();
+    debugPrint('✅ StreakService initialized');
+  } catch (e) {
+    debugPrint('❌ StreakService init failed: $e');
+  }
+
+  try {
+    await AppMonitorService().init();
+    debugPrint('✅ AppMonitorService initialized');
+  } catch (e) {
+    debugPrint('❌ AppMonitorService init failed: $e');
+  }
 
   runApp(const MyApp());
 }
@@ -62,11 +95,17 @@ class _SplashScreenState extends State<SplashScreen> {
 
       List<AppUsageInfo> infos = await AppUsage().getAppUsage(startDate, endDate);
 
+      if (!mounted) return;
+
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const MainGameScreen()),
       );
     } catch (e) {
+      debugPrint('❌ Permission check failed: $e');
+
+      if (!mounted) return;
+
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const PermissionScreen()),

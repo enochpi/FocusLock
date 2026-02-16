@@ -1,16 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:focus_life/services/streak_service.dart';
+import 'dart:async';
 import 'dart:math' as math;
 import '../models/character.dart';
 import '../services/currency_service.dart';
 import '../services/upgrade_service.dart';
-
+import '../services/app_monitor_service.dart';
+import '../services/focus_session_service.dart';
+import 'blocking_screen.dart';
+import '../services/feedback_service.dart';
 
 class GardenFocusScreen extends StatefulWidget {
   final Character character;
   final int focusDurationMinutes;
 
-  const GardenFocusScreen({super.key, 
+  const GardenFocusScreen({
+    super.key,
     required this.character,
     required this.focusDurationMinutes,
   });
@@ -20,50 +25,162 @@ class GardenFocusScreen extends StatefulWidget {
 }
 
 class _GardenFocusScreenState extends State<GardenFocusScreen>
-    with TickerProviderStateMixin {
-  final CurrencyService currency = CurrencyService(); // ← MOVED HERE
+    with TickerProviderStateMixin, WidgetsBindingObserver {
+  final CurrencyService currency = CurrencyService();
   final UpgradeService upgrades = UpgradeService();
+  final AppMonitorService appMonitor = AppMonitorService();
+  final FocusSessionService sessionService = FocusSessionService();
+
   late AnimationController _characterController;
   bool _isWorking = false;
   int _remainingSeconds = 0;
+
+  Timer? _countdownTimer;
+  Timer? _saveTimer;
+  bool _isPaused = false;
+  bool _isFinished = false;
 
   @override
   void initState() {
     super.initState();
     _remainingSeconds = widget.focusDurationMinutes * 60;
 
-    // Character animation (idle movement)
     _characterController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
-    )..repeat(reverse: true);
+    )
+      ..repeat(reverse: true);
+
+    WidgetsBinding.instance.addObserver(this);
 
     _startFocusSession();
   }
 
-  void _startFocusSession() {
+  @override
+  void dispose() {
+    _characterController.dispose();
+    _countdownTimer?.cancel();
+    _saveTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    appMonitor.stopMonitoring();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    if (state == AppLifecycleState.paused) {
+      debugPrint('⏸️ App went to background - pausing timer');
+      _pauseTimer();
+    } else if (state == AppLifecycleState.resumed) {
+      debugPrint('▶️ App resumed - resuming timer');
+      _resumeTimer();
+    }
+  }
+
+  void _pauseTimer() {
+    if (!_isPaused && _countdownTimer != null) {
+      _isPaused = true;
+      _countdownTimer?.cancel();
+      debugPrint('Timer paused at $_remainingSeconds seconds');
+    }
+  }
+
+  void _resumeTimer() {
+    if (_isPaused && _isWorking && _remainingSeconds > 0) {
+      _isPaused = false;
+      _startCountdownTimer();
+      debugPrint('Timer resumed at $_remainingSeconds seconds');
+    }
+  }
+
+  void _startFocusSession() async {
     setState(() {
       _isWorking = true;
     });
 
-    // Start countdown
-    Future.delayed(const Duration(seconds: 1), _countdown);
+    await sessionService.startSession(
+      durationMinutes: widget.focusDurationMinutes,
+    );
+
+    appMonitor.startMonitoring(_onBlockedAppDetected);
+    _startCountdownTimer();
+    _startPeriodicSave();
   }
 
-  void _countdown() {
-    if (_remainingSeconds > 0 && _isWorking) {
-      setState(() {
-        _remainingSeconds--;
-      });
-      Future.delayed(const Duration(seconds: 1), _countdown);
-    } else if (_remainingSeconds == 0) {
-      _finishSession();
-    }
+  void _startPeriodicSave() {
+    _saveTimer?.cancel();
+    _saveTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (_isWorking && !_isPaused) {
+        sessionService.updateRemainingTime(_remainingSeconds);
+      }
+    });
   }
 
-  /// Calculate peas earned so far (for partial completion)
+  void _startCountdownTimer() {
+    _countdownTimer?.cancel();
+
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      if (_isPaused) {
+        return;
+      }
+
+      if (_remainingSeconds > 0 && _isWorking) {
+        setState(() {
+          _remainingSeconds--;
+        });
+
+        if (_remainingSeconds == 0) {
+          timer.cancel();
+          _finishSession();
+        }
+      } else {
+        timer.cancel();
+      }
+    });
+  }
+
+  void _onBlockedAppDetected(String appName, String packageName) async {
+    debugPrint('🚫 Blocked app opened: $appName');
+
+    _pauseTimer();
+
+    await FeedbackService().vibrateOnBlock();
+    await appMonitor.incrementBlockCount();
+
+    appMonitor.stopMonitoring();
+
+    if (!mounted) return;
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            BlockingScreen(
+              appName: appName,
+              onReturn: () {
+                debugPrint('✅ User returned from blocking screen');
+
+                _resumeTimer();
+
+                if (_isWorking && mounted) {
+                  appMonitor.startMonitoring(_onBlockedAppDetected);
+                }
+              },
+            ),
+      ),
+    );
+  }
+
   int _calculatePeasSoFar() {
-    int elapsedMinutes = widget.focusDurationMinutes - (_remainingSeconds ~/ 60);
+    int elapsedMinutes = widget.focusDurationMinutes -
+        (_remainingSeconds ~/ 60);
     double multiplier = upgrades.getTotalMultiplier();
     return CurrencyService.calculatePeasFromFocus(
       elapsedMinutes,
@@ -72,11 +189,24 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
   }
 
   void _finishSession() async {
-    // Get upgrade multiplier (furniture boost is applied automatically inside calculatePeasFromFocus)
+    // ✅ RACE CONDITION GUARD - Prevent multiple calls
+    if (_isFinished || !_isWorking) return;
+
+    setState(() {
+      _isFinished = true;
+      _isWorking = false;
+    });
+
+    // Stop everything
+    _countdownTimer?.cancel();
+    _saveTimer?.cancel();
+    appMonitor.stopMonitoring();
+
+    await sessionService.completeSession();
+
     double upgradeMultiplier = upgrades.getTotalMultiplier();
     await StreakService().recordFocusSession();
 
-    // Calculate peas (furniture boost applied inside this method)
     int peasEarned = CurrencyService.calculatePeasFromFocus(
       widget.focusDurationMinutes,
       upgradeMultiplier: upgradeMultiplier,
@@ -84,10 +214,11 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
 
     await currency.addPeas(peasEarned);
 
-    // Reward money AND track focus minutes (keep existing functionality)
-    int earnings = widget.focusDurationMinutes * 5; // $5 per minute
+    int earnings = widget.focusDurationMinutes * 5;
     widget.character.earnMoney(earnings);
     widget.character.addFocusMinutes(widget.focusDurationMinutes);
+
+    if (!mounted) return;
 
     showDialog(
       context: context,
@@ -113,8 +244,6 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
               ),
             ),
             const SizedBox(height: 16),
-
-            // Peas earned (main reward)
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -138,7 +267,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                   const SizedBox(height: 8),
                   Text(
                     CurrencyService().cropName,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 16,
                       color: Colors.white70,
                     ),
@@ -146,7 +275,6 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                 ],
               ),
             ),
-
             const SizedBox(height: 12),
             Text(
               "${widget.focusDurationMinutes} min + 10% bonus!",
@@ -156,10 +284,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                 fontStyle: FontStyle.italic,
               ),
             ),
-
             const SizedBox(height: 16),
-
-            // Additional info (money + focus minutes)
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -193,8 +318,8 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
             width: double.infinity,
             child: ElevatedButton(
               onPressed: () {
-                Navigator.pop(context); // Close dialog
-                Navigator.pop(context); // Return to cave scene
+                Navigator.pop(context);
+                Navigator.pop(context);
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF4CAF50),
@@ -224,7 +349,8 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     int seconds = totalSeconds % 60;
 
     if (hours > 0) {
-      return '${hours}h ${minutes.toString().padLeft(2, '0')}m ${seconds.toString().padLeft(2, '0')}s';
+      return '${hours}h ${minutes.toString().padLeft(2, '0')}m ${seconds
+          .toString().padLeft(2, '0')}s';
     } else if (minutes > 0) {
       return '${minutes}m ${seconds.toString().padLeft(2, '0')}s';
     }
@@ -232,37 +358,65 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
   }
 
   @override
-  void dispose() {
-    _characterController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF87CEEB), // Sky blue
+      backgroundColor: const Color(0xFF87CEEB),
       body: Stack(
         children: [
-          // Garden scene
-          // Garden scene
           CustomPaint(
             size: Size.infinite,
             painter: GardenPainter(
               characterAnimation: _characterController.value,
               isWorking: _isWorking,
-              totalSeconds: widget.focusDurationMinutes * 60, // ← ADD
-              remainingSeconds: _remainingSeconds, // ← ADD
+              totalSeconds: widget.focusDurationMinutes * 60,
+              remainingSeconds: _remainingSeconds,
             ),
           ),
-
-          // Timer display at top
+          if (_isPaused)
+            Positioned(
+              top: 120,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 20, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.9),
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.3),
+                        blurRadius: 10,
+                      ),
+                    ],
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.pause, color: Colors.white, size: 20),
+                      SizedBox(width: 8),
+                      Text(
+                        "Timer Paused",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           Positioned(
             top: 60,
             left: 0,
             right: 0,
             child: Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 30, vertical: 15),
                 decoration: BoxDecoration(
                   color: Colors.black54,
                   borderRadius: BorderRadius.circular(30),
@@ -279,270 +433,17 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
               ),
             ),
           ),
-
-          // Stop button
           Positioned(
             bottom: 40,
             left: 0,
             right: 0,
             child: Center(
               child: ElevatedButton(
-                onPressed: () {
-                  // Calculate current progress
-                  int elapsedSeconds = (widget.focusDurationMinutes * 60) - _remainingSeconds;
-                  int elapsedMinutes = elapsedSeconds ~/ 60;
-
-                  // CASE 1: Less than 5 minutes - Get nothing!
-                  if (elapsedMinutes < 5) {
-                    showDialog(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        backgroundColor: const Color(0xFF16213e),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        title: const Row(
-                          children: [
-                            Text("⏱️", style: TextStyle(fontSize: 28)),
-                            SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                "Stop Session?",
-                                style: TextStyle(color: Colors.white, fontSize: 18),
-                              ),
-                            ),
-                          ],
-                        ),
-                        content: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: Colors.red.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.red.withOpacity(0.5)),
-                              ),
-                              child: Column(
-                                children: [
-                                  const Icon(Icons.block, color: Colors.red, size: 48),
-                                  const SizedBox(height: 12),
-                                  const Text(
-                                    "You won't earn any peas!",
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                  const SizedBox(height: 8),
-                                  const Text(
-                                    "You need at least 5 minutes of focus to earn peas.",
-                                    style: TextStyle(
-                                      color: Colors.white70,
-                                      fontSize: 14,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    "Current: $elapsedMinutes min\nRequired: 5 min",
-                                    style: TextStyle(
-                                      color: Colors.red[300],
-                                      fontSize: 13,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text(
-                              "Keep Focusing",
-                              style: TextStyle(
-                                color: Color(0xFF00d4ff),
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              // Stop but get nothing
-                              Navigator.pop(context); // Close dialog
-                              Navigator.pop(context); // Return to cave
-                            },
-                            child: const Text(
-                              "Stop Anyway",
-                              style: TextStyle(
-                                color: Colors.red,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                    return;
-                  }
-
-                  // CASE 2: 5+ minutes - Get peas with penalty
-                  int peasSoFar = _calculatePeasSoFar();
-                  int peasLost = (peasSoFar * 0.20).floor(); // 20% penalty
-                  int peasKept = peasSoFar - peasLost;
-
-                  showDialog(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      backgroundColor: const Color(0xFF16213e),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      title: const Row(
-                        children: [
-                          Text("⚠️", style: TextStyle(fontSize: 28)),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              "Stop Focus Session?",
-                              style: TextStyle(color: Colors.white, fontSize: 18),
-                            ),
-                          ),
-                        ],
-                      ),
-                      content: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Progress so far
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF4CAF50).withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text(
-                                  "Earned so far:",
-                                  style: TextStyle(color: Colors.white70),
-                                ),
-                                Text(
-                                  "$peasSoFar 🌱",
-                                  style: const TextStyle(
-                                    color: Color(0xFF4CAF50),
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            "$elapsedMinutes of ${widget.focusDurationMinutes} minutes completed",
-                            style: const TextStyle(
-                              color: Colors.white60,
-                              fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-
-                          // Penalty warning
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.red.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.red.withOpacity(0.5)),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  "If you stop now:",
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    const Text("❌", style: TextStyle(fontSize: 16)),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        "Lose $peasLost peas (20% penalty)",
-                                        style: TextStyle(color: Colors.red[300]),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 4),
-                                Row(
-                                  children: [
-                                    const Text("✅", style: TextStyle(fontSize: 16)),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        "Keep $peasKept peas",
-                                        style: const TextStyle(color: Color(0xFF4CAF50)),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text(
-                            "Keep Focusing",
-                            style: TextStyle(
-                              color: Color(0xFF00d4ff),
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () async {
-                            // Stop early - apply penalty
-                            if (peasKept > 0) {
-                              await currency.addPeas(peasKept);
-                            }
-
-                            // Add focus minutes (partial)
-                            widget.character.addFocusMinutes(elapsedMinutes);
-
-                            Navigator.pop(context); // Close warning dialog
-                            Navigator.pop(context); // Return to cave
-                          },
-                          child: const Text(
-                            "Stop",
-                            style: TextStyle(
-                              color: Colors.red,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
+                onPressed: () => _showStopDialog(),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red,
-                  padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 20),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 50, vertical: 20),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(30),
                   ),
@@ -562,7 +463,268 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
       ),
     );
   }
+
+  void _showStopDialog() {
+    int elapsedSeconds = (widget.focusDurationMinutes * 60) - _remainingSeconds;
+    int elapsedMinutes = elapsedSeconds ~/ 60;
+
+    if (elapsedMinutes < 5) {
+      showDialog(
+        context: context,
+        builder: (context) =>
+            AlertDialog(
+              backgroundColor: const Color(0xFF16213e),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              title: const Row(
+                children: [
+                  Text("⏱️", style: TextStyle(fontSize: 28)),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      "Stop Session?",
+                      style: TextStyle(color: Colors.white, fontSize: 18),
+                    ),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.red.withOpacity(0.5)),
+                    ),
+                    child: Column(
+                      children: [
+                        const Icon(Icons.block, color: Colors.red, size: 48),
+                        const SizedBox(height: 12),
+                        const Text(
+                          "You won't earn any peas!",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          "You need at least 5 minutes of focus to earn peas.",
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 14,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          "Current: $elapsedMinutes min\nRequired: 5 min",
+                          style: TextStyle(
+                            color: Colors.red[300],
+                            fontSize: 13,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text(
+                    "Keep Focusing",
+                    style: TextStyle(
+                      color: Color(0xFF00d4ff),
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    _countdownTimer?.cancel();
+                    _saveTimer?.cancel();
+                    appMonitor.stopMonitoring();
+                    await sessionService.cancelSession();
+                    Navigator.pop(context);
+                    Navigator.pop(context);
+                  },
+                  child: const Text(
+                    "Stop Anyway",
+                    style: TextStyle(
+                      color: Colors.red,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+      );
+      return;
+    }
+
+    // CASE 2: 5+ minutes
+    int peasSoFar = _calculatePeasSoFar();
+    int peasLost = (peasSoFar * 0.20).floor();
+    int peasKept = peasSoFar - peasLost;
+
+    showDialog(
+      context: context,
+      builder: (context) =>
+          AlertDialog(
+            backgroundColor: const Color(0xFF16213e),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: const Row(
+              children: [
+                Text("⚠️", style: TextStyle(fontSize: 28)),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    "Stop Focus Session?",
+                    style: TextStyle(color: Colors.white, fontSize: 18),
+                  ),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF4CAF50).withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        "Earned so far:",
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                      Text(
+                        "$peasSoFar 🌱",
+                        style: const TextStyle(
+                          color: Color(0xFF4CAF50),
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  "$elapsedMinutes of ${widget
+                      .focusDurationMinutes} minutes completed",
+                  style: const TextStyle(
+                    color: Colors.white60,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.withOpacity(0.5)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "If you stop now:",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Text("❌", style: TextStyle(fontSize: 16)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              "Lose $peasLost peas (20% penalty)",
+                              style: TextStyle(color: Colors.red[300]),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Text("✅", style: TextStyle(fontSize: 16)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              "Keep $peasKept peas",
+                              style: const TextStyle(color: Color(0xFF4CAF50)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text(
+                  "Keep Focusing",
+                  style: TextStyle(
+                    color: Color(0xFF00d4ff),
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () async {
+                  _countdownTimer?.cancel();
+                  _saveTimer?.cancel();
+                  appMonitor.stopMonitoring();
+                  await sessionService.cancelSession();
+
+                  if (peasKept > 0) {
+                    await currency.addPeas(peasKept);
+                  }
+
+                  widget.character.addFocusMinutes(elapsedMinutes);
+
+                  Navigator.pop(context);
+                  Navigator.pop(context);
+                },
+                child: const Text(
+                  "Stop",
+                  style: TextStyle(
+                    color: Colors.red,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ],
+          ),
+    );
+  }
 }
+
+// Keep all your existing GardenPainter code exactly as is...
+// (I'm not including it here to save space, but DON'T change it)
 // ENHANCED GARDEN PAINTER - PROGRESSIVE FARMING ANIMATION
 class GardenPainter extends CustomPainter {
   final double characterAnimation;

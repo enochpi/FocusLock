@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:focus_life/painters/outdoor_sky_painter.dart';
 import 'package:focus_life/services/stage_theme.dart';
+import 'package:focus_life/services/streak_service.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:math' show Random;
@@ -19,6 +20,7 @@ import '../services/facts_service.dart';
 import '../utils/number_formatter.dart';
 import '../painters/house_painters.dart';
 import '../painters/garden_painters.dart';
+import '../services/focus_session_service.dart';
 
 
 
@@ -84,11 +86,14 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
     // Butterfly controller
     _butterflyController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 4), // 4 seconds to fly across
+      duration: const Duration(seconds: 4),
     );
 
     // Start butterfly animation periodically
     _startButterflyLoop();
+
+    // ✅ CHECK FOR RECOVERED SESSION
+    _checkForRecoveredSession();
   }
 
   void _startButterflyLoop() {
@@ -711,6 +716,198 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
           ),
         ),
       ],
+    );
+  }
+  Future<void> _checkForRecoveredSession() async {
+    final sessionService = FocusSessionService();
+    final hasSession = await sessionService.hasActiveSession();
+
+    if (!hasSession) return;
+
+    final sessionData = await sessionService.getActiveSession();
+
+    if (sessionData == null) return;
+
+    if (!mounted) return;
+
+    // If session was completed while app was closed
+    if (sessionData.wasCompleted) {
+      _showSessionCompletedDialog(sessionData);
+    } else {
+      // Session still in progress, ask to resume
+      _showResumeSessionDialog(sessionData);
+    }
+  }
+
+  void _showSessionCompletedDialog(FocusSessionData session) async {
+    // Calculate rewards
+    double multiplier = UpgradeService().getTotalMultiplier();
+    int peasEarned = CurrencyService.calculatePeasFromFocus(
+      session.durationMinutes,
+      upgradeMultiplier: multiplier,
+    );
+
+    await CurrencyService().addPeas(peasEarned);
+
+    int earnings = session.durationMinutes * 5;
+    widget.character.earnMoney(earnings);
+    widget.character.addFocusMinutes(session.durationMinutes);
+    await StreakService().recordFocusSession();
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF2d2d2d),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          "Session Completed! 🎉",
+          style: TextStyle(color: Colors.white),
+          textAlign: TextAlign.center,
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              "Your focus session finished while the app was closed!",
+              style: TextStyle(color: Colors.white70),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF4CAF50).withOpacity(0.2),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF4CAF50), width: 2),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    "$peasEarned ${CurrencyService().cropEmoji}",
+                    style: const TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF4CAF50),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    "${session.durationMinutes} minutes completed!",
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4CAF50),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: const Text(
+                "Awesome!",
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showResumeSessionDialog(FocusSessionData session) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF2d2d2d),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          "Resume Focus Session?",
+          style: TextStyle(color: Colors.white),
+          textAlign: TextAlign.center,
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              "You have an active focus session:",
+              style: TextStyle(color: Colors.white70),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF4CAF50).withOpacity(0.2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    "${session.durationMinutes} minute session",
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    "${session.remainingSeconds ~/ 60} minutes remaining",
+                    style: const TextStyle(color: Color(0xFF4CAF50)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await FocusSessionService().cancelSession();
+              Navigator.pop(context);
+            },
+            child: const Text(
+              "Cancel Session",
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => GardenFocusScreen(
+                    character: widget.character,
+                    focusDurationMinutes: session.durationMinutes,
+                  ),
+                ),
+              ).then((_) {
+                setState(() {});
+                widget.onUpdate();
+              });
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF4CAF50),
+            ),
+            child: const Text(
+              "Resume",
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

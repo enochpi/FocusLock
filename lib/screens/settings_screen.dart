@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:focus_life/screens/blocked_apps_screen.dart';
+import 'package:focus_life/services/app_monitor_service.dart';
 import 'package:focus_life/services/furniture_service.dart';
 import 'package:focus_life/services/upgrade_service.dart';
 import '../models/character.dart';
@@ -104,6 +106,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               const Divider(color: Colors.white24, height: 1),
               _buildSwitchTile(
+
                 title: 'Streak Reminders',
                 subtitle: 'Keep my streak alive!',
                 icon: Icons.local_fire_department,
@@ -114,14 +117,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 },
               ),
               const Divider(color: Colors.white24, height: 1),
-              _buildSwitchTile(
-                title: 'Achievement Alerts',
-                subtitle: 'Notify on new achievements',
-                icon: Icons.emoji_events,
-                value: settings.achievementAlerts,
-                onChanged: (value) async {
-                  await settings.setAchievementAlerts(value);
-                  setState(() {});
+              _buildNavTile(
+                title: 'Blocked Apps',
+                subtitle: 'Manage blocked apps',
+                icon: Icons.block,
+                onTap: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const BlockedAppsScreen(),
+                    ),
+                  );
                 },
               ),
             ],
@@ -311,51 +317,161 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showEditNameDialog() {
-    TextEditingController controller = TextEditingController(text: widget.character.name);
+    final TextEditingController nameController = TextEditingController(
+      text: widget.character.name,
+    );
+    String? errorText;
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF16213e),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Edit Name', style: TextStyle(color: Colors.white)),
-        content: TextField(
-          controller: controller,
-          style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(
-            hintText: 'Enter new name',
-            hintStyle: TextStyle(color: Colors.white54),
-            enabledBorder: UnderlineInputBorder(
-              borderSide: BorderSide(color: Color(0xFF00d4ff)),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            backgroundColor: const Color(0xFF16213e),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
             ),
-            focusedBorder: UnderlineInputBorder(
-              borderSide: BorderSide(color: Color(0xFF00d4ff)),
+            title: const Text(
+              'Edit Character Name',
+              style: TextStyle(color: Colors.white),
             ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (controller.text.trim().isNotEmpty) {
-                widget.character.name = controller.text.trim();
-                await storage.saveCharacter(widget.character);
-                setState(() {});
-                Navigator.pop(context);
-              }
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00d4ff)),
-            child: const Text('Save', style: TextStyle(color: Colors.white)),
-          ),
-        ],
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: 'Enter character name',
+                    hintStyle: const TextStyle(color: Colors.white38),
+                    errorText: errorText,
+                    errorStyle: const TextStyle(color: Colors.red),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF00d4ff)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: Color(0xFF00d4ff),
+                        width: 2,
+                      ),
+                    ),
+                    errorBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Colors.red),
+                    ),
+                    focusedErrorBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: Colors.red,
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                  maxLength: 20,
+                  onChanged: (value) {
+                    // Clear error when user types
+                    if (errorText != null) {
+                      setDialogState(() {
+                        errorText = null;
+                      });
+                    }
+                  },
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Letters and numbers only (max 20 characters)',
+                  style: TextStyle(
+                    color: Colors.white54,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text(
+                  'Cancel',
+                  style: TextStyle(color: Colors.white54),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  String newName = nameController.text.trim();
+
+                  // ✅ VALIDATION
+                  if (newName.isEmpty) {
+                    setDialogState(() {
+                      errorText = 'Name cannot be empty';
+                    });
+                    return;
+                  }
+
+                  // Check if only whitespace (even after trim)
+                  if (newName.replaceAll(RegExp(r'\s+'), '').isEmpty) {
+                    setDialogState(() {
+                      errorText = 'Name cannot be only spaces';
+                    });
+                    return;
+                  }
+
+                  // Check if only emojis/special characters
+                  if (!RegExp(r'[a-zA-Z0-9]').hasMatch(newName)) {
+                    setDialogState(() {
+                      errorText = 'Name must contain letters or numbers';
+                    });
+                    return;
+                  }
+
+                  // Check length (should be redundant with maxLength but good to have)
+                  if (newName.length > 20) {
+                    setDialogState(() {
+                      errorText = 'Name too long (max 20 characters)';
+                    });
+                    return;
+                  }
+
+                  // ✅ VALIDATION PASSED - Save the name
+                  setState(() {
+                    widget.character.name = newName;
+                  });
+
+                  Navigator.pop(context);
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Character name changed to "$newName"'),
+                      backgroundColor: const Color(0xFF4CAF50),
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00d4ff),
+                ),
+                child: const Text(
+                  'Save',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 
-  void _showStatsDialog() {
+  void _showStatsDialog() async {
+    // Get blocked app count
+    int blockCount = await AppMonitorService().getTotalBlockCount();
+
+    if (!mounted) return;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -368,19 +484,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Text('Your Stats', style: TextStyle(color: Colors.white)),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildStatRow('Total Focus Time', '${widget.character.totalFocusMinutes} min'),
-            const Divider(color: Colors.white24),
-            _buildStatRow('Peas Earned', '${currency.peas} 🌱'),
-            const Divider(color: Colors.white24),
-            _buildStatRow('Coins', '${currency.coins} 🪙'),
-            const Divider(color: Colors.white24),
-            _buildStatRow('Current Streak', '${streak.currentStreak} ${streak.streakEmoji}'),
-            const Divider(color: Colors.white24),
-            _buildStatRow('Longest Streak', '${streak.longestStreak} days'),
-          ],
+        content: SingleChildScrollView(  // ← ADD this wrapper
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildStatRow('Total Focus Time', '${widget.character.totalFocusMinutes} min'),
+              const Divider(color: Colors.white24),
+              _buildStatRow('Peas Earned', '${currency.peas} 🌱'),
+              const Divider(color: Colors.white24),
+              _buildStatRow('Coins', '${currency.coins} 🪙'),
+              const Divider(color: Colors.white24),
+              _buildStatRow('Current Streak', '${streak.currentStreak} ${streak.streakEmoji}'),
+              const Divider(color: Colors.white24),
+              _buildStatRow('Longest Streak', '${streak.longestStreak} days'),
+              const Divider(color: Colors.white24),
+              _buildStatRow('Apps Blocked', '$blockCount 🚫'),  // ← ADD THIS
+            ],
+          ),
         ),
         actions: [
           ElevatedButton(
