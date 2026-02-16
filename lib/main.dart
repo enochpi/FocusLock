@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:app_usage/app_usage.dart';
-import 'package:focus_life/services/achievements_service.dart';
 import 'screens/permission_screen.dart';
 import 'screens/main_game_screen.dart';
 import 'services/currency_service.dart';
@@ -13,29 +12,36 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Initialize services
-  await CurrencyService().init();
+  try {
+    await CurrencyService().init();
+  } catch (e) {
+    debugPrint('CurrencyService init error: $e');
+  }
   await UpgradeService().init();
   await FurnitureService().init();
   await SettingsService().init();  // ← ADD
   await StreakService().init();    // ← ADD
-  AchievementsService().initialize();
-  await AchievementsService().loadFromStorage();
-  runApp(MyApp());
+
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Focus Life',
       theme: ThemeData.dark(),
-      home: SplashScreen(),
+      home: const SplashScreen(),
       debugShowCheckedModeBanner: false,
     );
   }
 }
 
 class SplashScreen extends StatefulWidget {
+  const SplashScreen({super.key});
+
   @override
   _SplashScreenState createState() => _SplashScreenState();
 }
@@ -48,29 +54,29 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> checkPermission() async {
-    await Future.delayed(Duration(seconds: 1));
+    await Future.delayed(const Duration(seconds: 1));
 
     try {
       DateTime endDate = DateTime.now();
-      DateTime startDate = endDate.subtract(Duration(seconds: 1));
+      DateTime startDate = endDate.subtract(const Duration(seconds: 1));
 
       List<AppUsageInfo> infos = await AppUsage().getAppUsage(startDate, endDate);
 
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => MainGameScreen()),
+        MaterialPageRoute(builder: (context) => const MainGameScreen()),
       );
     } catch (e) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => PermissionScreen()),
+        MaterialPageRoute(builder: (context) => const PermissionScreen()),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return const Scaffold(
       backgroundColor: Colors.black,
       body: Center(
         child: Column(

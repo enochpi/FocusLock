@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:focus_life/services/furniture_service.dart';
+import 'package:focus_life/services/upgrade_service.dart';
 import '../models/character.dart';
 import '../services/settings_service.dart';
 import '../services/streak_service.dart';
@@ -8,7 +10,7 @@ import '../services/storage_service.dart';
 class SettingsScreen extends StatefulWidget {
   final Character character;
 
-  SettingsScreen({required this.character});
+  const SettingsScreen({super.key, required this.character});
 
   @override
   _SettingsScreenState createState() => _SettingsScreenState();
@@ -23,26 +25,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFF1a1a2e),
+      backgroundColor: const Color(0xFF1a1a2e),
       appBar: AppBar(
-        backgroundColor: Color(0xFF16213e),
-        title: Text('⚙️ Settings'),
+        backgroundColor: const Color(0xFF16213e),
+        title: const Text('⚙️ Settings'),
         centerTitle: true,
       ),
       body: ListView(
-        padding: EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
         children: [
           // Profile Section
           _buildSectionCard(
             title: '👤 Profile',
             children: [
               _buildProfileTile(),
-              Divider(color: Colors.white24, height: 1),
+              const Divider(color: Colors.white24, height: 1),
               _buildStatsTile(),
             ],
           ),
 
-          SizedBox(height: 16),
+          const SizedBox(height: 16),
 
           // Focus Settings
           _buildSectionCard(
@@ -58,7 +60,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   setState(() {});
                 },
               ),
-              Divider(color: Colors.white24, height: 1),
+              const Divider(color: Colors.white24, height: 1),
               _buildSwitchTile(
                 title: 'Break Reminders',
                 subtitle: 'Get reminded to take breaks',
@@ -69,7 +71,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   setState(() {});
                 },
               ),
-              Divider(color: Colors.white24, height: 1),
+              const Divider(color: Colors.white24, height: 1),
               _buildNavTile(
                 title: 'Blocked Apps',
                 subtitle: 'Manage blocked apps',
@@ -77,14 +79,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onTap: () {
                   // TODO: Navigate to blocked apps screen
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Blocked apps manager coming soon!')),
+                    const SnackBar(content: Text('Blocked apps manager coming soon!')),
                   );
                 },
               ),
             ],
           ),
 
-          SizedBox(height: 16),
+          const SizedBox(height: 16),
 
           // Notifications
           _buildSectionCard(
@@ -100,7 +102,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   setState(() {});
                 },
               ),
-              Divider(color: Colors.white24, height: 1),
+              const Divider(color: Colors.white24, height: 1),
               _buildSwitchTile(
                 title: 'Streak Reminders',
                 subtitle: 'Keep my streak alive!',
@@ -111,7 +113,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   setState(() {});
                 },
               ),
-              Divider(color: Colors.white24, height: 1),
+              const Divider(color: Colors.white24, height: 1),
               _buildSwitchTile(
                 title: 'Achievement Alerts',
                 subtitle: 'Notify on new achievements',
@@ -125,7 +127,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
 
-          SizedBox(height: 16),
+          const SizedBox(height: 16),
 
           // Data & Privacy
           _buildSectionCard(
@@ -138,11 +140,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onTap: () {
                   // TODO: Implement export
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Export feature coming soon!')),
+                    const SnackBar(content: Text('Export feature coming soon!')),
                   );
                 },
               ),
-              Divider(color: Colors.white24, height: 1),
+              const Divider(color: Colors.white24, height: 1),
               _buildNavTile(
                 title: 'Import Save Data',
                 subtitle: 'Restore from backup',
@@ -150,11 +152,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onTap: () {
                   // TODO: Implement import
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Import feature coming soon!')),
+                    const SnackBar(content: Text('Import feature coming soon!')),
                   );
                 },
               ),
-              Divider(color: Colors.white24, height: 1),
+              const Divider(color: Colors.white24, height: 1),
               _buildNavTile(
                 title: 'Reset All Progress',
                 subtitle: 'Delete everything',
@@ -165,7 +167,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
 
-          SizedBox(height: 16),
+          const SizedBox(height: 16),
 
           // About
           _buildSectionCard(
@@ -177,7 +179,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 icon: Icons.info,
                 onTap: null,
               ),
-              Divider(color: Colors.white24, height: 1),
+              const Divider(color: Colors.white24, height: 1),
               _buildNavTile(
                 title: 'Credits',
                 subtitle: 'Made with ❤️',
@@ -194,7 +196,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
 
-          SizedBox(height: 32),
+          const SizedBox(height: 32),
         ],
       ),
     );
@@ -203,7 +205,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildSectionCard({required String title, required List<Widget> children}) {
     return Container(
       decoration: BoxDecoration(
-        color: Color(0xFF16213e),
+        color: const Color(0xFF16213e),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.white12, width: 1),
       ),
@@ -211,10 +213,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: EdgeInsets.all(16),
+            padding: const EdgeInsets.all(16),
             child: Text(
               title,
-              style: TextStyle(
+              style: const TextStyle(
                 color: Color(0xFF00d4ff),
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -235,19 +237,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required Function(bool) onChanged,
   }) {
     return ListTile(
-      leading: Icon(icon, color: Color(0xFF00d4ff)),
+      leading: Icon(icon, color: const Color(0xFF00d4ff)),
       title: Text(
         title,
-        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
       ),
       subtitle: Text(
         subtitle,
-        style: TextStyle(color: Colors.white54, fontSize: 12),
+        style: const TextStyle(color: Colors.white54, fontSize: 12),
       ),
       trailing: Switch(
         value: value,
         onChanged: onChanged,
-        activeColor: Color(0xFF00d4ff),
+        activeColor: const Color(0xFF00d4ff),
       ),
     );
   }
@@ -260,17 +262,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     Color? iconColor,
   }) {
     return ListTile(
-      leading: Icon(icon, color: iconColor ?? Color(0xFF00d4ff)),
+      leading: Icon(icon, color: iconColor ?? const Color(0xFF00d4ff)),
       title: Text(
         title,
-        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
       ),
       subtitle: Text(
         subtitle,
-        style: TextStyle(color: Colors.white54, fontSize: 12),
+        style: const TextStyle(color: Colors.white54, fontSize: 12),
       ),
       trailing: onTap != null
-          ? Icon(Icons.chevron_right, color: Colors.white54)
+          ? const Icon(Icons.chevron_right, color: Colors.white54)
           : null,
       onTap: onTap,
     );
@@ -278,32 +280,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildProfileTile() {
     return ListTile(
-      leading: Icon(Icons.person, color: Color(0xFF00d4ff)),
-      title: Text(
+      leading: const Icon(Icons.person, color: Color(0xFF00d4ff)),
+      title: const Text(
         'Character Name',
         style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
       ),
       subtitle: Text(
         widget.character.name,
-        style: TextStyle(color: Colors.white54, fontSize: 12),
+        style: const TextStyle(color: Colors.white54, fontSize: 12),
       ),
-      trailing: Icon(Icons.edit, color: Color(0xFF00d4ff), size: 20),
+      trailing: const Icon(Icons.edit, color: Color(0xFF00d4ff), size: 20),
       onTap: () => _showEditNameDialog(),
     );
   }
 
   Widget _buildStatsTile() {
     return ListTile(
-      leading: Icon(Icons.bar_chart, color: Color(0xFF00d4ff)),
-      title: Text(
+      leading: const Icon(Icons.bar_chart, color: Color(0xFF00d4ff)),
+      title: const Text(
         'Your Stats',
         style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
       ),
-      subtitle: Text(
+      subtitle: const Text(
         'View detailed statistics',
         style: TextStyle(color: Colors.white54, fontSize: 12),
       ),
-      trailing: Icon(Icons.chevron_right, color: Colors.white54),
+      trailing: const Icon(Icons.chevron_right, color: Colors.white54),
       onTap: () => _showStatsDialog(),
     );
   }
@@ -314,13 +316,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: Color(0xFF16213e),
+        backgroundColor: const Color(0xFF16213e),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Edit Name', style: TextStyle(color: Colors.white)),
+        title: const Text('Edit Name', style: TextStyle(color: Colors.white)),
         content: TextField(
           controller: controller,
-          style: TextStyle(color: Colors.white),
-          decoration: InputDecoration(
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
             hintText: 'Enter new name',
             hintStyle: TextStyle(color: Colors.white54),
             enabledBorder: UnderlineInputBorder(
@@ -334,7 +336,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: TextStyle(color: Colors.white54)),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -345,8 +347,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Navigator.pop(context);
               }
             },
-            style: ElevatedButton.styleFrom(backgroundColor: Color(0xFF00d4ff)),
-            child: Text('Save', style: TextStyle(color: Colors.white)),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00d4ff)),
+            child: const Text('Save', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -357,9 +359,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: Color(0xFF16213e),
+        backgroundColor: const Color(0xFF16213e),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
+        title: const Row(
           children: [
             Icon(Icons.bar_chart, color: Color(0xFF00d4ff)),
             SizedBox(width: 8),
@@ -370,21 +372,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             _buildStatRow('Total Focus Time', '${widget.character.totalFocusMinutes} min'),
-            Divider(color: Colors.white24),
+            const Divider(color: Colors.white24),
             _buildStatRow('Peas Earned', '${currency.peas} 🌱'),
-            Divider(color: Colors.white24),
+            const Divider(color: Colors.white24),
             _buildStatRow('Coins', '${currency.coins} 🪙'),
-            Divider(color: Colors.white24),
+            const Divider(color: Colors.white24),
             _buildStatRow('Current Streak', '${streak.currentStreak} ${streak.streakEmoji}'),
-            Divider(color: Colors.white24),
+            const Divider(color: Colors.white24),
             _buildStatRow('Longest Streak', '${streak.longestStreak} days'),
           ],
         ),
         actions: [
           ElevatedButton(
             onPressed: () => Navigator.pop(context),
-            style: ElevatedButton.styleFrom(backgroundColor: Color(0xFF00d4ff)),
-            child: Text('Close', style: TextStyle(color: Colors.white)),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00d4ff)),
+            child: const Text('Close', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -393,14 +395,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildStatRow(String label, String value) {
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: TextStyle(color: Colors.white70)),
+          Text(label, style: const TextStyle(color: Colors.white70)),
           Text(
             value,
-            style: TextStyle(
+            style: const TextStyle(
               color: Color(0xFF00d4ff),
               fontWeight: FontWeight.bold,
               fontSize: 16,
@@ -411,49 +413,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _showResetConfirmation() {
-    showDialog(
+  void _showResetConfirmation() async {
+    bool? confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: Color(0xFF16213e),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Icon(Icons.warning, color: Colors.red),
-            SizedBox(width: 8),
-            Text('Reset All Progress?', style: TextStyle(color: Colors.white)),
-          ],
-        ),
+        backgroundColor: Color(0xFF2d2d2d),
+        title: Text('Reset All Progress?', style: TextStyle(color: Colors.white)),
         content: Text(
-          'This will delete ALL your progress, currency, furniture, and stats. This cannot be undone!',
+          'This will delete ALL your progress:\n• Currency (peas & coins)\n• All upgrades\n• House unlocks\n• Furniture\n• Back to Cave stage',
           style: TextStyle(color: Colors.white70),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: TextStyle(color: Colors.white54)),
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancel', style: TextStyle(color: Colors.white70)),
           ),
-          ElevatedButton(
-            onPressed: () async {
-              // Reset everything
-              await storage.clearAll();
-              await currency.reset();
-              await streak.resetStreak();
-              await settings.resetToDefaults();
-
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('All progress has been reset'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: Text('Reset', style: TextStyle(color: Colors.white)),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('DELETE EVERYTHING', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
     );
+
+    if (confirm == true) {
+      await CurrencyService().reset();
+      await UpgradeService().reset();
+      await FurnitureService().reset();
+      setState(() {});
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('All progress has been reset!'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 }

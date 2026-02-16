@@ -25,7 +25,7 @@ class AppMonitorService {
     print("👀 Starting app monitoring...");
     isMonitoring = true;
 
-    _monitorTimer = Timer.periodic(Duration(seconds: 1), (timer) async {
+    _monitorTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
       String? currentApp = await getCurrentApp();
 
       if (currentApp != null && blockedApps.contains(currentApp)) {
@@ -38,7 +38,7 @@ class AppMonitorService {
   Future<String?> getCurrentApp() async {
     try {
       DateTime endDate = DateTime.now();
-      DateTime startDate = endDate.subtract(Duration(seconds: 2));
+      DateTime startDate = endDate.subtract(const Duration(seconds: 2));
 
       List<AppUsageInfo> infos = await AppUsage().getAppUsage(startDate, endDate);
 

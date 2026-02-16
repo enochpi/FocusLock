@@ -10,7 +10,7 @@ class FocusActiveScreen extends StatefulWidget {
   final Farm farm;
   final int durationMinutes;
 
-  FocusActiveScreen({
+  const FocusActiveScreen({super.key, 
     required this.character,
     required this.farm,
     required this.durationMinutes,
@@ -31,7 +31,7 @@ class _FocusActiveScreenState extends State<FocusActiveScreen> {
     session = FocusSession(durationMinutes: widget.durationMinutes);
     session.start();
 
-    timer = Timer.periodic(Duration(seconds: 1), (t) {
+    timer = Timer.periodic(const Duration(seconds: 1), (t) {
       setState(() {
         session.tick();
 
@@ -56,11 +56,11 @@ class _FocusActiveScreenState extends State<FocusActiveScreen> {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        backgroundColor: Color(0xFF16213e),
-        title: Text("Complete! 🎉", style: TextStyle(color: Colors.white)),
+        backgroundColor: const Color(0xFF16213e),
+        title: const Text("Complete! 🎉", style: TextStyle(color: Colors.white)),
         content: Text(
           "Earned $coinsEarned coins!\n${widget.durationMinutes} minutes focused",
-          style: TextStyle(color: Colors.white70),
+          style: const TextStyle(color: Colors.white70),
         ),
         actions: [
           ElevatedButton(
@@ -68,7 +68,7 @@ class _FocusActiveScreenState extends State<FocusActiveScreen> {
               Navigator.pop(context);
               Navigator.pop(context);
             },
-            child: Text("Done"),
+            child: const Text("Done"),
           ),
         ],
       ),
@@ -89,14 +89,14 @@ class _FocusActiveScreenState extends State<FocusActiveScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
+            const Text(
               "Focus Time",
               style: TextStyle(color: Colors.white70, fontSize: 24),
             ),
-            SizedBox(height: 40),
+            const SizedBox(height: 40),
             Text(
               session.formattedTime,
-              style: TextStyle(
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 72,
                 fontWeight: FontWeight.bold,

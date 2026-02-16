@@ -10,7 +10,7 @@ class GardenFocusScreen extends StatefulWidget {
   final Character character;
   final int focusDurationMinutes;
 
-  GardenFocusScreen({
+  const GardenFocusScreen({super.key, 
     required this.character,
     required this.focusDurationMinutes,
   });
@@ -35,7 +35,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     // Character animation (idle movement)
     _characterController = AnimationController(
       vsync: this,
-      duration: Duration(seconds: 2),
+      duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
 
     _startFocusSession();
@@ -47,7 +47,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     });
 
     // Start countdown
-    Future.delayed(Duration(seconds: 1), _countdown);
+    Future.delayed(const Duration(seconds: 1), _countdown);
   }
 
   void _countdown() {
@@ -55,7 +55,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
       setState(() {
         _remainingSeconds--;
       });
-      Future.delayed(Duration(seconds: 1), _countdown);
+      Future.delayed(const Duration(seconds: 1), _countdown);
     } else if (_remainingSeconds == 0) {
       _finishSession();
     }
@@ -93,11 +93,11 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        backgroundColor: Color(0xFF2d2d2d),
+        backgroundColor: const Color(0xFF2d2d2d),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
         ),
-        title: Text(
+        title: const Text(
           "Focus Complete! 🎉",
           style: TextStyle(color: Colors.white),
           textAlign: TextAlign.center,
@@ -105,39 +105,39 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
+            const Text(
               "You earned:",
               style: TextStyle(
                 fontSize: 16,
                 color: Colors.white70,
               ),
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
 
             // Peas earned (main reward)
             Container(
-              padding: EdgeInsets.all(16),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Color(0xFF4CAF50).withOpacity(0.2),
+                color: const Color(0xFF4CAF50).withOpacity(0.2),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: Color(0xFF4CAF50),
+                  color: const Color(0xFF4CAF50),
                   width: 2,
                 ),
               ),
               child: Column(
                 children: [
                   Text(
-                    "$peasEarned 🌱",
-                    style: TextStyle(
+                    "$peasEarned ${CurrencyService().cropEmoji}",
+                    style: const TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
                       color: Color(0xFF4CAF50),
                     ),
                   ),
-                  SizedBox(height: 8),
+                  const SizedBox(height: 8),
                   Text(
-                    "Peas",
+                    CurrencyService().cropName,
                     style: TextStyle(
                       fontSize: 16,
                       color: Colors.white70,
@@ -147,21 +147,21 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
               ),
             ),
 
-            SizedBox(height: 12),
+            const SizedBox(height: 12),
             Text(
               "${widget.focusDurationMinutes} min + 10% bonus!",
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 14,
                 color: Colors.white60,
                 fontStyle: FontStyle.italic,
               ),
             ),
 
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
 
             // Additional info (money + focus minutes)
             Container(
-              padding: EdgeInsets.all(12),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: Colors.black.withOpacity(0.3),
                 borderRadius: BorderRadius.circular(8),
@@ -170,15 +170,15 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                 children: [
                   Text(
                     "Also earned: \$$earnings",
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Colors.white70,
                       fontSize: 14,
                     ),
                   ),
-                  SizedBox(height: 4),
+                  const SizedBox(height: 4),
                   Text(
                     "+${widget.focusDurationMinutes} focus minutes",
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Colors.white70,
                       fontSize: 14,
                     ),
@@ -197,13 +197,13 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                 Navigator.pop(context); // Return to cave scene
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: Color(0xFF4CAF50),
-                padding: EdgeInsets.symmetric(vertical: 12),
+                backgroundColor: const Color(0xFF4CAF50),
+                padding: const EdgeInsets.symmetric(vertical: 12),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              child: Text(
+              child: const Text(
                 "Awesome!",
                 style: TextStyle(
                   fontSize: 16,
@@ -218,10 +218,17 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     );
   }
 
-  String _formatTime(int seconds) {
-    int minutes = seconds ~/ 60;
-    int secs = seconds % 60;
-    return "${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}";
+  String _formatTime(int totalSeconds) {
+    int hours = totalSeconds ~/ 3600;
+    int minutes = (totalSeconds % 3600) ~/ 60;
+    int seconds = totalSeconds % 60;
+
+    if (hours > 0) {
+      return '${hours}h ${minutes.toString().padLeft(2, '0')}m ${seconds.toString().padLeft(2, '0')}s';
+    } else if (minutes > 0) {
+      return '${minutes}m ${seconds.toString().padLeft(2, '0')}s';
+    }
+    return '${seconds}s';
   }
 
   @override
@@ -233,7 +240,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFF87CEEB), // Sky blue
+      backgroundColor: const Color(0xFF87CEEB), // Sky blue
       body: Stack(
         children: [
           // Garden scene
@@ -255,14 +262,14 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
             right: 0,
             child: Center(
               child: Container(
-                padding: EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
                 decoration: BoxDecoration(
                   color: Colors.black54,
                   borderRadius: BorderRadius.circular(30),
                 ),
                 child: Text(
                   _formatTime(_remainingSeconds),
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 40,
                     fontWeight: FontWeight.bold,
@@ -290,11 +297,11 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                     showDialog(
                       context: context,
                       builder: (context) => AlertDialog(
-                        backgroundColor: Color(0xFF16213e),
+                        backgroundColor: const Color(0xFF16213e),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(20),
                         ),
-                        title: Row(
+                        title: const Row(
                           children: [
                             Text("⏱️", style: TextStyle(fontSize: 28)),
                             SizedBox(width: 12),
@@ -310,7 +317,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Container(
-                              padding: EdgeInsets.all(16),
+                              padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
                                 color: Colors.red.withOpacity(0.2),
                                 borderRadius: BorderRadius.circular(12),
@@ -318,9 +325,9 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                               ),
                               child: Column(
                                 children: [
-                                  Icon(Icons.block, color: Colors.red, size: 48),
-                                  SizedBox(height: 12),
-                                  Text(
+                                  const Icon(Icons.block, color: Colors.red, size: 48),
+                                  const SizedBox(height: 12),
+                                  const Text(
                                     "You won't earn any peas!",
                                     style: TextStyle(
                                       color: Colors.white,
@@ -329,8 +336,8 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                                     ),
                                     textAlign: TextAlign.center,
                                   ),
-                                  SizedBox(height: 8),
-                                  Text(
+                                  const SizedBox(height: 8),
+                                  const Text(
                                     "You need at least 5 minutes of focus to earn peas.",
                                     style: TextStyle(
                                       color: Colors.white70,
@@ -338,7 +345,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                                     ),
                                     textAlign: TextAlign.center,
                                   ),
-                                  SizedBox(height: 12),
+                                  const SizedBox(height: 12),
                                   Text(
                                     "Current: $elapsedMinutes min\nRequired: 5 min",
                                     style: TextStyle(
@@ -355,7 +362,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                         actions: [
                           TextButton(
                             onPressed: () => Navigator.pop(context),
-                            child: Text(
+                            child: const Text(
                               "Keep Focusing",
                               style: TextStyle(
                                 color: Color(0xFF00d4ff),
@@ -370,7 +377,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                               Navigator.pop(context); // Close dialog
                               Navigator.pop(context); // Return to cave
                             },
-                            child: Text(
+                            child: const Text(
                               "Stop Anyway",
                               style: TextStyle(
                                 color: Colors.red,
@@ -392,11 +399,11 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                   showDialog(
                     context: context,
                     builder: (context) => AlertDialog(
-                      backgroundColor: Color(0xFF16213e),
+                      backgroundColor: const Color(0xFF16213e),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      title: Row(
+                      title: const Row(
                         children: [
                           Text("⚠️", style: TextStyle(fontSize: 28)),
                           SizedBox(width: 12),
@@ -414,21 +421,21 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                         children: [
                           // Progress so far
                           Container(
-                            padding: EdgeInsets.all(12),
+                            padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: Color(0xFF4CAF50).withOpacity(0.2),
+                              color: const Color(0xFF4CAF50).withOpacity(0.2),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text(
+                                const Text(
                                   "Earned so far:",
                                   style: TextStyle(color: Colors.white70),
                                 ),
                                 Text(
                                   "$peasSoFar 🌱",
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     color: Color(0xFF4CAF50),
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
@@ -437,19 +444,19 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                               ],
                             ),
                           ),
-                          SizedBox(height: 8),
+                          const SizedBox(height: 8),
                           Text(
                             "$elapsedMinutes of ${widget.focusDurationMinutes} minutes completed",
-                            style: TextStyle(
+                            style: const TextStyle(
                               color: Colors.white60,
                               fontSize: 12,
                             ),
                           ),
-                          SizedBox(height: 16),
+                          const SizedBox(height: 16),
 
                           // Penalty warning
                           Container(
-                            padding: EdgeInsets.all(12),
+                            padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
                               color: Colors.red.withOpacity(0.2),
                               borderRadius: BorderRadius.circular(8),
@@ -458,18 +465,18 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
+                                const Text(
                                   "If you stop now:",
                                   style: TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                                SizedBox(height: 8),
+                                const SizedBox(height: 8),
                                 Row(
                                   children: [
-                                    Text("❌", style: TextStyle(fontSize: 16)),
-                                    SizedBox(width: 8),
+                                    const Text("❌", style: TextStyle(fontSize: 16)),
+                                    const SizedBox(width: 8),
                                     Expanded(
                                       child: Text(
                                         "Lose $peasLost peas (20% penalty)",
@@ -478,15 +485,15 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                                     ),
                                   ],
                                 ),
-                                SizedBox(height: 4),
+                                const SizedBox(height: 4),
                                 Row(
                                   children: [
-                                    Text("✅", style: TextStyle(fontSize: 16)),
-                                    SizedBox(width: 8),
+                                    const Text("✅", style: TextStyle(fontSize: 16)),
+                                    const SizedBox(width: 8),
                                     Expanded(
                                       child: Text(
                                         "Keep $peasKept peas",
-                                        style: TextStyle(color: Color(0xFF4CAF50)),
+                                        style: const TextStyle(color: Color(0xFF4CAF50)),
                                       ),
                                     ),
                                   ],
@@ -499,7 +506,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.pop(context),
-                          child: Text(
+                          child: const Text(
                             "Keep Focusing",
                             style: TextStyle(
                               color: Color(0xFF00d4ff),
@@ -521,7 +528,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                             Navigator.pop(context); // Close warning dialog
                             Navigator.pop(context); // Return to cave
                           },
-                          child: Text(
+                          child: const Text(
                             "Stop",
                             style: TextStyle(
                               color: Colors.red,
@@ -535,12 +542,12 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red,
-                  padding: EdgeInsets.symmetric(horizontal: 50, vertical: 20),
+                  padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 20),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(30),
                   ),
                 ),
-                child: Text(
+                child: const Text(
                   "Stop Session",
                   style: TextStyle(
                     color: Colors.white,
@@ -599,7 +606,7 @@ class GardenPainter extends CustomPainter {
     canvas.drawCircle(
       Offset(w * 0.85, h * 0.12),
       38,
-      Paint()..color = Color(0xFFFDB813),
+      Paint()..color = const Color(0xFFFDB813),
     );
 
     // Sun glow
@@ -607,8 +614,8 @@ class GardenPainter extends CustomPainter {
       Offset(w * 0.85, h * 0.12),
       45,
       Paint()
-        ..color = Color(0xFFFFD700).withOpacity(0.4)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 18),
+        ..color = const Color(0xFFFFD700).withOpacity(0.4)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18),
     );
 
     // Animated sun rays (rotate)
@@ -623,7 +630,7 @@ class GardenPainter extends CustomPainter {
         Offset(startX, startY),
         Offset(endX, endY),
         Paint()
-          ..color = Color(0xFFFFD700)
+          ..color = const Color(0xFFFFD700)
           ..strokeWidth = 5
           ..strokeCap = StrokeCap.round,
       );
@@ -650,7 +657,7 @@ class GardenPainter extends CustomPainter {
     // Grass gradient
     final grassRect = Rect.fromLTWH(0, h * 0.6, w, h * 0.4);
     final grassPaint = Paint()
-      ..shader = LinearGradient(
+      ..shader = const LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: [Color(0xFF81C784), Color(0xFF66BB6A), Color(0xFF4CAF50)],
@@ -660,7 +667,7 @@ class GardenPainter extends CustomPainter {
 
     // Grass blades (more detailed)
     final grassTexture = Paint()
-      ..color = Color(0xFF66BB6A)
+      ..color = const Color(0xFF66BB6A)
       ..strokeWidth = 2
       ..strokeCap = StrokeCap.round;
 
@@ -681,13 +688,13 @@ class GardenPainter extends CustomPainter {
       ..close();
 
     // Cave darkness
-    canvas.drawPath(cavePath, Paint()..color = Color(0xFF0D0C0A));
+    canvas.drawPath(cavePath, Paint()..color = const Color(0xFF0D0C0A));
 
     // Cave stone border
     canvas.drawPath(
       cavePath,
       Paint()
-        ..color = Color(0xFF4A4440)
+        ..color = const Color(0xFF4A4440)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 6,
     );
@@ -696,7 +703,7 @@ class GardenPainter extends CustomPainter {
     canvas.drawPath(
       cavePath,
       Paint()
-        ..color = Color(0xFF2A2420)
+        ..color = const Color(0xFF2A2420)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 3,
     );
@@ -711,9 +718,9 @@ class GardenPainter extends CustomPainter {
     // Tree trunk with texture
     final trunkRect = RRect.fromRectAndRadius(
       Rect.fromLTWH(x - size * 0.12, y - size * 0.5, size * 0.24, size * 0.5),
-      Radius.circular(3),
+      const Radius.circular(3),
     );
-    canvas.drawRRect(trunkRect, Paint()..color = Color(0xFF6D4C41));
+    canvas.drawRRect(trunkRect, Paint()..color = const Color(0xFF6D4C41));
 
     // Bark texture
     for (int i = 0; i < 4; i++) {
@@ -721,17 +728,17 @@ class GardenPainter extends CustomPainter {
         Offset(x - size * 0.08, y - size * 0.4 + (i * size * 0.1)),
         Offset(x + size * 0.08, y - size * 0.38 + (i * size * 0.1)),
         Paint()
-          ..color = Color(0xFF5D4037)
+          ..color = const Color(0xFF5D4037)
           ..strokeWidth = 2,
       );
     }
 
     // Layered foliage (3D effect)
-    canvas.drawCircle(Offset(x, y - size * 0.7), size * 0.48, Paint()..color = Color(0xFF1B5E20));
-    canvas.drawCircle(Offset(x - size * 0.28, y - size * 0.45), size * 0.38, Paint()..color = Color(0xFF2E7D32));
-    canvas.drawCircle(Offset(x + size * 0.28, y - size * 0.45), size * 0.38, Paint()..color = Color(0xFF388E3C));
-    canvas.drawCircle(Offset(x - size * 0.15, y - size * 0.55), size * 0.32, Paint()..color = Color(0xFF43A047));
-    canvas.drawCircle(Offset(x + size * 0.15, y - size * 0.55), size * 0.32, Paint()..color = Color(0xFF4CAF50));
+    canvas.drawCircle(Offset(x, y - size * 0.7), size * 0.48, Paint()..color = const Color(0xFF1B5E20));
+    canvas.drawCircle(Offset(x - size * 0.28, y - size * 0.45), size * 0.38, Paint()..color = const Color(0xFF2E7D32));
+    canvas.drawCircle(Offset(x + size * 0.28, y - size * 0.45), size * 0.38, Paint()..color = const Color(0xFF388E3C));
+    canvas.drawCircle(Offset(x - size * 0.15, y - size * 0.55), size * 0.32, Paint()..color = const Color(0xFF43A047));
+    canvas.drawCircle(Offset(x + size * 0.15, y - size * 0.55), size * 0.32, Paint()..color = const Color(0xFF4CAF50));
   }
 
   void _drawRocks(Canvas canvas, double w, double h) {
@@ -749,7 +756,7 @@ class GardenPainter extends CustomPainter {
       ..close();
 
     // Rock body
-    canvas.drawPath(rockPath, Paint()..color = Color(0xFF424242));
+    canvas.drawPath(rockPath, Paint()..color = const Color(0xFF424242));
 
     // Rock highlights
     final highlightPath = Path()
@@ -760,7 +767,7 @@ class GardenPainter extends CustomPainter {
     canvas.drawPath(
       highlightPath,
       Paint()
-        ..color = Color(0xFF616161)
+        ..color = const Color(0xFF616161)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -769,7 +776,7 @@ class GardenPainter extends CustomPainter {
     canvas.drawPath(
       rockPath,
       Paint()
-        ..color = Color(0xFF212121)
+        ..color = const Color(0xFF212121)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 3,
     );
@@ -783,18 +790,18 @@ class GardenPainter extends CustomPainter {
         width: w * 0.45, // 4 plants width
         height: h * 0.18, // 3 plants height
       ),
-      Radius.circular(8),
+      const Radius.circular(8),
     );
 
     // Dirt color varies by progress
-    Color dirtColor = progress < 0.17 ? Color(0xFF8D6E63) : Color(0xFF6D4C41);
+    Color dirtColor = progress < 0.17 ? const Color(0xFF8D6E63) : const Color(0xFF6D4C41);
     canvas.drawRRect(gardenRect, Paint()..color = dirtColor);
 
     // Garden border
     canvas.drawRRect(
       gardenRect,
       Paint()
-        ..color = Color(0xFF5D4037)
+        ..color = const Color(0xFF5D4037)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 3,
     );
@@ -802,7 +809,7 @@ class GardenPainter extends CustomPainter {
     // Tilled rows (show after hoeing)
     if (progress > 0.17) {
       final rowPaint = Paint()
-        ..color = Color(0xFF5D4037)
+        ..color = const Color(0xFF5D4037)
         ..strokeWidth = 2;
 
       double startX = w * 0.325;
@@ -844,15 +851,15 @@ class GardenPainter extends CustomPainter {
   void _drawPlantStage(Canvas canvas, double x, double y, int stage) {
     if (stage == 0) return;
 
-    final plantPaint = Paint()..color = Color(0xFF4CAF50);
+    final plantPaint = Paint()..color = const Color(0xFF4CAF50);
     final stemPaint = Paint()
-      ..color = Color(0xFF558B2F)
+      ..color = const Color(0xFF558B2F)
       ..strokeWidth = 2.5
       ..strokeCap = StrokeCap.round;
 
     if (stage == 1) {
       // Tiny sprout
-      canvas.drawCircle(Offset(x, y - 2), 3.5, Paint()..color = Color(0xFF81C784));
+      canvas.drawCircle(Offset(x, y - 2), 3.5, Paint()..color = const Color(0xFF81C784));
       canvas.drawLine(Offset(x, y), Offset(x, y - 4), stemPaint..strokeWidth = 1.5);
     } else if (stage == 2) {
       // Small plant
@@ -876,15 +883,15 @@ class GardenPainter extends CustomPainter {
       canvas.drawLine(Offset(x, y), Offset(x, y - 18), stemPaint..strokeWidth = 3);
 
       // Pea pods (bright green)
-      final peaPaint = Paint()..color = Color(0xFF7CB342);
+      final peaPaint = Paint()..color = const Color(0xFF7CB342);
       canvas.drawCircle(Offset(x - 8, y - 12), 4.5, peaPaint);
       canvas.drawCircle(Offset(x + 8, y - 12), 4.5, peaPaint);
       canvas.drawCircle(Offset(x - 3, y - 16), 4, peaPaint);
       canvas.drawCircle(Offset(x + 3, y - 16), 4, peaPaint);
 
       // Pea highlights
-      canvas.drawCircle(Offset(x - 9, y - 13), 1.5, Paint()..color = Color(0xFF9CCC65));
-      canvas.drawCircle(Offset(x + 7, y - 13), 1.5, Paint()..color = Color(0xFF9CCC65));
+      canvas.drawCircle(Offset(x - 9, y - 13), 1.5, Paint()..color = const Color(0xFF9CCC65));
+      canvas.drawCircle(Offset(x + 7, y - 13), 1.5, Paint()..color = const Color(0xFF9CCC65));
     }
   }
 
@@ -916,10 +923,10 @@ class GardenPainter extends CustomPainter {
     );
 
     // Body
-    canvas.drawCircle(Offset(x, y + 2), 22, Paint()..color = Color(0xFFFFD54F));
+    canvas.drawCircle(Offset(x, y + 2), 22, Paint()..color = const Color(0xFFFFD54F));
 
     // Head
-    canvas.drawCircle(Offset(x, y - 23), 16, Paint()..color = Color(0xFFFFE082));
+    canvas.drawCircle(Offset(x, y - 23), 16, Paint()..color = const Color(0xFFFFE082));
 
     // Hoeing motion (up and down)
     double hoeY = y + 10 + (characterAnimation * 15);
@@ -930,7 +937,7 @@ class GardenPainter extends CustomPainter {
       Offset(x + 14, y - 8),
       Offset(x + 25, hoeY - 10),
       Paint()
-        ..color = Color(0xFFFFD54F)
+        ..color = const Color(0xFFFFD54F)
         ..strokeWidth = 8
         ..strokeCap = StrokeCap.round,
     );
@@ -938,7 +945,7 @@ class GardenPainter extends CustomPainter {
       Offset(x - 14, y - 8),
       Offset(x + 20, hoeY - 15),
       Paint()
-        ..color = Color(0xFFFFD54F)
+        ..color = const Color(0xFFFFD54F)
         ..strokeWidth = 8
         ..strokeCap = StrokeCap.round,
     );
@@ -948,14 +955,14 @@ class GardenPainter extends CustomPainter {
       Offset(x + 22, hoeY - 12),
       Offset(x + 22, hoeY + 22),
       Paint()
-        ..color = Color(0xFF8D6E63)
+        ..color = const Color(0xFF8D6E63)
         ..strokeWidth = 5,
     );
 
     // Hoe blade
     canvas.drawRect(
       Rect.fromCenter(center: Offset(x + 22, hoeY + 28), width: 25, height: 6),
-      Paint()..color = Color(0xFF757575),
+      Paint()..color = const Color(0xFF757575),
     );
 
     // Dirt flying up
@@ -964,7 +971,7 @@ class GardenPainter extends CustomPainter {
         canvas.drawCircle(
           Offset(x + 30 + (i * 6), hoeY + 20 - (characterAnimation * 12)),
           2.5,
-          Paint()..color = Color(0xFF8D6E63),
+          Paint()..color = const Color(0xFF8D6E63),
         );
       }
     }
@@ -980,10 +987,10 @@ class GardenPainter extends CustomPainter {
     );
 
     // Body
-    canvas.drawCircle(Offset(x, y), 22, Paint()..color = Color(0xFFFFD54F));
+    canvas.drawCircle(Offset(x, y), 22, Paint()..color = const Color(0xFFFFD54F));
 
     // Head
-    canvas.drawCircle(Offset(x, y - 26), 16, Paint()..color = Color(0xFFFFE082));
+    canvas.drawCircle(Offset(x, y - 26), 16, Paint()..color = const Color(0xFFFFE082));
 
     // Seed sack in left hand
     final sackPath = Path()
@@ -992,14 +999,14 @@ class GardenPainter extends CustomPainter {
       ..lineTo(x - 18, y + 2)
       ..lineTo(x - 24, y + 8)
       ..close();
-    canvas.drawPath(sackPath, Paint()..color = Color(0xFF8D6E63));
+    canvas.drawPath(sackPath, Paint()..color = const Color(0xFF8D6E63));
 
     // Sack opening
     canvas.drawLine(
       Offset(x - 22, y - 8),
       Offset(x - 18, y + 2),
       Paint()
-        ..color = Color(0xFF5D4037)
+        ..color = const Color(0xFF5D4037)
         ..strokeWidth = 2,
     );
 
@@ -1009,7 +1016,7 @@ class GardenPainter extends CustomPainter {
       Offset(x + 14, y - 6),
       Offset(x + 32, throwY),
       Paint()
-        ..color = Color(0xFFFFD54F)
+        ..color = const Color(0xFFFFD54F)
         ..strokeWidth = 8
         ..strokeCap = StrokeCap.round,
     );
@@ -1024,7 +1031,7 @@ class GardenPainter extends CustomPainter {
         canvas.drawCircle(
           Offset(seedX, seedY),
           2.5,
-          Paint()..color = Color(0xFF8D6E63),
+          Paint()..color = const Color(0xFF8D6E63),
         );
       }
     }
@@ -1040,10 +1047,10 @@ class GardenPainter extends CustomPainter {
     );
 
     // Body
-    canvas.drawCircle(Offset(x, y), 22, Paint()..color = Color(0xFFFFD54F));
+    canvas.drawCircle(Offset(x, y), 22, Paint()..color = const Color(0xFFFFD54F));
 
     // Head
-    canvas.drawCircle(Offset(x, y - 26), 16, Paint()..color = Color(0xFFFFE082));
+    canvas.drawCircle(Offset(x, y - 26), 16, Paint()..color = const Color(0xFFFFE082));
 
     // Watering can (tilted)
     canvas.save();
@@ -1053,29 +1060,29 @@ class GardenPainter extends CustomPainter {
     // Can body
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromLTWH(-10, -12, 20, 24),
-        Radius.circular(4),
+        const Rect.fromLTWH(-10, -12, 20, 24),
+        const Radius.circular(4),
       ),
-      Paint()..color = Color(0xFF78909C),
+      Paint()..color = const Color(0xFF78909C),
     );
 
     // Can handle
     final handlePath = Path()
-      ..addOval(Rect.fromCenter(center: Offset(-12, 0), width: 8, height: 16));
+      ..addOval(Rect.fromCenter(center: const Offset(-12, 0), width: 8, height: 16));
     canvas.drawPath(
       handlePath,
       Paint()
-        ..color = Color(0xFF546E7A)
+        ..color = const Color(0xFF546E7A)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 3,
     );
 
     // Spout
     canvas.drawLine(
-      Offset(10, -8),
-      Offset(20, -12),
+      const Offset(10, -8),
+      const Offset(20, -12),
       Paint()
-        ..color = Color(0xFF78909C)
+        ..color = const Color(0xFF78909C)
         ..strokeWidth = 5
         ..strokeCap = StrokeCap.round,
     );
@@ -1091,7 +1098,7 @@ class GardenPainter extends CustomPainter {
       if (dropY < y + 35) { // Only show while falling
         canvas.drawOval(
           Rect.fromCenter(center: Offset(dropX, dropY), width: 3, height: 6),
-          Paint()..color = Color(0xFF64B5F6).withOpacity(0.8),
+          Paint()..color = const Color(0xFF64B5F6).withOpacity(0.8),
         );
       }
     }
@@ -1101,8 +1108,8 @@ class GardenPainter extends CustomPainter {
       Offset(x + 46, y + 34),
       6,
       Paint()
-        ..color = Color(0xFF64B5F6).withOpacity(0.3)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 4),
+        ..color = const Color(0xFF64B5F6).withOpacity(0.3)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
     );
 
     // Arms holding can
@@ -1110,7 +1117,7 @@ class GardenPainter extends CustomPainter {
       Offset(x - 14, y - 4),
       Offset(x + 18, y - 6),
       Paint()
-        ..color = Color(0xFFFFD54F)
+        ..color = const Color(0xFFFFD54F)
         ..strokeWidth = 8
         ..strokeCap = StrokeCap.round,
     );
@@ -1118,7 +1125,7 @@ class GardenPainter extends CustomPainter {
       Offset(x + 14, y - 4),
       Offset(x + 24, y - 4),
       Paint()
-        ..color = Color(0xFFFFD54F)
+        ..color = const Color(0xFFFFD54F)
         ..strokeWidth = 8
         ..strokeCap = StrokeCap.round,
     );
@@ -1137,17 +1144,17 @@ class GardenPainter extends CustomPainter {
     double bobY = y + (sin(characterAnimation * 6.28) * 3);
 
     // Body
-    canvas.drawCircle(Offset(x, bobY), 22, Paint()..color = Color(0xFFFFD54F));
+    canvas.drawCircle(Offset(x, bobY), 22, Paint()..color = const Color(0xFFFFD54F));
 
     // Head
-    canvas.drawCircle(Offset(x, bobY - 26), 16, Paint()..color = Color(0xFFFFE082));
+    canvas.drawCircle(Offset(x, bobY - 26), 16, Paint()..color = const Color(0xFFFFE082));
 
     // Arms relaxed at sides
     canvas.drawLine(
       Offset(x - 16, bobY - 2),
       Offset(x - 28, bobY + 18),
       Paint()
-        ..color = Color(0xFFFFD54F)
+        ..color = const Color(0xFFFFD54F)
         ..strokeWidth = 8
         ..strokeCap = StrokeCap.round,
     );
@@ -1155,7 +1162,7 @@ class GardenPainter extends CustomPainter {
       Offset(x + 16, bobY - 2),
       Offset(x + 28, bobY + 18),
       Paint()
-        ..color = Color(0xFFFFD54F)
+        ..color = const Color(0xFFFFD54F)
         ..strokeWidth = 8
         ..strokeCap = StrokeCap.round,
     );
@@ -1171,10 +1178,10 @@ class GardenPainter extends CustomPainter {
     );
 
     // Body (bending down)
-    canvas.drawCircle(Offset(x, y + 8), 22, Paint()..color = Color(0xFFFFD54F));
+    canvas.drawCircle(Offset(x, y + 8), 22, Paint()..color = const Color(0xFFFFD54F));
 
     // Head (lower)
-    canvas.drawCircle(Offset(x, y - 16), 16, Paint()..color = Color(0xFFFFE082));
+    canvas.drawCircle(Offset(x, y - 16), 16, Paint()..color = const Color(0xFFFFE082));
 
     // Arms reaching down to pick
     double reachY = y + 28 + (sin(characterAnimation * 6.28) * 4);
@@ -1182,7 +1189,7 @@ class GardenPainter extends CustomPainter {
       Offset(x - 16, y + 8),
       Offset(x - 18, reachY),
       Paint()
-        ..color = Color(0xFFFFD54F)
+        ..color = const Color(0xFFFFD54F)
         ..strokeWidth = 8
         ..strokeCap = StrokeCap.round,
     );
@@ -1190,7 +1197,7 @@ class GardenPainter extends CustomPainter {
       Offset(x + 16, y + 8),
       Offset(x + 18, reachY),
       Paint()
-        ..color = Color(0xFFFFD54F)
+        ..color = const Color(0xFFFFD54F)
         ..strokeWidth = 8
         ..strokeCap = StrokeCap.round,
     );
@@ -1202,7 +1209,7 @@ class GardenPainter extends CustomPainter {
       ..lineTo(x - 28, y + 38)
       ..lineTo(x - 32, y + 32)
       ..close();
-    canvas.drawPath(basketPath, Paint()..color = Color(0xFF8D6E63));
+    canvas.drawPath(basketPath, Paint()..color = const Color(0xFF8D6E63));
 
     // Basket weave texture
     for (int i = 0; i < 3; i++) {
@@ -1210,7 +1217,7 @@ class GardenPainter extends CustomPainter {
         Offset(x - 40, y + 33 + (i * 2)),
         Offset(x - 30, y + 33 + (i * 2)),
         Paint()
-          ..color = Color(0xFF6D4C41)
+          ..color = const Color(0xFF6D4C41)
           ..strokeWidth = 1,
       );
     }
@@ -1226,17 +1233,17 @@ class GardenPainter extends CustomPainter {
     );
 
     // Body
-    canvas.drawCircle(Offset(x, y), 22, Paint()..color = Color(0xFFFFD54F));
+    canvas.drawCircle(Offset(x, y), 22, Paint()..color = const Color(0xFFFFD54F));
 
     // Head
-    canvas.drawCircle(Offset(x, y - 26), 16, Paint()..color = Color(0xFFFFE082));
+    canvas.drawCircle(Offset(x, y - 26), 16, Paint()..color = const Color(0xFFFFE082));
 
     // Arms raised in VICTORY!
     canvas.drawLine(
       Offset(x - 16, y - 8),
       Offset(x - 32, y - 32),
       Paint()
-        ..color = Color(0xFFFFD54F)
+        ..color = const Color(0xFFFFD54F)
         ..strokeWidth = 8
         ..strokeCap = StrokeCap.round,
     );
@@ -1244,7 +1251,7 @@ class GardenPainter extends CustomPainter {
       Offset(x + 16, y - 8),
       Offset(x + 32, y - 32),
       Paint()
-        ..color = Color(0xFFFFD54F)
+        ..color = const Color(0xFFFFD54F)
         ..strokeWidth = 8
         ..strokeCap = StrokeCap.round,
     );
@@ -1256,14 +1263,14 @@ class GardenPainter extends CustomPainter {
       ..lineTo(x + 28, y + 38)
       ..lineTo(x + 24, y + 22)
       ..close();
-    canvas.drawPath(basketPath, Paint()..color = Color(0xFF8D6E63));
+    canvas.drawPath(basketPath, Paint()..color = const Color(0xFF8D6E63));
 
     // Basket rim
     canvas.drawLine(
       Offset(x - 24, y + 22),
       Offset(x + 24, y + 22),
       Paint()
-        ..color = Color(0xFF6D4C41)
+        ..color = const Color(0xFF6D4C41)
         ..strokeWidth = 4
         ..strokeCap = StrokeCap.round,
     );
@@ -1274,7 +1281,7 @@ class GardenPainter extends CustomPainter {
       canvas.drawCircle(
         Offset(x - 18 + (i * 5), y + 18 + (i % 2) * 3),
         5,
-        Paint()..color = Color(0xFF7CB342),
+        Paint()..color = const Color(0xFF7CB342),
       );
     }
 
@@ -1287,14 +1294,14 @@ class GardenPainter extends CustomPainter {
         ..lineTo(cx - 3, y + 34)
         ..lineTo(cx + 3, y + 34)
         ..close();
-      canvas.drawPath(carrotPath, Paint()..color = Color(0xFFFF9800));
+      canvas.drawPath(carrotPath, Paint()..color = const Color(0xFFFF9800));
 
       // Carrot top (green leaves)
       canvas.drawLine(
         Offset(cx, y + 26),
         Offset(cx - 2, y + 22),
         Paint()
-          ..color = Color(0xFF4CAF50)
+          ..color = const Color(0xFF4CAF50)
           ..strokeWidth = 2
           ..strokeCap = StrokeCap.round,
       );
@@ -1302,7 +1309,7 @@ class GardenPainter extends CustomPainter {
         Offset(cx, y + 26),
         Offset(cx + 2, y + 22),
         Paint()
-          ..color = Color(0xFF4CAF50)
+          ..color = const Color(0xFF4CAF50)
           ..strokeWidth = 2
           ..strokeCap = StrokeCap.round,
       );
@@ -1353,7 +1360,7 @@ class GardenPainter extends CustomPainter {
 
   void _drawSparkle(Canvas canvas, double x, double y, double size) {
     final sparklePaint = Paint()
-      ..color = Color(0xFFFFD700)
+      ..color = const Color(0xFFFFD700)
       ..strokeWidth = 3
       ..strokeCap = StrokeCap.round;
 
@@ -1368,7 +1375,7 @@ class GardenPainter extends CustomPainter {
       Offset(x, y),
       size * 0.3,
       Paint()
-        ..color = Color(0xFFFFD700)
+        ..color = const Color(0xFFFFD700)
         ..maskFilter = MaskFilter.blur(BlurStyle.normal, size * 0.5),
     );
   }
@@ -1389,7 +1396,7 @@ class GardenPainter extends CustomPainter {
       Offset(x, y),
       Offset(x, y - 20),
       Paint()
-        ..color = Color(0xFF4CAF50)
+        ..color = const Color(0xFF4CAF50)
         ..strokeWidth = 3.5
         ..strokeCap = StrokeCap.round,
     );
@@ -1398,12 +1405,12 @@ class GardenPainter extends CustomPainter {
     final leftLeaf = Path()
       ..moveTo(x, y - 10)
       ..quadraticBezierTo(x - 6, y - 12, x - 8, y - 8);
-    canvas.drawPath(leftLeaf, Paint()..color = Color(0xFF66BB6A)..style = PaintingStyle.fill);
+    canvas.drawPath(leftLeaf, Paint()..color = const Color(0xFF66BB6A)..style = PaintingStyle.fill);
 
     final rightLeaf = Path()
       ..moveTo(x, y - 14)
       ..quadraticBezierTo(x + 6, y - 16, x + 8, y - 12);
-    canvas.drawPath(rightLeaf, Paint()..color = Color(0xFF66BB6A)..style = PaintingStyle.fill);
+    canvas.drawPath(rightLeaf, Paint()..color = const Color(0xFF66BB6A)..style = PaintingStyle.fill);
 
     // Petals (6 around center)
     for (int i = 0; i < 6; i++) {

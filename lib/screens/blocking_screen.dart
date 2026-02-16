@@ -6,7 +6,7 @@ class BlockingScreen extends StatefulWidget {
   final VoidCallback onReturn;
   final String appName;
 
-  BlockingScreen({
+  const BlockingScreen({super.key, 
     required this.onReturn,
     this.appName = "blocked app",
   });
@@ -32,7 +32,7 @@ class _BlockingScreenState extends State<BlockingScreen> {
   }
 
   void startCountdown() {
-    countdownTimer = Timer.periodic(Duration(seconds: 1), (timer) {
+    countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       setState(() {
         countdown--;
       });
@@ -63,7 +63,7 @@ class _BlockingScreenState extends State<BlockingScreen> {
         body: SafeArea(
           child: Center(
             child: Padding(
-              padding: EdgeInsets.all(40),
+              padding: const EdgeInsets.all(40),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -75,16 +75,16 @@ class _BlockingScreenState extends State<BlockingScreen> {
                       shape: BoxShape.circle,
                       color: Colors.red.withOpacity(0.2),
                     ),
-                    child: Icon(
+                    child: const Icon(
                       Icons.block,
                       color: Colors.red,
                       size: 60,
                     ),
                   ),
 
-                  SizedBox(height: 40),
+                  const SizedBox(height: 40),
 
-                  Text(
+                  const Text(
                     "Focus Break",
                     style: TextStyle(
                       color: Colors.white,
@@ -93,37 +93,37 @@ class _BlockingScreenState extends State<BlockingScreen> {
                     ),
                   ),
 
-                  SizedBox(height: 20),
+                  const SizedBox(height: 20),
 
                   Text(
                     "You tried to open ${widget.appName}",
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Colors.white70,
                       fontSize: 18,
                     ),
                     textAlign: TextAlign.center,
                   ),
 
-                  SizedBox(height: 60),
+                  const SizedBox(height: 60),
 
                   if (countdown > 0) ...[
                     Text(
                       "$countdown",
-                      style: TextStyle(
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 64,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    SizedBox(height: 10),
-                    Text(
+                    const SizedBox(height: 10),
+                    const Text(
                       "seconds until you can return...",
                       style: TextStyle(
                         color: Colors.white54,
                         fontSize: 16,
                       ),
                     ),
-                    SizedBox(height: 30),
+                    const SizedBox(height: 30),
                     SizedBox(
                       width: 100,
                       height: 100,
@@ -135,12 +135,12 @@ class _BlockingScreenState extends State<BlockingScreen> {
                       ),
                     ),
                   ] else ...[
-                    Icon(
+                    const Icon(
                       Icons.check_circle,
                       color: Colors.green,
                       size: 80,
                     ),
-                    SizedBox(height: 30),
+                    const SizedBox(height: 30),
                     ElevatedButton(
                       onPressed: () {
                         Navigator.pop(context);
@@ -148,12 +148,12 @@ class _BlockingScreenState extends State<BlockingScreen> {
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green,
-                        padding: EdgeInsets.symmetric(
+                        padding: const EdgeInsets.symmetric(
                           horizontal: 40,
                           vertical: 20,
                         ),
                       ),
-                      child: Text(
+                      child: const Text(
                         "Return to Focus",
                         style: TextStyle(
                           fontSize: 18,

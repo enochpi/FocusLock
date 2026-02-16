@@ -1,23 +1,29 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:focus_life/painters/interior_painters.dart';
 import 'package:focus_life/services/currency_service.dart';
+import 'package:focus_life/services/upgrade_service.dart';
+import 'package:focus_life/utils/number_formatter.dart';
 import 'dart:math' as math;
 import '../models/character.dart';
 import '../models/cave_decorations.dart';
 import '../services/storage_service.dart';
-import 'shop_screen.dart';
-import '../services/furniture_service.dart';
+import 'package:focus_life/services/furniture_service.dart';
 import 'cave_shop_screen.dart';
-import 'dart:async';
-import 'dart:math';
+
 
 class CaveInteriorScreen extends StatefulWidget {
   final Character character;
   final CaveDecorations decorations;
+  final int stage;  // ← ADD THIS
 
-  CaveInteriorScreen({
+  const CaveInteriorScreen({
+    super.key,
     required this.character,
     required this.decorations,
+    this.stage = -1,  // -1 means use current
   });
 
   @override
@@ -26,6 +32,25 @@ class CaveInteriorScreen extends StatefulWidget {
 
 class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
   StorageService storage = StorageService();
+  Timer? _dayNightTimer;
+  int get activeStage => widget.stage == -1
+      ? UpgradeService().currentStage
+      : widget.stage;
+
+  @override
+  void initState() {
+    super.initState();
+    // Refresh every 60 seconds for sky movement
+    _dayNightTimer = Timer.periodic(Duration(seconds: 60), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _dayNightTimer?.cancel();
+    super.dispose();
+  }
 
   // Rotation control
   double rotationX = 0.25;
@@ -42,26 +67,27 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
   Color get backgroundColor {
     int level = widget.decorations.lightingLevel;
     switch (level) {
-      case 0: return Color(0xFF2a2a2a);
-      case 1: return Color(0xFF3a3a3a);
-      case 2: return Color(0xFF4a4a4a);
-      case 3: return Color(0xFF5a5a5a);
-      case 4: return Color(0xFF6a6a6a);
-      default: return Color(0xFF2a2a2a);
+      case 0: return const Color(0xFF2a2a2a);
+      case 1: return const Color(0xFF3a3a3a);
+      case 2: return const Color(0xFF4a4a4a);
+      case 3: return const Color(0xFF5a5a5a);
+      case 4: return const Color(0xFF6a6a6a);
+      default: return const Color(0xFF2a2a2a);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFF0a0a0a),
+      backgroundColor: const Color(0xFF0a0a0a),
+
       appBar: AppBar(
         backgroundColor: Colors.black,
-        title: Text("My Cave"),
+        title: const Text("My Cave"),
         actions: [
           // Debug money button
           IconButton(
-            icon: Icon(Icons.attach_money, color: Colors.green),
+            icon: const Icon(Icons.attach_money, color: Colors.green),
             onPressed: () async {
               await CurrencyService().addCoins(100);
               setState(() {});
@@ -69,13 +95,15 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
             tooltip: "Add Coins (Debug)",
           ),
 
+
+          // Show coins
           // Show coins
           Padding(
-            padding: EdgeInsets.all(12),
+            padding: const EdgeInsets.all(12),
             child: Center(
               child: Text(
-                "🪙 ${CurrencyService().coins}",
-                style: TextStyle(
+                "🪙 ${NumberFormatter.format(CurrencyService().coins)}",  // ← ADD NumberFormatter.format()
+                style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
@@ -86,6 +114,11 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
       ),
       body: Stack(
         children: [
+          SizedBox.expand(
+            child: CustomPaint(
+              painter: getInteriorPainter(activeStage, furnitureService: FurnitureService()),
+            ),
+          ),
           // Cave with animated pea
           Listener(
             onPointerSignal: (event) {
@@ -133,22 +166,24 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
                   offset: Offset(offsetX, offsetY),
                   child: Transform.scale(
                     scale: _scale,
-                    child: Container(
+                    child: SizedBox(
                       width: 400,
                       height: 500,
                       child: Stack(
                         children: [
                           // Cave painting
                           CustomPaint(
-                            size: Size(400, 500),
-                            painter: ThickWallCubePainter(
+                            size: const Size(400, 500),
+                            painter: UpgradeService().currentStage == 0
+                                ? ThickWallCubePainter(
                               backgroundColor: backgroundColor,
                               lightLevel: widget.decorations.lightingLevel,
                               decorations: widget.decorations,
                               rotationX: rotationX,
                               rotationY: rotationY,
                               furnitureService: FurnitureService(),
-                            ),
+                            )
+                                : null,  // no cube for higher stages
                           ),
                         ],
                       ),
@@ -173,8 +208,8 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
                   );
                   setState(() {});
                 },
-                icon: Icon(Icons.shopping_bag, size: 22, color: Colors.white),
-                label: Text(
+                icon: const Icon(Icons.shopping_bag, size: 22, color: Colors.white),
+                label: const Text(
                   "Shop",
                   style: TextStyle(
                     fontSize: 16,
@@ -183,8 +218,8 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
                   ),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Color(0xFF4CAF50),
-                  padding: EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                  backgroundColor: const Color(0xFF4CAF50),
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -277,9 +312,9 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: Color(0xFF16213e),
+      backgroundColor: const Color(0xFF16213e),
       isScrollControlled: true,
-      shape: RoundedRectangleBorder(
+      shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) => ItemPickerSheet(
@@ -335,7 +370,7 @@ class ThickWallCubePainter extends CustomPainter {
   void _drawSimpleBackground(Canvas canvas, Size size) {
     canvas.drawRect(
       Rect.fromLTWH(0, 0, size.width, size.height),
-      Paint()..color = Color(0xFF4a4440),
+      Paint()..color = const Color(0xFF4a4440),
     );
   }
 
@@ -374,7 +409,7 @@ class ThickWallCubePainter extends CustomPainter {
       Offset(0, wallHeight),
       Offset(size.width, wallHeight),
       Paint()
-        ..color = Color(0xFF2a2420)
+        ..color = const Color(0xFF2a2420)
         ..strokeWidth = 4,
     );
   }
@@ -383,7 +418,7 @@ class ThickWallCubePainter extends CustomPainter {
     final floorTop = size.height * 0.6;
 
     final plankPaint = Paint()
-      ..color = Color(0xFF3d2f22)
+      ..color = const Color(0xFF3d2f22)
       ..strokeWidth = 2;
 
     for (int i = 1; i < 8; i++) {
@@ -407,17 +442,21 @@ class ThickWallCubePainter extends CustomPainter {
     Furniture? kitchen = furnitureService!.getPlacedFurniture('kitchen_spot');
 
     List<Furniture> allDecorations = [];
-    for (int i = 1; i <= 6; i++) {
+    for (int i = 1; i <= 8; i++) {
       Furniture? deco = furnitureService!.getPlacedFurniture('decoration_spot_$i');
       if (deco != null) {
         allDecorations.add(deco);
       }
     }
 
-    bool hasHangingPlant = allDecorations.any((d) => d.id.contains('hanging_plant'));
-    bool hasWallTorch = allDecorations.any((d) => d.id.contains('wall_torch'));
-    bool hasPainting = allDecorations.any((d) => d.id.contains('painting'));
-    bool hasCrystal = allDecorations.any((d) => d.id.contains('crystal'));
+    bool hasHangingPlant = allDecorations.any((d) => d.id == 'hanging_plant');
+    bool hasWallTorch = allDecorations.any((d) => d.id == 'wall_torch');
+    bool hasPainting = allDecorations.any((d) => d.id == 'simple_painting');
+    bool hasWallCrystal = allDecorations.any((d) => d.id == 'wall_crystal');
+    bool hasGlowingMushroom = allDecorations.any((d) => d.id == 'glowing_mushroom');
+    bool hasCrystalCluster = allDecorations.any((d) => d.id == 'crystal_cluster');
+    bool hasAncientArtifact = allDecorations.any((d) => d.id == 'ancient_artifact');
+    bool hasEnchantedCrystal = allDecorations.any((d) => d.id == 'enchanted_crystal');
 
     if (hasHangingPlant) {
       _drawHangingPlant(canvas, size.width * 0.25, 6);
@@ -433,8 +472,22 @@ class ThickWallCubePainter extends CustomPainter {
       _drawPictureFrame(canvas, size.width * 0.70, size.height * 0.25);
     }
 
-    if (hasCrystal) {
-      _drawCrystalCluster(canvas, size.width * 0.5, size.height * 0.12);
+    if (hasWallCrystal) {
+      _drawCrystalCluster(canvas, size.width * 0.5, size.height * 0.25);
+    }
+
+// NEW DECORATIONS (unique visuals + better spots!)
+    if (hasGlowingMushroom) {
+      _drawGlowingMushroom(canvas, size.width * 0.073, floorY - 2);
+    }
+    if (hasCrystalCluster) {
+      _drawBigCrystalCluster(canvas, size.width * 0.84, floorY - 100);
+    }
+    if (hasAncientArtifact) {
+      _drawAncientArtifact(canvas, size.width * 0.30, floorY - 154);
+    }
+    if (hasEnchantedCrystal) {
+      _drawEnchantedCrystal(canvas, size.width * 0.50, size.height * 0.08);
     }
 
     // Draw bed based on type (against right wall)
@@ -509,7 +562,7 @@ class ThickWallCubePainter extends CustomPainter {
 
     canvas.drawPath(
       handlePath,
-      Paint()..color = Color(0xFF6D4C41), // Brown wood
+      Paint()..color = const Color(0xFF6D4C41), // Brown wood
     );
 
     // Handle texture (wood grain lines)
@@ -518,14 +571,14 @@ class ThickWallCubePainter extends CustomPainter {
         Offset(x - 2, y - 10 + (i * 8)),
         Offset(x + 2, y - 10 + (i * 8)),
         Paint()
-          ..color = Color(0xFF5D4037)
+          ..color = const Color(0xFF5D4037)
           ..strokeWidth = 1,
       );
     }
 
     // Metal bracket (holds torch to wall)
     final bracketPaint = Paint()
-      ..color = Color(0xFF424242)
+      ..color = const Color(0xFF424242)
       ..strokeWidth = 3
       ..strokeCap = StrokeCap.round;
 
@@ -547,7 +600,7 @@ class ThickWallCubePainter extends CustomPainter {
     canvas.drawCircle(
       Offset(x, y - 18),
       5,
-      Paint()..color = Color(0xFF2C2C2C),
+      Paint()..color = const Color(0xFF2C2C2C),
     );
 
     // Fire glow effect
@@ -555,8 +608,8 @@ class ThickWallCubePainter extends CustomPainter {
       Offset(x, y - 18),
       18,
       Paint()
-        ..color = Color(0xFFFF8C42).withOpacity(0.3)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 15),
+        ..color = const Color(0xFFFF8C42).withOpacity(0.3)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 15),
     );
 
     // Bright inner glow
@@ -564,8 +617,8 @@ class ThickWallCubePainter extends CustomPainter {
       Offset(x, y - 18),
       10,
       Paint()
-        ..color = Color(0xFFFFD54F).withOpacity(0.5)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 8),
+        ..color = const Color(0xFFFFD54F).withOpacity(0.5)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
     );
 
     // Fire flame emoji
@@ -577,24 +630,24 @@ class ThickWallCubePainter extends CustomPainter {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromCenter(center: Offset(x, y), width: 50, height: 60),
-        Radius.circular(3),
+        const Radius.circular(3),
       ),
-      Paint()..color = Color(0xFF8D6E63),
+      Paint()..color = const Color(0xFF8D6E63),
     );
 
     // Inner canvas (picture area)
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromCenter(center: Offset(x, y), width: 40, height: 50),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
-      Paint()..color = Color(0xFFE8D4B8),
+      Paint()..color = const Color(0xFFE8D4B8),
     );
 
     // Sky
     canvas.drawRect(
       Rect.fromLTWH(x - 18, y - 23, 36, 20),
-      Paint()..color = Color(0xFF87CEEB),
+      Paint()..color = const Color(0xFF87CEEB),
     );
 
     // Mountains
@@ -605,7 +658,7 @@ class ThickWallCubePainter extends CustomPainter {
       ..close();
     canvas.drawPath(
       mountainPath,
-      Paint()..color = Color(0xFF8B7355),
+      Paint()..color = const Color(0xFF8B7355),
     );
 
     final mountainPath2 = Path()
@@ -615,34 +668,34 @@ class ThickWallCubePainter extends CustomPainter {
       ..close();
     canvas.drawPath(
       mountainPath2,
-      Paint()..color = Color(0xFF6B5B4D),
+      Paint()..color = const Color(0xFF6B5B4D),
     );
 
     // Ground
     canvas.drawRect(
       Rect.fromLTWH(x - 18, y - 3, 36, 20),
-      Paint()..color = Color(0xFF7CB342),
+      Paint()..color = const Color(0xFF7CB342),
     );
 
     // Simple tree
     canvas.drawCircle(
       Offset(x - 10, y + 5),
       6,
-      Paint()..color = Color(0xFF4CAF50),
+      Paint()..color = const Color(0xFF4CAF50),
     );
     canvas.drawRect(
       Rect.fromLTWH(x - 11, y + 10, 2, 7),
-      Paint()..color = Color(0xFF5D4037),
+      Paint()..color = const Color(0xFF5D4037),
     );
 
     // Frame border
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromCenter(center: Offset(x, y), width: 50, height: 60),
-        Radius.circular(3),
+        const Radius.circular(3),
       ),
       Paint()
-        ..color = Color(0xFF5D4037)
+        ..color = const Color(0xFF5D4037)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -655,15 +708,15 @@ class ThickWallCubePainter extends CustomPainter {
       Offset(x, y),
       30,
       Paint()
-        ..color = Color(0xFF6EC6FF).withOpacity(0.3)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 20),
+        ..color = const Color(0xFF6EC6FF).withOpacity(0.3)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20),
     );
 
     // Crystal shards
     for (int i = 0; i < 3; i++) {
       double offsetX = (i - 1) * 15;
-      Color color = i == 0 ? Color(0xFF6EC6FF) :
-      i == 1 ? Color(0xFF9D6EFF) : Color(0xFF6EFFB4);
+      Color color = i == 0 ? const Color(0xFF6EC6FF) :
+      i == 1 ? const Color(0xFF9D6EFF) : const Color(0xFF6EFFB4);
 
       _drawCrystal(canvas, x + offsetX, y, color);
     }
@@ -709,7 +762,7 @@ class ThickWallCubePainter extends CustomPainter {
       Offset(x, 0),
       Offset(x, y + 25),
       Paint()
-        ..color = Color(0xFF8D6E63)
+        ..color = const Color(0xFF8D6E63)
         ..strokeWidth = 2,
     );
 
@@ -717,7 +770,7 @@ class ThickWallCubePainter extends CustomPainter {
     canvas.drawCircle(
       Offset(x, y + 23),
       3,
-      Paint()..color = Color(0xFF6D4C41),
+      Paint()..color = const Color(0xFF6D4C41),
     );
 
     // Terracotta pot (wider trapezoid)
@@ -731,13 +784,13 @@ class ThickWallCubePainter extends CustomPainter {
     // Pot fill (terracotta orange)
     canvas.drawPath(
       potPath,
-      Paint()..color = Color(0xFFD4866A),
+      Paint()..color = const Color(0xFFD4866A),
     );
 
     // Pot rim (darker band at top)
     canvas.drawRect(
       Rect.fromLTWH(x - 14, y + 25, 28, 3),
-      Paint()..color = Color(0xFFB86F56),
+      Paint()..color = const Color(0xFFB86F56),
     );
 
     // Decorative stripe on pot
@@ -745,7 +798,7 @@ class ThickWallCubePainter extends CustomPainter {
       Offset(x - 12, y + 33),
       Offset(x + 12, y + 33),
       Paint()
-        ..color = Color(0xFFB86F56)
+        ..color = const Color(0xFFB86F56)
         ..strokeWidth = 2,
     );
 
@@ -753,7 +806,7 @@ class ThickWallCubePainter extends CustomPainter {
     canvas.drawPath(
       potPath,
       Paint()
-        ..color = Color(0xFFAA6652)
+        ..color = const Color(0xFFAA6652)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -761,7 +814,7 @@ class ThickWallCubePainter extends CustomPainter {
     // Soil surface (dark brown)
     canvas.drawOval(
       Rect.fromCenter(center: Offset(x, y + 26), width: 24, height: 6),
-      Paint()..color = Color(0xFF4A3C2E),
+      Paint()..color = const Color(0xFF4A3C2E),
     );
 
     // Soil texture (little dots)
@@ -769,7 +822,7 @@ class ThickWallCubePainter extends CustomPainter {
       canvas.drawCircle(
         Offset(x - 8 + (i * 4), y + 26),
         1,
-        Paint()..color = Color(0xFF3A2C1E),
+        Paint()..color = const Color(0xFF3A2C1E),
       );
     }
 
@@ -779,7 +832,7 @@ class ThickWallCubePainter extends CustomPainter {
       Offset(x - 5, y + 26),
       Offset(x - 5, y + 14),
       Paint()
-        ..color = Color(0xFF6B8E23)
+        ..color = const Color(0xFF6B8E23)
         ..strokeWidth = 2,
     );
 
@@ -791,7 +844,7 @@ class ThickWallCubePainter extends CustomPainter {
       ..close();
     canvas.drawPath(
       leaf1Path,
-      Paint()..color = Color(0xFF7CB342),
+      Paint()..color = const Color(0xFF7CB342),
     );
 
     // Right leaf
@@ -802,7 +855,7 @@ class ThickWallCubePainter extends CustomPainter {
       ..close();
     canvas.drawPath(
       leaf2Path,
-      Paint()..color = Color(0xFF7CB342),
+      Paint()..color = const Color(0xFF7CB342),
     );
 
     // SPROUT 2 (Right side - shorter with rounded leaves)
@@ -811,7 +864,7 @@ class ThickWallCubePainter extends CustomPainter {
       Offset(x + 6, y + 26),
       Offset(x + 5, y + 16),
       Paint()
-        ..color = Color(0xFF6B8E23)
+        ..color = const Color(0xFF6B8E23)
         ..strokeWidth = 2,
     );
 
@@ -819,14 +872,14 @@ class ThickWallCubePainter extends CustomPainter {
     canvas.drawCircle(
       Offset(x + 2, y + 18),
       3.5,
-      Paint()..color = Color(0xFF8BC34A),
+      Paint()..color = const Color(0xFF8BC34A),
     );
 
     // Right rounded leaf
     canvas.drawCircle(
       Offset(x + 8, y + 19),
       3,
-      Paint()..color = Color(0xFF8BC34A),
+      Paint()..color = const Color(0xFF8BC34A),
     );
 
     // SPROUT 3 (Center back - tiny baby sprout)
@@ -835,7 +888,7 @@ class ThickWallCubePainter extends CustomPainter {
       Offset(x, y + 26),
       Offset(x, y + 21),
       Paint()
-        ..color = Color(0xFF7CB342)
+        ..color = const Color(0xFF7CB342)
         ..strokeWidth = 1.5,
     );
 
@@ -843,12 +896,12 @@ class ThickWallCubePainter extends CustomPainter {
     canvas.drawCircle(
       Offset(x - 2, y + 22),
       2,
-      Paint()..color = Color(0xFF9CCC65),
+      Paint()..color = const Color(0xFF9CCC65),
     );
     canvas.drawCircle(
       Offset(x + 2, y + 22),
       2,
-      Paint()..color = Color(0xFF9CCC65),
+      Paint()..color = const Color(0xFF9CCC65),
     );
   }
 
@@ -858,19 +911,19 @@ class ThickWallCubePainter extends CustomPainter {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x, y, 90, 120),
-        Radius.circular(5),
+        const Radius.circular(5),
       ),
-      Paint()..color = Color(0xFF8D6E63),
+      Paint()..color = const Color(0xFF8D6E63),
     );
 
     // Bed frame outline
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x, y, 90, 120),
-        Radius.circular(5),
+        const Radius.circular(5),
       ),
       Paint()
-        ..color = Color(0xFF6D4C41)
+        ..color = const Color(0xFF6D4C41)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 3,
     );
@@ -879,21 +932,21 @@ class ThickWallCubePainter extends CustomPainter {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 5, y + 5, 80, 110),
-        Radius.circular(4),
+        const Radius.circular(4),
       ),
-      Paint()..color = Color(0xFFE8E8E8),
+      Paint()..color = const Color(0xFFE8E8E8),
     );
 
     // Pillow
     canvas.drawOval(
       Rect.fromLTWH(x + 15, y + 15, 60, 30),
-      Paint()..color = Color(0xFFFFFFFF),
+      Paint()..color = const Color(0xFFFFFFFF),
     );
 
     canvas.drawOval(
       Rect.fromLTWH(x + 15, y + 15, 60, 30),
       Paint()
-        ..color = Color(0xFFCCCCCC)
+        ..color = const Color(0xFFCCCCCC)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -902,9 +955,9 @@ class ThickWallCubePainter extends CustomPainter {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 10, y + 50, 70, 60),
-        Radius.circular(4),
+        const Radius.circular(4),
       ),
-      Paint()..color = Color(0xFF4CAF50),
+      Paint()..color = const Color(0xFF4CAF50),
     );
 
     // Blanket folds
@@ -913,7 +966,7 @@ class ThickWallCubePainter extends CustomPainter {
         Offset(x + 15, y + 60 + (i * 15)),
         Offset(x + 75, y + 60 + (i * 15)),
         Paint()
-          ..color = Color(0xFF388E3C)
+          ..color = const Color(0xFF388E3C)
           ..strokeWidth = 1.5,
       );
     }
@@ -925,28 +978,28 @@ class ThickWallCubePainter extends CustomPainter {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x, y, 100, 18),
-        Radius.circular(3),
+        const Radius.circular(3),
       ),
-      Paint()..color = Color(0xFF795548),
+      Paint()..color = const Color(0xFF795548),
     );
 
     // Desk top highlight
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x, y, 100, 5),
-        Radius.circular(3),
+        const Radius.circular(3),
       ),
-      Paint()..color = Color(0xFF8D6E63).withOpacity(0.5),
+      Paint()..color = const Color(0xFF8D6E63).withOpacity(0.5),
     );
 
     // Desk outline
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x, y, 100, 18),
-        Radius.circular(3),
+        const Radius.circular(3),
       ),
       Paint()
-        ..color = Color(0xFF5D4037)
+        ..color = const Color(0xFF5D4037)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -954,13 +1007,13 @@ class ThickWallCubePainter extends CustomPainter {
     // Left leg
     canvas.drawRect(
       Rect.fromLTWH(x + 8, y + 18, 10, 75),
-      Paint()..color = Color(0xFF6D4C41),
+      Paint()..color = const Color(0xFF6D4C41),
     );
 
     // Right leg
     canvas.drawRect(
       Rect.fromLTWH(x + 82, y + 18, 10, 75),
-      Paint()..color = Color(0xFF6D4C41),
+      Paint()..color = const Color(0xFF6D4C41),
     );
 
     // Chair in front of desk
@@ -976,19 +1029,19 @@ class ThickWallCubePainter extends CustomPainter {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x, y, 40, 40),
-        Radius.circular(3),
+        const Radius.circular(3),
       ),
-      Paint()..color = Color(0xFF8D6E63),
+      Paint()..color = const Color(0xFF8D6E63),
     );
 
     // Seat outline
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x, y, 40, 40),
-        Radius.circular(3),
+        const Radius.circular(3),
       ),
       Paint()
-        ..color = Color(0xFF6D4C41)
+        ..color = const Color(0xFF6D4C41)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -997,19 +1050,19 @@ class ThickWallCubePainter extends CustomPainter {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 5, y - 50, 30, 55),
-        Radius.circular(3),
+        const Radius.circular(3),
       ),
-      Paint()..color = Color(0xFF8D6E63),
+      Paint()..color = const Color(0xFF8D6E63),
     );
 
     // Back outline
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 5, y - 50, 30, 55),
-        Radius.circular(3),
+        const Radius.circular(3),
       ),
       Paint()
-        ..color = Color(0xFF6D4C41)
+        ..color = const Color(0xFF6D4C41)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -1026,7 +1079,7 @@ class ThickWallCubePainter extends CustomPainter {
     for (var pos in legPositions) {
       canvas.drawRect(
         Rect.fromLTWH(x + pos[0], y + 40, 5, 35),
-        Paint()..color = Color(0xFF6D4C41),
+        Paint()..color = const Color(0xFF6D4C41),
       );
     }
   }
@@ -1037,13 +1090,13 @@ class ThickWallCubePainter extends CustomPainter {
     canvas.drawCircle(
       Offset(x, y + 30),
       8,
-      Paint()..color = Color(0xFF757575),
+      Paint()..color = const Color(0xFF757575),
     );
 
     // Lamp stem
     canvas.drawRect(
       Rect.fromLTWH(x - 2, y + 5, 4, 25),
-      Paint()..color = Color(0xFF9E9E9E),
+      Paint()..color = const Color(0xFF9E9E9E),
     );
 
     // Lamp shade (cone)
@@ -1056,13 +1109,13 @@ class ThickWallCubePainter extends CustomPainter {
 
     canvas.drawPath(
       lampPath,
-      Paint()..color = Color(0xFFFFE082),
+      Paint()..color = const Color(0xFFFFE082),
     );
 
     canvas.drawPath(
       lampPath,
       Paint()
-        ..color = Color(0xFFFFD54F)
+        ..color = const Color(0xFFFFD54F)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -1072,15 +1125,15 @@ class ThickWallCubePainter extends CustomPainter {
       Offset(x, y),
       20,
       Paint()
-        ..color = Color(0xFFFFE082).withOpacity(0.3)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 15),
+        ..color = const Color(0xFFFFE082).withOpacity(0.3)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 15),
     );
 
     // Light bulb
     canvas.drawCircle(
       Offset(x, y - 5),
       4,
-      Paint()..color = Color(0xFFFFFFFF),
+      Paint()..color = const Color(0xFFFFFFFF),
     );
   }
 
@@ -1096,14 +1149,14 @@ class ThickWallCubePainter extends CustomPainter {
       canvas.drawCircle(
         Offset(x + pos[0], floorY - 15 + pos[1]),
         6,
-        Paint()..color = Color(0xFF7A7A7A),
+        Paint()..color = const Color(0xFF7A7A7A),
       );
       // Stone shadow
       canvas.drawCircle(
         Offset(x + pos[0], floorY - 15 + pos[1]),
         6,
         Paint()
-          ..color = Color(0xFF5A5A5A)
+          ..color = const Color(0xFF5A5A5A)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1,
       );
@@ -1114,9 +1167,9 @@ class ThickWallCubePainter extends CustomPainter {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromCenter(center: Offset(x, floorY - 15), width: 30, height: 6),
-        Radius.circular(3),
+        const Radius.circular(3),
       ),
-      Paint()..color = Color(0xFF6D4C41),
+      Paint()..color = const Color(0xFF6D4C41),
     );
 
     // Log 2 (diagonal left)
@@ -1126,9 +1179,9 @@ class ThickWallCubePainter extends CustomPainter {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromCenter(center: Offset.zero, width: 25, height: 5),
-        Radius.circular(2.5),
+        const Radius.circular(2.5),
       ),
-      Paint()..color = Color(0xFF5D4037),
+      Paint()..color = const Color(0xFF5D4037),
     );
     canvas.restore();
 
@@ -1139,9 +1192,9 @@ class ThickWallCubePainter extends CustomPainter {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromCenter(center: Offset.zero, width: 25, height: 5),
-        Radius.circular(2.5),
+        const Radius.circular(2.5),
       ),
-      Paint()..color = Color(0xFF5D4037),
+      Paint()..color = const Color(0xFF5D4037),
     );
     canvas.restore();
 
@@ -1150,8 +1203,8 @@ class ThickWallCubePainter extends CustomPainter {
       Offset(x, floorY - 25),
       30,
       Paint()
-        ..color = Color(0xFFFF6B35).withOpacity(0.4)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 25),
+        ..color = const Color(0xFFFF6B35).withOpacity(0.4)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 25),
     );
 
     // Inner glow
@@ -1159,8 +1212,8 @@ class ThickWallCubePainter extends CustomPainter {
       Offset(x, floorY - 25),
       18,
       Paint()
-        ..color = Color(0xFFFFD54F).withOpacity(0.6)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 12),
+        ..color = const Color(0xFFFFD54F).withOpacity(0.6)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
     );
 
     // Fire flames (multiple sizes)
@@ -1173,28 +1226,28 @@ class ThickWallCubePainter extends CustomPainter {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x - 5, floorY - 90, 70, 90),
-        Radius.circular(5),
+        const Radius.circular(5),
       ),
-      Paint()..color = Color(0xFF2a2420),
+      Paint()..color = const Color(0xFF2a2420),
     );
 
     // Main stove body (brick red)
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x, floorY - 85, 60, 85),
-        Radius.circular(4),
+        const Radius.circular(4),
       ),
-      Paint()..color = Color(0xFFB85450),
+      Paint()..color = const Color(0xFFB85450),
     );
 
     // Stove outline
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x, floorY - 85, 60, 85),
-        Radius.circular(4),
+        const Radius.circular(4),
       ),
       Paint()
-        ..color = Color(0xFF8B3A3A)
+        ..color = const Color(0xFF8B3A3A)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 3,
     );
@@ -1205,7 +1258,7 @@ class ThickWallCubePainter extends CustomPainter {
         Offset(x, floorY - 85 + (i * 17)),
         Offset(x + 60, floorY - 85 + (i * 17)),
         Paint()
-          ..color = Color(0xFF8B3A3A)
+          ..color = const Color(0xFF8B3A3A)
           ..strokeWidth = 2,
       );
     }
@@ -1214,52 +1267,52 @@ class ThickWallCubePainter extends CustomPainter {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 8, floorY - 60, 44, 35),
-        Radius.circular(3),
+        const Radius.circular(3),
       ),
-      Paint()..color = Color(0xFF2C2C2C),
+      Paint()..color = const Color(0xFF2C2C2C),
     );
 
     // Door window (orange glow inside)
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 14, floorY - 52, 32, 20),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
-      Paint()..color = Color(0xFFFF8C42),
+      Paint()..color = const Color(0xFFFF8C42),
     );
 
     // Fire glow through window
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 14, floorY - 52, 32, 20),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
       Paint()
-        ..color = Color(0xFFFFD54F).withOpacity(0.7)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 8),
+        ..color = const Color(0xFFFFD54F).withOpacity(0.7)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
     );
 
     // Door handle (silver)
     canvas.drawCircle(
       Offset(x + 45, floorY - 42),
       3,
-      Paint()..color = Color(0xFFAAAAAA),
+      Paint()..color = const Color(0xFFAAAAAA),
     );
 
     // Top cooking surface (black metal)
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x, floorY - 90, 60, 8),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
-      Paint()..color = Color(0xFF1C1C1C),
+      Paint()..color = const Color(0xFF1C1C1C),
     );
 
     // Stovetop burner (circular)
     canvas.drawCircle(
       Offset(x + 30, floorY - 86),
       8,
-      Paint()..color = Color(0xFF0C0C0C),
+      Paint()..color = const Color(0xFF0C0C0C),
     );
 
     // Burner rings
@@ -1267,7 +1320,7 @@ class ThickWallCubePainter extends CustomPainter {
       Offset(x + 30, floorY - 86),
       6,
       Paint()
-        ..color = Color(0xFF666666)
+        ..color = const Color(0xFF666666)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1,
     );
@@ -1283,56 +1336,56 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
   canvas.drawRRect(
     RRect.fromRectAndRadius(
       Rect.fromLTWH(x - 10, floorY - 120, 90, 120),
-      Radius.circular(8),
+      const Radius.circular(8),
     ),
-    Paint()..color = Color(0xFF1a1a1a),
+    Paint()..color = const Color(0xFF1a1a1a),
   );
 
   // Main stove body (cast iron black)
   canvas.drawRRect(
     RRect.fromRectAndRadius(
       Rect.fromLTWH(x, floorY - 110, 80, 110),
-      Radius.circular(6),
+      const Radius.circular(6),
     ),
-    Paint()..color = Color(0xFF2C2C2C),
+    Paint()..color = const Color(0xFF2C2C2C),
   );
 
   // Metallic sheen (top highlight)
   canvas.drawRRect(
     RRect.fromRectAndRadius(
       Rect.fromLTWH(x + 5, floorY - 108, 70, 15),
-      Radius.circular(4),
+      const Radius.circular(4),
     ),
-    Paint()..color = Color(0xFF444444).withOpacity(0.6),
+    Paint()..color = const Color(0xFF444444).withOpacity(0.6),
   );
 
   // Stove legs (bottom supports)
   canvas.drawRect(
     Rect.fromLTWH(x + 10, floorY - 5, 8, 5),
-    Paint()..color = Color(0xFF1C1C1C),
+    Paint()..color = const Color(0xFF1C1C1C),
   );
   canvas.drawRect(
     Rect.fromLTWH(x + 62, floorY - 5, 8, 5),
-    Paint()..color = Color(0xFF1C1C1C),
+    Paint()..color = const Color(0xFF1C1C1C),
   );
 
   // Large oven door (ornate)
   canvas.drawRRect(
     RRect.fromRectAndRadius(
       Rect.fromLTWH(x + 10, floorY - 85, 60, 50),
-      Radius.circular(4),
+      const Radius.circular(4),
     ),
-    Paint()..color = Color(0xFF1C1C1C),
+    Paint()..color = const Color(0xFF1C1C1C),
   );
 
   // Door decorative border (brass)
   canvas.drawRRect(
     RRect.fromRectAndRadius(
       Rect.fromLTWH(x + 10, floorY - 85, 60, 50),
-      Radius.circular(4),
+      const Radius.circular(4),
     ),
     Paint()
-      ..color = Color(0xFFD4AF37)
+      ..color = const Color(0xFFD4AF37)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3,
   );
@@ -1341,20 +1394,20 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
   canvas.drawRRect(
     RRect.fromRectAndRadius(
       Rect.fromLTWH(x + 18, floorY - 75, 44, 32),
-      Radius.circular(3),
+      const Radius.circular(3),
     ),
-    Paint()..color = Color(0xFFFF6B35),
+    Paint()..color = const Color(0xFFFF6B35),
   );
 
   // Bright inner fire glow
   canvas.drawRRect(
     RRect.fromRectAndRadius(
       Rect.fromLTWH(x + 18, floorY - 75, 44, 32),
-      Radius.circular(3),
+      const Radius.circular(3),
     ),
     Paint()
-      ..color = Color(0xFFFFD54F).withOpacity(0.9)
-      ..maskFilter = MaskFilter.blur(BlurStyle.normal, 12),
+      ..color = const Color(0xFFFFD54F).withOpacity(0.9)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
   );
 
   // NO FIRE EMOJIS IN WINDOW - just the glow!
@@ -1363,33 +1416,33 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
   canvas.drawCircle(
     Offset(x + 60, floorY - 59),
     5,
-    Paint()..color = Color(0xFFD4AF37),
+    Paint()..color = const Color(0xFFD4AF37),
   );
   canvas.drawCircle(
     Offset(x + 60, floorY - 59),
     3,
-    Paint()..color = Color(0xFFFFE55C),
+    Paint()..color = const Color(0xFFFFE55C),
   );
 
   // Top cooking surface (premium black)
   canvas.drawRRect(
     RRect.fromRectAndRadius(
       Rect.fromLTWH(x, floorY - 115, 80, 10),
-      Radius.circular(3),
+      const Radius.circular(3),
     ),
-    Paint()..color = Color(0xFF0C0C0C),
+    Paint()..color = const Color(0xFF0C0C0C),
   );
 
   // Two burners on top
   canvas.drawCircle(
     Offset(x + 25, floorY - 110),
     10,
-    Paint()..color = Color(0xFF1C1C1C),
+    Paint()..color = const Color(0xFF1C1C1C),
   );
   canvas.drawCircle(
     Offset(x + 55, floorY - 110),
     10,
-    Paint()..color = Color(0xFF1C1C1C),
+    Paint()..color = const Color(0xFF1C1C1C),
   );
 
   // Burner coils (detailed)
@@ -1398,7 +1451,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
       Offset(x + 25, floorY - 110),
       8 - (i * 2.5),
       Paint()
-        ..color = Color(0xFF666666)
+        ..color = const Color(0xFF666666)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5,
     );
@@ -1406,7 +1459,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
       Offset(x + 55, floorY - 110),
       8 - (i * 2.5),
       Paint()
-        ..color = Color(0xFF666666)
+        ..color = const Color(0xFF666666)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5,
     );
@@ -1417,7 +1470,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
   // Stovepipe (chimney)
   canvas.drawRect(
     Rect.fromLTWH(x + 65, floorY - 140, 10, 30),
-    Paint()..color = Color(0xFF3A3A3A),
+    Paint()..color = const Color(0xFF3A3A3A),
   );
 
   // Pipe segments (bands)
@@ -1425,7 +1478,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     Offset(x + 65, floorY - 125),
     Offset(x + 75, floorY - 125),
     Paint()
-      ..color = Color(0xFF1C1C1C)
+      ..color = const Color(0xFF1C1C1C)
       ..strokeWidth = 2,
   );
 
@@ -1438,21 +1491,21 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     // Rug base
     final rugRect = RRect.fromRectAndRadius(
       Rect.fromLTWH(x, y, 130, 90),
-      Radius.circular(5),
+      const Radius.circular(5),
     );
 
     canvas.drawRRect(
       rugRect,
-      Paint()..color = Color(0xFFD32F2F),
+      Paint()..color = const Color(0xFFD32F2F),
     );
 
     // Inner pattern
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 15, y + 15, 100, 60),
-        Radius.circular(3),
+        const Radius.circular(3),
       ),
-      Paint()..color = Color(0xFFFFEB3B).withOpacity(0.4),
+      Paint()..color = const Color(0xFFFFEB3B).withOpacity(0.4),
     );
 
     // Diamond pattern
@@ -1460,28 +1513,28 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
       Offset(x + 65, y + 15),
       Offset(x + 115, y + 45),
       Paint()
-        ..color = Color(0xFFFF9800)
+        ..color = const Color(0xFFFF9800)
         ..strokeWidth = 3,
     );
     canvas.drawLine(
       Offset(x + 115, y + 45),
       Offset(x + 65, y + 75),
       Paint()
-        ..color = Color(0xFFFF9800)
+        ..color = const Color(0xFFFF9800)
         ..strokeWidth = 3,
     );
     canvas.drawLine(
       Offset(x + 65, y + 75),
       Offset(x + 15, y + 45),
       Paint()
-        ..color = Color(0xFFFF9800)
+        ..color = const Color(0xFFFF9800)
         ..strokeWidth = 3,
     );
     canvas.drawLine(
       Offset(x + 15, y + 45),
       Offset(x + 65, y + 15),
       Paint()
-        ..color = Color(0xFFFF9800)
+        ..color = const Color(0xFFFF9800)
         ..strokeWidth = 3,
     );
 
@@ -1489,7 +1542,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       rugRect,
       Paint()
-        ..color = Color(0xFF8D6E63)
+        ..color = const Color(0xFF8D6E63)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 4,
     );
@@ -1501,14 +1554,14 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
         Offset(tassX, y),
         Offset(tassX, y - 8),
         Paint()
-          ..color = Color(0xFF8D6E63)
+          ..color = const Color(0xFF8D6E63)
           ..strokeWidth = 2,
       );
       canvas.drawLine(
         Offset(tassX, y + 90),
         Offset(tassX, y + 98),
         Paint()
-          ..color = Color(0xFF8D6E63)
+          ..color = const Color(0xFF8D6E63)
           ..strokeWidth = 2,
       );
     }
@@ -1520,16 +1573,16 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
       canvas.drawRRect(
         RRect.fromRectAndRadius(
           Rect.fromLTWH(x + (i * 18), y + 95, 16, 8),
-          Radius.circular(1),
+          const Radius.circular(1),
         ),
-        Paint()..color = Color(0xFF8D6E63),
+        Paint()..color = const Color(0xFF8D6E63),
       );
       // Wood grain
       canvas.drawLine(
         Offset(x + 2 + (i * 18), y + 97),
         Offset(x + 14 + (i * 18), y + 97),
         Paint()
-          ..color = Color(0xFF6D4C41)
+          ..color = const Color(0xFF6D4C41)
           ..strokeWidth = 1,
       );
     }
@@ -1537,7 +1590,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     // Support beams under planks
     canvas.drawRect(
       Rect.fromLTWH(x + 5, y + 103, 80, 4),
-      Paint()..color = Color(0xFF5D4037),
+      Paint()..color = const Color(0xFF5D4037),
     );
 
     // BIG GOLDEN HAY PILE (very obvious!)
@@ -1545,32 +1598,32 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x, y + 65, 90, 32),
-        Radius.circular(6),
+        const Radius.circular(6),
       ),
-      Paint()..color = Color(0xFFEBB759), // Bright golden
+      Paint()..color = const Color(0xFFEBB759), // Bright golden
     );
 
     // Middle layer - medium
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 8, y + 48, 74, 28),
-        Radius.circular(8),
+        const Radius.circular(8),
       ),
-      Paint()..color = Color(0xFFE0AC4D),
+      Paint()..color = const Color(0xFFE0AC4D),
     );
 
     // Top layer - small mound
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 22, y + 35, 46, 22),
-        Radius.circular(10),
+        const Radius.circular(10),
       ),
-      Paint()..color = Color(0xFFD4A041),
+      Paint()..color = const Color(0xFFD4A041),
     );
 
     // LOTS of hay strands (make it VERY obvious it's straw)
     final strandPaint = Paint()
-      ..color = Color(0xFFC89235)
+      ..color = const Color(0xFFC89235)
       ..strokeWidth = 2.5
       ..strokeCap = StrokeCap.round;
 
@@ -1597,7 +1650,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
 
     // Hay texture lines (vertical straw pattern)
     final texturePaint = Paint()
-      ..color = Color(0xFFB8852E)
+      ..color = const Color(0xFFB8852E)
       ..strokeWidth = 1.5;
 
     for (int i = 0; i < 20; i++) {
@@ -1616,10 +1669,10 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x, y + 65, 90, 32),
-        Radius.circular(6),
+        const Radius.circular(6),
       ),
       Paint()
-        ..color = Color(0xFF9C7328)
+        ..color = const Color(0xFF9C7328)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -1634,7 +1687,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
 
     canvas.drawPath(
       sackPath,
-      Paint()..color = Color(0xFF9E8B7E).withOpacity(0.75),
+      Paint()..color = const Color(0xFF9E8B7E).withOpacity(0.75),
     );
 
     // Sack weave texture
@@ -1643,28 +1696,28 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
         Offset(x + 20 + (i * 8), y + 56),
         Offset(x + 22 + (i * 8), y + 84),
         Paint()
-          ..color = Color(0xFF7D6B5F)
+          ..color = const Color(0xFF7D6B5F)
           ..strokeWidth = 1,
       );
     }
 
     // Sack tears/holes (worn)
-    canvas.drawCircle(Offset(x + 35, y + 68), 3, Paint()..color = Color(0xFF6B5A4E));
-    canvas.drawCircle(Offset(x + 55, y + 75), 2.5, Paint()..color = Color(0xFF6B5A4E));
+    canvas.drawCircle(Offset(x + 35, y + 68), 3, Paint()..color = const Color(0xFF6B5A4E));
+    canvas.drawCircle(Offset(x + 55, y + 75), 2.5, Paint()..color = const Color(0xFF6B5A4E));
 
     // Sack edge fraying
     canvas.drawLine(
       Offset(x + 15, y + 55),
       Offset(x + 12, y + 52),
       Paint()
-        ..color = Color(0xFF7D6B5F)
+        ..color = const Color(0xFF7D6B5F)
         ..strokeWidth = 2,
     );
     canvas.drawLine(
       Offset(x + 20, y + 56),
       Offset(x + 18, y + 52),
       Paint()
-        ..color = Color(0xFF7D6B5F)
+        ..color = const Color(0xFF7D6B5F)
         ..strokeWidth = 2,
     );
   }
@@ -1672,40 +1725,40 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     // Back legs (darker, further away)
     canvas.drawRect(
       Rect.fromLTWH(x + 8, y + 8, 7, 22),
-      Paint()..color = Color(0xFF5D4037),
+      Paint()..color = const Color(0xFF5D4037),
     );
     canvas.drawRect(
       Rect.fromLTWH(x + 85, y + 8, 7, 22),
-      Paint()..color = Color(0xFF5D4037),
+      Paint()..color = const Color(0xFF5D4037),
     );
 
     // Side rails connecting back legs
     canvas.drawRect(
       Rect.fromLTWH(x + 8, y + 8, 7, 82),
-      Paint()..color = Color(0xFF6D4C41),
+      Paint()..color = const Color(0xFF6D4C41),
     );
     canvas.drawRect(
       Rect.fromLTWH(x + 85, y + 8, 7, 82),
-      Paint()..color = Color(0xFF6D4C41),
+      Paint()..color = const Color(0xFF6D4C41),
     );
 
     // Front legs (lighter, closer)
     canvas.drawRect(
       Rect.fromLTWH(x + 8, y + 82, 7, 38),
-      Paint()..color = Color(0xFF8D6E63),
+      Paint()..color = const Color(0xFF8D6E63),
     );
     canvas.drawRect(
       Rect.fromLTWH(x + 85, y + 82, 7, 38),
-      Paint()..color = Color(0xFF8D6E63),
+      Paint()..color = const Color(0xFF8D6E63),
     );
 
     // Canvas fabric stretched tight (beige/tan)
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 12, y + 12, 78, 75),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
-      Paint()..color = Color(0xFFD7CCC8),
+      Paint()..color = const Color(0xFFD7CCC8),
     );
 
     // Canvas stretched effect (slightly sagging in middle)
@@ -1716,7 +1769,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawPath(
       sagPath,
       Paint()
-        ..color = Color(0xFFBCAAA4)
+        ..color = const Color(0xFFBCAAA4)
         ..strokeWidth = 1.5,
     );
 
@@ -1726,7 +1779,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
         Offset(x + 12, y + 12 + (i * 9)),
         Offset(x + 90, y + 12 + (i * 9)),
         Paint()
-          ..color = Color(0xFFBCAAA4).withOpacity(0.5)
+          ..color = const Color(0xFFBCAAA4).withOpacity(0.5)
           ..strokeWidth = 1,
       );
     }
@@ -1736,7 +1789,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
         Offset(x + 12 + (i * 10), y + 12),
         Offset(x + 12 + (i * 10), y + 87),
         Paint()
-          ..color = Color(0xFFBCAAA4).withOpacity(0.5)
+          ..color = const Color(0xFFBCAAA4).withOpacity(0.5)
           ..strokeWidth = 1,
       );
     }
@@ -1745,10 +1798,10 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 12, y + 12, 78, 75),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
       Paint()
-        ..color = Color(0xFF8D6E63)
+        ..color = const Color(0xFF8D6E63)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -1757,9 +1810,9 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 22, y + 18, 45, 18),
-        Radius.circular(3),
+        const Radius.circular(3),
       ),
-      Paint()..color = Color(0xFFECEFF1),
+      Paint()..color = const Color(0xFFECEFF1),
     );
 
     // Pillow seam
@@ -1767,7 +1820,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
       Offset(x + 44, y + 20),
       Offset(x + 44, y + 34),
       Paint()
-        ..color = Color(0xFFCFD8DC)
+        ..color = const Color(0xFFCFD8DC)
         ..strokeWidth = 1.5,
     );
 
@@ -1775,10 +1828,10 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 22, y + 18, 45, 18),
-        Radius.circular(3),
+        const Radius.circular(3),
       ),
       Paint()
-        ..color = Color(0xFFB0BEC5)
+        ..color = const Color(0xFFB0BEC5)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5,
     );
@@ -1787,9 +1840,9 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 18, y + 55, 64, 28),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
-      Paint()..color = Color(0xFF78909C),
+      Paint()..color = const Color(0xFF78909C),
     );
 
     // Blanket folds (3D effect)
@@ -1798,7 +1851,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
         Offset(x + 18, y + 55 + (i * 7)),
         Offset(x + 82, y + 55 + (i * 7)),
         Paint()
-          ..color = Color(0xFF607D8B)
+          ..color = const Color(0xFF607D8B)
           ..strokeWidth = 2,
       );
     }
@@ -1807,50 +1860,50 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 18, y + 55, 64, 28),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
       Paint()
-        ..color = Color(0xFF546E7A)
+        ..color = const Color(0xFF546E7A)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5,
     );
   }
   void _drawWoodFrameBed(Canvas canvas, double x, double y) {
     // BED LEGS (TALL - elevating the whole bed!)
-    final legPaint = Paint()..color = Color(0xFF6D4C41);
+    final legPaint = Paint()..color = const Color(0xFF6D4C41);
 
     // Front left leg
     canvas.drawRect(Rect.fromLTWH(x + 12, y + 95, 8, 40), legPaint);
     // Front right leg
     canvas.drawRect(Rect.fromLTWH(x + 90, y + 95, 8, 40), legPaint);
     // Back left leg
-    canvas.drawRect(Rect.fromLTWH(x + 12, y + 55, 8, 40), Paint()..color = Color(0xFF5D4037));
+    canvas.drawRect(Rect.fromLTWH(x + 12, y + 55, 8, 40), Paint()..color = const Color(0xFF5D4037));
     // Back right leg
-    canvas.drawRect(Rect.fromLTWH(x + 90, y + 55, 8, 40), Paint()..color = Color(0xFF5D4037));
+    canvas.drawRect(Rect.fromLTWH(x + 90, y + 55, 8, 40), Paint()..color = const Color(0xFF5D4037));
 
     // TALL ORNATE HEADBOARD
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x, y, 110, 60),
-        Radius.circular(6),
+        const Radius.circular(6),
       ),
-      Paint()..color = Color(0xFF8D6E63),
+      Paint()..color = const Color(0xFF8D6E63),
     );
 
     // Headboard crown molding
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x - 2, y - 5, 114, 12),
-        Radius.circular(3),
+        const Radius.circular(3),
       ),
-      Paint()..color = Color(0xFF6D4C41),
+      Paint()..color = const Color(0xFF6D4C41),
     );
 
     canvas.drawLine(
       Offset(x - 2, y + 3),
       Offset(x + 112, y + 3),
       Paint()
-        ..color = Color(0xFF4E342E)
+        ..color = const Color(0xFF4E342E)
         ..strokeWidth = 2,
     );
 
@@ -1858,9 +1911,9 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 10, y + 12, 90, 40),
-        Radius.circular(4),
+        const Radius.circular(4),
       ),
-      Paint()..color = Color(0xFF6D4C41),
+      Paint()..color = const Color(0xFF6D4C41),
     );
 
     // Carved vertical panels
@@ -1869,17 +1922,17 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
       canvas.drawRRect(
         RRect.fromRectAndRadius(
           Rect.fromLTWH(panelX, y + 16, 15, 32),
-          Radius.circular(2),
+          const Radius.circular(2),
         ),
-        Paint()..color = Color(0xFF5D4037),
+        Paint()..color = const Color(0xFF5D4037),
       );
       canvas.drawRRect(
         RRect.fromRectAndRadius(
           Rect.fromLTWH(panelX, y + 16, 15, 32),
-          Radius.circular(2),
+          const Radius.circular(2),
         ),
         Paint()
-          ..color = Color(0xFF4E342E)
+          ..color = const Color(0xFF4E342E)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2,
       );
@@ -1889,7 +1942,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
 // Back frame horizontal support (top)
     canvas.drawRect(
       Rect.fromLTWH(x + 8, y + 58, 94, 6),
-      Paint()..color = Color(0xFF6D4C41),
+      Paint()..color = const Color(0xFF6D4C41),
     );
 
 // Back frame decorative trim
@@ -1897,7 +1950,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
       Offset(x + 8, y + 61),
       Offset(x + 102, y + 61),
       Paint()
-        ..color = Color(0xFF4E342E)
+        ..color = const Color(0xFF4E342E)
         ..strokeWidth = 2,
     );
 
@@ -1905,46 +1958,46 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
 // Left post
     canvas.drawRect(
       Rect.fromLTWH(x + 8, y + 40, 6, 24),
-      Paint()..color = Color(0xFF7D5E52),
+      Paint()..color = const Color(0xFF7D5E52),
     );
 // Right post
     canvas.drawRect(
       Rect.fromLTWH(x + 96, y + 40, 6, 24),
-      Paint()..color = Color(0xFF7D5E52),
+      Paint()..color = const Color(0xFF7D5E52),
     );
 
 // Decorative post caps (top of vertical posts)
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 6, y + 36, 10, 8),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
-      Paint()..color = Color(0xFF5D4037),
+      Paint()..color = const Color(0xFF5D4037),
     );
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 94, y + 36, 10, 8),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
-      Paint()..color = Color(0xFF5D4037),
+      Paint()..color = const Color(0xFF5D4037),
     );
 
     // ELEVATED BED FRAME (sits on tall legs)
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 5, y + 40, 100, 60), // ← LONGER! starts at y+40 instead of y+55, height 60 instead of 45
-        Radius.circular(4),
+        const Radius.circular(4),
       ),
-      Paint()..color = Color(0xFF8D6E63),
+      Paint()..color = const Color(0xFF8D6E63),
     );
 
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 5, y + 40, 100, 60),
-        Radius.circular(4),
+        const Radius.circular(4),
       ),
       Paint()
-        ..color = Color(0xFF5D4037)
+        ..color = const Color(0xFF5D4037)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 3,
     );
@@ -1952,17 +2005,17 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     // Side rails (connecting legs visibly)
     canvas.drawRect(
       Rect.fromLTWH(x + 10, y + 55, 6, 40),
-      Paint()..color = Color(0xFF7D5E52),
+      Paint()..color = const Color(0xFF7D5E52),
     );
     canvas.drawRect(
       Rect.fromLTWH(x + 94, y + 55, 6, 40),
-      Paint()..color = Color(0xFF7D5E52),
+      Paint()..color = const Color(0xFF7D5E52),
     );
 
     // Under-bed support beam (visible between legs)
     canvas.drawRect(
       Rect.fromLTWH(x + 15, y + 110, 80, 6),
-      Paint()..color = Color(0xFF5D4037),
+      Paint()..color = const Color(0xFF5D4037),
     );
 
     // THICK MATTRESS (on elevated frame)
@@ -1970,9 +2023,9 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 10, y + 43, 90, 55), // ← MOVED UP and LENGTHENED
-        Radius.circular(5),
+        const Radius.circular(5),
       ),
-      Paint()..color = Color(0xFFFAFAFA),
+      Paint()..color = const Color(0xFFFAFAFA),
     );
 
 // Mattress quilted tufting
@@ -1981,12 +2034,12 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
         double tuftX = x + 20 + (col * 16);
         double tuftY = y + 55 + (row * 15); // ← ADJUSTED
 
-        canvas.drawCircle(Offset(tuftX, tuftY), 2.5, Paint()..color = Color(0xFFD0D0D0));
+        canvas.drawCircle(Offset(tuftX, tuftY), 2.5, Paint()..color = const Color(0xFFD0D0D0));
         canvas.drawCircle(
             Offset(tuftX, tuftY),
             2.5,
             Paint()
-              ..color = Color(0xFFE0E0E0)
+              ..color = const Color(0xFFE0E0E0)
               ..style = PaintingStyle.stroke
         );
       }
@@ -1996,10 +2049,10 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 10, y + 43, 90, 55), // ← MATCHES NEW MATTRESS
-        Radius.circular(5),
+        const Radius.circular(5),
       ),
       Paint()
-        ..color = Color(0xFFBDBDBD)
+        ..color = const Color(0xFFBDBDBD)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -2009,24 +2062,24 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 18, y + 48, 38, 20), // ← MOVED UP
-        Radius.circular(6),
+        const Radius.circular(6),
       ),
-      Paint()..color = Color(0xFFFFFFFF),
+      Paint()..color = const Color(0xFFFFFFFF),
     );
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 20, y + 50, 34, 8), // ← MOVED UP
-        Radius.circular(4),
+        const Radius.circular(4),
       ),
-      Paint()..color = Color(0xFFFEFEFE).withOpacity(0.7),
+      Paint()..color = const Color(0xFFFEFEFE).withOpacity(0.7),
     );
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 18, y + 48, 38, 20),
-        Radius.circular(6),
+        const Radius.circular(6),
       ),
       Paint()
-        ..color = Color(0xFFE0E0E0)
+        ..color = const Color(0xFFE0E0E0)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -2035,24 +2088,24 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 54, y + 50, 38, 18), // ← MOVED UP
-        Radius.circular(6),
+        const Radius.circular(6),
       ),
-      Paint()..color = Color(0xFFFDFDFD),
+      Paint()..color = const Color(0xFFFDFDFD),
     );
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 56, y + 52, 34, 7), // ← MOVED UP
-        Radius.circular(4),
+        const Radius.circular(4),
       ),
-      Paint()..color = Color(0xFFFEFEFE).withOpacity(0.7),
+      Paint()..color = const Color(0xFFFEFEFE).withOpacity(0.7),
     );
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 54, y + 50, 38, 18),
-        Radius.circular(6),
+        const Radius.circular(6),
       ),
       Paint()
-        ..color = Color(0xFFE0E0E0)
+        ..color = const Color(0xFFE0E0E0)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -2061,9 +2114,9 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 15, y + 70, 80, 26), // ← MOVED UP and ADJUSTED SIZE
-        Radius.circular(4),
+        const Radius.circular(4),
       ),
-      Paint()..color = Color(0xFF5C6BC0),
+      Paint()..color = const Color(0xFF5C6BC0),
     );
 
 // Quilted pattern
@@ -2072,7 +2125,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
         Offset(x + 20 + (i * 15), y + 70), // ← ADJUSTED
         Offset(x + 20 + (i * 15), y + 96), // ← ADJUSTED
         Paint()
-          ..color = Color(0xFF3F51B5)
+          ..color = const Color(0xFF3F51B5)
           ..strokeWidth = 2,
       );
     }
@@ -2081,7 +2134,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
         Offset(x + 15, y + 74 + (i * 6)), // ← ADJUSTED
         Offset(x + 95, y + 74 + (i * 6)), // ← ADJUSTED
         Paint()
-          ..color = Color(0xFF3F51B5)
+          ..color = const Color(0xFF3F51B5)
           ..strokeWidth = 2,
       );
     }
@@ -2089,10 +2142,10 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 15, y + 70, 80, 26),
-        Radius.circular(4),
+        const Radius.circular(4),
       ),
       Paint()
-        ..color = Color(0xFF3949AB)
+        ..color = const Color(0xFF3949AB)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -2100,10 +2153,10 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 15, y + 82, 80, 18),
-        Radius.circular(4),
+        const Radius.circular(4),
       ),
       Paint()
-        ..color = Color(0xFF3949AB)
+        ..color = const Color(0xFF3949AB)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -2112,42 +2165,42 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 8, y + 97, 94, 12),
-        Radius.circular(3),
+        const Radius.circular(3),
       ),
-      Paint()..color = Color(0xFF8D6E63),
+      Paint()..color = const Color(0xFF8D6E63),
     );
 
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 8, y + 97, 94, 12),
-        Radius.circular(3),
+        const Radius.circular(3),
       ),
       Paint()
-        ..color = Color(0xFF5D4037)
+        ..color = const Color(0xFF5D4037)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
   }
   void _drawSimpleDesk(Canvas canvas, double x, double y) {
     // Simple wooden legs (4 legs)
-    final legPaint = Paint()..color = Color(0xFF6D4C41);
+    final legPaint = Paint()..color = const Color(0xFF6D4C41);
 
     // Front left leg
     canvas.drawRect(Rect.fromLTWH(x + 10, y + 12, 6, 40), legPaint);
     // Front right leg
     canvas.drawRect(Rect.fromLTWH(x + 84, y + 12, 6, 40), legPaint);
     // Back left leg (darker for depth)
-    canvas.drawRect(Rect.fromLTWH(x + 10, y, 6, 18), Paint()..color = Color(0xFF5D4037));
+    canvas.drawRect(Rect.fromLTWH(x + 10, y, 6, 18), Paint()..color = const Color(0xFF5D4037));
     // Back right leg
-    canvas.drawRect(Rect.fromLTWH(x + 84, y, 6, 18), Paint()..color = Color(0xFF5D4037));
+    canvas.drawRect(Rect.fromLTWH(x + 84, y, 6, 18), Paint()..color = const Color(0xFF5D4037));
 
     // Simple plank desktop (rough wood)
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x, y + 8, 100, 10),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
-      Paint()..color = Color(0xFF8D6E63),
+      Paint()..color = const Color(0xFF8D6E63),
     );
 
     // Wood grain lines (rough texture)
@@ -2156,7 +2209,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
         Offset(x + 5 + (i * 12), y + 9),
         Offset(x + 8 + (i * 12), y + 17),
         Paint()
-          ..color = Color(0xFF6D4C41)
+          ..color = const Color(0xFF6D4C41)
           ..strokeWidth = 1.5,
       );
     }
@@ -2165,10 +2218,10 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x, y + 8, 100, 10),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
       Paint()
-        ..color = Color(0xFF5D4037)
+        ..color = const Color(0xFF5D4037)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -2179,53 +2232,53 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
       canvas.drawCircle(
         Offset(nailX, y + 12),
         2,
-        Paint()..color = Color(0xFF424242),
+        Paint()..color = const Color(0xFF424242),
       );
     }
 
     // Simple support beam under desktop
     canvas.drawRect(
       Rect.fromLTWH(x + 15, y + 18, 70, 4),
-      Paint()..color = Color(0xFF5D4037),
+      Paint()..color = const Color(0xFF5D4037),
     );
   }
   void _drawOakDesk(Canvas canvas, double x, double y) {
     // Sturdy wooden legs
-    final legPaint = Paint()..color = Color(0xFF7D5E52);
+    final legPaint = Paint()..color = const Color(0xFF7D5E52);
 
     // Front legs (thicker)
     canvas.drawRect(Rect.fromLTWH(x + 8, y + 18, 8, 50), legPaint); // ← TALLER
     canvas.drawRect(Rect.fromLTWH(x + 84, y + 18, 8, 50), legPaint);
     // Back legs
-    canvas.drawRect(Rect.fromLTWH(x + 8, y, 8, 22), Paint()..color = Color(0xFF6D4C41));
-    canvas.drawRect(Rect.fromLTWH(x + 84, y, 8, 22), Paint()..color = Color(0xFF6D4C41));
+    canvas.drawRect(Rect.fromLTWH(x + 8, y, 8, 22), Paint()..color = const Color(0xFF6D4C41));
+    canvas.drawRect(Rect.fromLTWH(x + 84, y, 8, 22), Paint()..color = const Color(0xFF6D4C41));
 
     // Desktop (smooth oak finish)
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x, y + 12, 100, 12),
-        Radius.circular(3),
+        const Radius.circular(3),
       ),
-      Paint()..color = Color(0xFF9E8B7E),
+      Paint()..color = const Color(0xFF9E8B7E),
     );
 
     // Desktop shine/polish effect
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 2, y + 13, 96, 4),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
-      Paint()..color = Color(0xFFB8A89A).withOpacity(0.5),
+      Paint()..color = const Color(0xFFB8A89A).withOpacity(0.5),
     );
 
     // Desktop edge trim
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x, y + 12, 100, 12),
-        Radius.circular(3),
+        const Radius.circular(3),
       ),
       Paint()
-        ..color = Color(0xFF6D4C41)
+        ..color = const Color(0xFF6D4C41)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -2234,27 +2287,27 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 25, y + 26, 50, 18),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
-      Paint()..color = Color(0xFF8D7367),
+      Paint()..color = const Color(0xFF8D7367),
     );
 
     // Drawer panel inset
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 28, y + 29, 44, 12),
-        Radius.circular(1),
+        const Radius.circular(1),
       ),
-      Paint()..color = Color(0xFF7D6357),
+      Paint()..color = const Color(0xFF7D6357),
     );
 
     // Drawer handle (brass)
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 46, y + 33, 8, 4),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
-      Paint()..color = Color(0xFFD4AF37),
+      Paint()..color = const Color(0xFFD4AF37),
     );
 
     // Handle highlight
@@ -2262,7 +2315,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
       Offset(x + 47, y + 34),
       Offset(x + 53, y + 34),
       Paint()
-        ..color = Color(0xFFFFE55C)
+        ..color = const Color(0xFFFFE55C)
         ..strokeWidth = 1,
     );
 
@@ -2270,10 +2323,10 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 25, y + 26, 50, 18),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
       Paint()
-        ..color = Color(0xFF5D4037)
+        ..color = const Color(0xFF5D4037)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5,
     );
@@ -2281,11 +2334,11 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     // Side support panels
     canvas.drawRect(
       Rect.fromLTWH(x + 6, y + 24, 10, 44),
-      Paint()..color = Color(0xFF8D7367),
+      Paint()..color = const Color(0xFF8D7367),
     );
     canvas.drawRect(
       Rect.fromLTWH(x + 84, y + 24, 10, 44),
-      Paint()..color = Color(0xFF8D7367),
+      Paint()..color = const Color(0xFF8D7367),
     );
 
     // BASIC LAMP ON DESK (right side)
@@ -2293,20 +2346,20 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
   }
   void _drawExecutiveDesk(Canvas canvas, double x, double y) {
     // Elegant carved legs
-    final legPaint = Paint()..color = Color(0xFF5D4037);
+    final legPaint = Paint()..color = const Color(0xFF5D4037);
 
     // Front legs (ornate, thicker)
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 5, y + 22, 10, 55), // ← TALLER
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
       legPaint,
     );
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 85, y + 22, 10, 55),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
       legPaint,
     );
@@ -2315,16 +2368,16 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 5, y, 10, 26),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
-      Paint()..color = Color(0xFF4E342E),
+      Paint()..color = const Color(0xFF4E342E),
     );
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 85, y, 10, 26),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
-      Paint()..color = Color(0xFF4E342E),
+      Paint()..color = const Color(0xFF4E342E),
     );
 
     // Decorative leg carvings
@@ -2332,12 +2385,12 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
       canvas.drawCircle(
         Offset(x + 10, y + 30 + (i * 10)),
         2,
-        Paint()..color = Color(0xFF3E2723),
+        Paint()..color = const Color(0xFF3E2723),
       );
       canvas.drawCircle(
         Offset(x + 90, y + 30 + (i * 10)),
         2,
-        Paint()..color = Color(0xFF3E2723),
+        Paint()..color = const Color(0xFF3E2723),
       );
     }
 
@@ -2345,18 +2398,18 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x - 5, y + 14, 110, 14),
-        Radius.circular(4),
+        const Radius.circular(4),
       ),
-      Paint()..color = Color(0xFF6D4C41),
+      Paint()..color = const Color(0xFF6D4C41),
     );
 
     // Desktop leather inlay (green leather writing surface)
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 5, y + 18, 90, 6),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
-      Paint()..color = Color(0xFF2E5A3E),
+      Paint()..color = const Color(0xFF2E5A3E),
     );
 
     // Leather texture (diamond pattern)
@@ -2365,7 +2418,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
         Offset(x + 10 + (i * 11), y + 18),
         Offset(x + 10 + (i * 11), y + 24),
         Paint()
-          ..color = Color(0xFF234A32)
+          ..color = const Color(0xFF234A32)
           ..strokeWidth = 0.5,
       );
     }
@@ -2374,10 +2427,10 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x - 5, y + 14, 110, 14),
-        Radius.circular(4),
+        const Radius.circular(4),
       ),
       Paint()
-        ..color = Color(0xFFD4AF37)
+        ..color = const Color(0xFFD4AF37)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -2387,7 +2440,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
       Offset(x - 5, y + 16),
       Offset(x + 105, y + 16),
       Paint()
-        ..color = Color(0xFF8D6E63)
+        ..color = const Color(0xFF8D6E63)
         ..strokeWidth = 1.5,
     );
 
@@ -2396,65 +2449,65 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 8, y + 30, 35, 14),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
-      Paint()..color = Color(0xFF5D4037),
+      Paint()..color = const Color(0xFF5D4037),
     );
 
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 11, y + 32, 29, 10),
-        Radius.circular(1),
+        const Radius.circular(1),
       ),
-      Paint()..color = Color(0xFF4E342E),
+      Paint()..color = const Color(0xFF4E342E),
     );
 
     // Top drawer brass handle
     canvas.drawOval(
       Rect.fromCenter(center: Offset(x + 36, y + 37), width: 6, height: 4),
-      Paint()..color = Color(0xFFD4AF37),
+      Paint()..color = const Color(0xFFD4AF37),
     );
 
     // Bottom drawer
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 8, y + 46, 35, 14),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
-      Paint()..color = Color(0xFF5D4037),
+      Paint()..color = const Color(0xFF5D4037),
     );
 
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 11, y + 48, 29, 10),
-        Radius.circular(1),
+        const Radius.circular(1),
       ),
-      Paint()..color = Color(0xFF4E342E),
+      Paint()..color = const Color(0xFF4E342E),
     );
 
     // Bottom drawer brass handle
     canvas.drawOval(
       Rect.fromCenter(center: Offset(x + 36, y + 53), width: 6, height: 4),
-      Paint()..color = Color(0xFFD4AF37),
+      Paint()..color = const Color(0xFFD4AF37),
     );
 
     // Center panel (decorative wood panel)
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 18, y + 28, 20, 32),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
-      Paint()..color = Color(0xFF6D4C41),
+      Paint()..color = const Color(0xFF6D4C41),
     );
 
     // Panel carving detail
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 20, y + 32, 16, 24),
-        Radius.circular(1),
+        const Radius.circular(1),
       ),
       Paint()
-        ..color = Color(0xFF5D4037)
+        ..color = const Color(0xFF5D4037)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5,
     );
@@ -2469,7 +2522,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     // Simple wooden stool (no back, just a seat)
 
     // 3 legs (tripod style - cheaper construction)
-    final legPaint = Paint()..color = Color(0xFF6D4C41);
+    final legPaint = Paint()..color = const Color(0xFF6D4C41);
 
     // Center leg (front)
     canvas.drawRect(
@@ -2482,8 +2535,8 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.translate(x + 8, y + 30);
     canvas.rotate(-0.2);
     canvas.drawRect(
-      Rect.fromLTWH(0, 0, 5, 32),
-      Paint()..color = Color(0xFF5D4037),
+      const Rect.fromLTWH(0, 0, 5, 32),
+      Paint()..color = const Color(0xFF5D4037),
     );
     canvas.restore();
 
@@ -2492,15 +2545,15 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.translate(x + 30, y + 30);
     canvas.rotate(0.2);
     canvas.drawRect(
-      Rect.fromLTWH(0, 0, 5, 32),
-      Paint()..color = Color(0xFF5D4037),
+      const Rect.fromLTWH(0, 0, 5, 32),
+      Paint()..color = const Color(0xFF5D4037),
     );
     canvas.restore();
 
     // Round wooden seat (worn and simple)
     canvas.drawOval(
       Rect.fromCenter(center: Offset(x + 20, y + 30), width: 32, height: 28),
-      Paint()..color = Color(0xFF8D6E63),
+      Paint()..color = const Color(0xFF8D6E63),
     );
 
     // Wood grain on seat
@@ -2509,7 +2562,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
         Offset(x + 8 + (i * 6), y + 28),
         Offset(x + 10 + (i * 6), y + 32),
         Paint()
-          ..color = Color(0xFF6D4C41)
+          ..color = const Color(0xFF6D4C41)
           ..strokeWidth = 1.5,
       );
     }
@@ -2518,7 +2571,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawOval(
       Rect.fromCenter(center: Offset(x + 20, y + 30), width: 32, height: 28),
       Paint()
-        ..color = Color(0xFF5D4037)
+        ..color = const Color(0xFF5D4037)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -2527,22 +2580,22 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawCircle(
       Offset(x + 20, y + 30),
       2,
-      Paint()..color = Color(0xFF424242),
+      Paint()..color = const Color(0xFF424242),
     );
   }
   void _drawWoodenChair(Canvas canvas, double x, double y) {
     // 4-legged wooden chair with backrest
 
-    final legPaint = Paint()..color = Color(0xFF7D5E52);
+    final legPaint = Paint()..color = const Color(0xFF7D5E52);
 
     // Back legs (slightly darker)
     canvas.drawRect(
       Rect.fromLTWH(x + 6, y - 8, 6, 45),
-      Paint()..color = Color(0xFF6D4C41),
+      Paint()..color = const Color(0xFF6D4C41),
     );
     canvas.drawRect(
       Rect.fromLTWH(x + 28, y - 8, 6, 45),
-      Paint()..color = Color(0xFF6D4C41),
+      Paint()..color = const Color(0xFF6D4C41),
     );
 
     // Front legs
@@ -2559,9 +2612,9 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 4, y + 24, 32, 30),
-        Radius.circular(3),
+        const Radius.circular(3),
       ),
-      Paint()..color = Color(0xFF9E8B7E),
+      Paint()..color = const Color(0xFF9E8B7E),
     );
 
     // Seat wood grain
@@ -2570,7 +2623,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
         Offset(x + 8 + (i * 7), y + 26),
         Offset(x + 8 + (i * 7), y + 52),
         Paint()
-          ..color = Color(0xFF8D7367)
+          ..color = const Color(0xFF8D7367)
           ..strokeWidth = 1,
       );
     }
@@ -2579,10 +2632,10 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 4, y + 24, 32, 30),
-        Radius.circular(3),
+        const Radius.circular(3),
       ),
       Paint()
-        ..color = Color(0xFF6D4C41)
+        ..color = const Color(0xFF6D4C41)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -2591,16 +2644,16 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 6, y - 10, 28, 38),
-        Radius.circular(3),
+        const Radius.circular(3),
       ),
-      Paint()..color = Color(0xFF9E8B7E),
+      Paint()..color = const Color(0xFF9E8B7E),
     );
 
     // Backrest slats (3 vertical bars)
     for (int i = 0; i < 3; i++) {
       canvas.drawRect(
         Rect.fromLTWH(x + 10 + (i * 8), y - 6, 4, 30),
-        Paint()..color = Color(0xFF8D7367),
+        Paint()..color = const Color(0xFF8D7367),
       );
     }
 
@@ -2608,10 +2661,10 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 6, y - 10, 28, 38),
-        Radius.circular(3),
+        const Radius.circular(3),
       ),
       Paint()
-        ..color = Color(0xFF6D4C41)
+        ..color = const Color(0xFF6D4C41)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -2620,9 +2673,9 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 4, y - 12, 32, 6),
-        Radius.circular(3),
+        const Radius.circular(3),
       ),
-      Paint()..color = Color(0xFF8D6E63),
+      Paint()..color = const Color(0xFF8D6E63),
     );
   }
   void _drawComfyChair(Canvas canvas, double x, double y) {
@@ -2632,7 +2685,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawCircle(
       Offset(x + 20, y + 60),
       15,
-      Paint()..color = Color(0xFF424242),
+      Paint()..color = const Color(0xFF424242),
     );
 
     // 5 wheel spokes
@@ -2645,7 +2698,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
         Offset(x + 20, y + 60),
         Offset(endX, endY),
         Paint()
-          ..color = Color(0xFF333333)
+          ..color = const Color(0xFF333333)
           ..strokeWidth = 3,
       );
 
@@ -2653,14 +2706,14 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
       canvas.drawCircle(
         Offset(endX, endY),
         3,
-        Paint()..color = Color(0xFF1C1C1C),
+        Paint()..color = const Color(0xFF1C1C1C),
       );
     }
 
     // Pneumatic cylinder (adjustable height mechanism)
     canvas.drawRect(
       Rect.fromLTWH(x + 16, y + 42, 8, 20),
-      Paint()..color = Color(0xFF666666),
+      Paint()..color = const Color(0xFF666666),
     );
 
     // Cylinder segments (shows it's adjustable)
@@ -2669,7 +2722,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
         Offset(x + 16, y + 47 + (i * 5)),
         Offset(x + 24, y + 47 + (i * 5)),
         Paint()
-          ..color = Color(0xFF444444)
+          ..color = const Color(0xFF444444)
           ..strokeWidth = 1.5,
       );
     }
@@ -2678,9 +2731,9 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 2, y + 22, 36, 28),
-        Radius.circular(5),
+        const Radius.circular(5),
       ),
-      Paint()..color = Color(0xFF2E5A3E), // Dark green fabric
+      Paint()..color = const Color(0xFF2E5A3E), // Dark green fabric
     );
 
     // Seat cushion tufting (buttons)
@@ -2689,7 +2742,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
         canvas.drawCircle(
           Offset(x + 10 + (col * 9), y + 30 + (row * 10)),
           2,
-          Paint()..color = Color(0xFF234A32),
+          Paint()..color = const Color(0xFF234A32),
         );
       }
     }
@@ -2698,10 +2751,10 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 2, y + 22, 36, 28),
-        Radius.circular(5),
+        const Radius.circular(5),
       ),
       Paint()
-        ..color = Color(0xFF1C3A2A)
+        ..color = const Color(0xFF1C3A2A)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -2716,7 +2769,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
 
     canvas.drawPath(
       backPath,
-      Paint()..color = Color(0xFF2E5A3E),
+      Paint()..color = const Color(0xFF2E5A3E),
     );
 
     // Backrest padding pattern
@@ -2725,7 +2778,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
         Offset(x + 10, y - 12 + (i * 10)),
         Offset(x + 30, y - 12 + (i * 10)),
         Paint()
-          ..color = Color(0xFF234A32)
+          ..color = const Color(0xFF234A32)
           ..strokeWidth = 1.5,
       );
     }
@@ -2734,16 +2787,16 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 12, y + 4, 16, 12),
-        Radius.circular(3),
+        const Radius.circular(3),
       ),
-      Paint()..color = Color(0xFF3A6A4A).withOpacity(0.7),
+      Paint()..color = const Color(0xFF3A6A4A).withOpacity(0.7),
     );
 
     // Backrest outline
     canvas.drawPath(
       backPath,
       Paint()
-        ..color = Color(0xFF1C3A2A)
+        ..color = const Color(0xFF1C3A2A)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
@@ -2753,18 +2806,18 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x - 2, y + 28, 8, 18),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
-      Paint()..color = Color(0xFF424242),
+      Paint()..color = const Color(0xFF424242),
     );
 
     // Right armrest
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x + 34, y + 28, 8, 18),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
-      Paint()..color = Color(0xFF424242),
+      Paint()..color = const Color(0xFF424242),
     );
   }
   void _drawBasicLamp(Canvas canvas, double x, double y) {
@@ -2772,13 +2825,13 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawCircle(
       Offset(x, y + 8),
       6,
-      Paint()..color = Color(0xFF757575),
+      Paint()..color = const Color(0xFF757575),
     );
 
     // Thin stem
     canvas.drawRect(
       Rect.fromLTWH(x - 1.5, y - 8, 3, 16),
-      Paint()..color = Color(0xFF9E9E9E),
+      Paint()..color = const Color(0xFF9E9E9E),
     );
 
     // Simple conical shade
@@ -2791,14 +2844,14 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
 
     canvas.drawPath(
       shadePath,
-      Paint()..color = Color(0xFFFFE082),
+      Paint()..color = const Color(0xFFFFE082),
     );
 
     // Shade outline
     canvas.drawPath(
       shadePath,
       Paint()
-        ..color = Color(0xFFFFD54F)
+        ..color = const Color(0xFFFFD54F)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5,
     );
@@ -2808,21 +2861,21 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
       Offset(x, y - 12),
       8,
       Paint()
-        ..color = Color(0xFFFFE082).withOpacity(0.3)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 8),
+        ..color = const Color(0xFFFFE082).withOpacity(0.3)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
     );
   }
   void _drawFancyLamp(Canvas canvas, double x, double y) {
     // Ornate brass base (wider and decorative)
     canvas.drawOval(
       Rect.fromCenter(center: Offset(x, y + 10), width: 14, height: 8),
-      Paint()..color = Color(0xFFD4AF37),
+      Paint()..color = const Color(0xFFD4AF37),
     );
 
     // Base decorative rings
     canvas.drawOval(
       Rect.fromCenter(center: Offset(x, y + 8), width: 10, height: 4),
-      Paint()..color = Color(0xFFB8932E),
+      Paint()..color = const Color(0xFFB8932E),
     );
 
     // Elegant curved stem
@@ -2835,7 +2888,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
 
     canvas.drawPath(
       stemPath,
-      Paint()..color = Color(0xFFFFE55C),
+      Paint()..color = const Color(0xFFFFE55C),
     );
 
     // Premium glass shade (frosted)
@@ -2848,7 +2901,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
 
     canvas.drawPath(
       glassPath,
-      Paint()..color = Color(0xFFFFF8DC).withOpacity(0.7),
+      Paint()..color = const Color(0xFFFFF8DC).withOpacity(0.7),
     );
 
     // Glass rim (gold)
@@ -2856,7 +2909,7 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
       Offset(x - 12, y - 10),
       Offset(x + 12, y - 10),
       Paint()
-        ..color = Color(0xFFD4AF37)
+        ..color = const Color(0xFFD4AF37)
         ..strokeWidth = 2,
     );
 
@@ -2865,15 +2918,15 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
       Offset(x, y - 16),
       15,
       Paint()
-        ..color = Color(0xFFFFE082).withOpacity(0.5)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 15),
+        ..color = const Color(0xFFFFE082).withOpacity(0.5)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 15),
     );
 
     // Light bulb visible inside
     canvas.drawCircle(
       Offset(x, y - 14),
       4,
-      Paint()..color = Color(0xFFFFFFFF),
+      Paint()..color = const Color(0xFFFFFFFF),
     );
   }
   void _drawMiniBookshelf(Canvas canvas, double x, double y) {
@@ -2881,23 +2934,23 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x, y, 18, 28),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
-      Paint()..color = Color(0xFF6D4C41),
+      Paint()..color = const Color(0xFF6D4C41),
     );
 
     // Shelf divider (middle)
     canvas.drawRect(
       Rect.fromLTWH(x + 1, y + 14, 16, 2),
-      Paint()..color = Color(0xFF5D4037),
+      Paint()..color = const Color(0xFF5D4037),
     );
 
     // Books on top shelf (colorful spines)
     List<Color> bookColors = [
-      Color(0xFF8B0000), // Dark red
-      Color(0xFF2E5A3E), // Dark green
-      Color(0xFF1C3A5A), // Dark blue
-      Color(0xFF5D4037), // Brown
+      const Color(0xFF8B0000), // Dark red
+      const Color(0xFF2E5A3E), // Dark green
+      const Color(0xFF1C3A5A), // Dark blue
+      const Color(0xFF5D4037), // Brown
     ];
 
     for (int i = 0; i < 4; i++) {
@@ -2919,33 +2972,435 @@ void _drawWoodStove(Canvas canvas, double x, double floorY) {
     // Books on bottom shelf (different heights)
     canvas.drawRect(
       Rect.fromLTWH(x + 2, y + 17, 3, 10),
-      Paint()..color = Color(0xFF4A5A2A),
+      Paint()..color = const Color(0xFF4A5A2A),
     );
     canvas.drawRect(
       Rect.fromLTWH(x + 6, y + 19, 3, 8),
-      Paint()..color = Color(0xFF6A3A2A),
+      Paint()..color = const Color(0xFF6A3A2A),
     );
     canvas.drawRect(
       Rect.fromLTWH(x + 10, y + 18, 3, 9),
-      Paint()..color = Color(0xFF2A3A5A),
+      Paint()..color = const Color(0xFF2A3A5A),
     );
     canvas.drawRect(
       Rect.fromLTWH(x + 14, y + 20, 3, 7),
-      Paint()..color = Color(0xFF5A2A4A),
+      Paint()..color = const Color(0xFF5A2A4A),
     );
 
     // Shelf outline
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(x, y, 18, 28),
-        Radius.circular(2),
+        const Radius.circular(2),
       ),
       Paint()
-        ..color = Color(0xFF4E342E)
+        ..color = const Color(0xFF4E342E)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5,
     );
   }
+  // ========== GLOWING MUSHROOM (floor decoration, right corner) ==========
+  void _drawGlowingMushroom(Canvas canvas, double x, double y) {
+    // Soft bioluminescent glow on ground
+    canvas.drawCircle(
+      Offset(x, y - 10),
+      25,
+      Paint()
+        ..color = const Color(0xFF00E676).withOpacity(0.25)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20),
+    );
+
+    // Big mushroom stem
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(x - 4, y - 18, 8, 18),
+        const Radius.circular(2),
+      ),
+      Paint()..color = const Color(0xFFE0D6C8),
+    );
+    // Stem spots
+    canvas.drawCircle(Offset(x - 2, y - 10), 1.5, Paint()..color = const Color(0xFFCDBFAF));
+    canvas.drawCircle(Offset(x + 2, y - 14), 1, Paint()..color = const Color(0xFFCDBFAF));
+
+    // Big mushroom cap (glowing green)
+    final capPath = Path()
+      ..moveTo(x - 14, y - 16)
+      ..quadraticBezierTo(x - 15, y - 30, x, y - 34)
+      ..quadraticBezierTo(x + 15, y - 30, x + 14, y - 16)
+      ..close();
+    canvas.drawPath(capPath, Paint()..color = const Color(0xFF4CAF50));
+
+    // Cap glow
+    canvas.drawCircle(
+      Offset(x, y - 25),
+      12,
+      Paint()
+        ..color = const Color(0xFF69F0AE).withOpacity(0.5)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
+    );
+
+    // Cap spots (lighter circles)
+    canvas.drawCircle(Offset(x - 5, y - 26), 3, Paint()..color = const Color(0xFF81C784));
+    canvas.drawCircle(Offset(x + 4, y - 22), 2, Paint()..color = const Color(0xFF81C784));
+    canvas.drawCircle(Offset(x + 1, y - 30), 2.5, Paint()..color = const Color(0xFFA5D6A7));
+
+    // Cap outline
+    canvas.drawPath(
+      capPath,
+      Paint()
+        ..color = const Color(0xFF388E3C)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2,
+    );
+
+    // Small mushroom (left, shorter)
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(x - 14, y - 10, 5, 10),
+        const Radius.circular(1),
+      ),
+      Paint()..color = const Color(0xFFE0D6C8),
+    );
+
+    final smallCapPath = Path()
+      ..moveTo(x - 20, y - 9)
+      ..quadraticBezierTo(x - 20, y - 18, x - 12, y - 20)
+      ..quadraticBezierTo(x - 4, y - 18, x - 4, y - 9)
+      ..close();
+    canvas.drawPath(smallCapPath, Paint()..color = const Color(0xFF66BB6A));
+    canvas.drawCircle(Offset(x - 12, y - 15), 2, Paint()..color = const Color(0xFFA5D6A7));
+
+    // Tiny mushroom (right)
+    canvas.drawRect(
+      Rect.fromLTWH(x + 10, y - 6, 3, 6),
+      Paint()..color = const Color(0xFFE0D6C8),
+    );
+    canvas.drawCircle(Offset(x + 11, y - 7), 5, Paint()..color = const Color(0xFF81C784));
+    canvas.drawCircle(Offset(x + 10, y - 9), 1.5, Paint()..color = const Color(0xFFC8E6C9));
+
+    // Ground moss
+    for (int i = 0; i < 5; i++) {
+      canvas.drawCircle(
+        Offset(x - 12 + (i * 6), y + 2),
+        2,
+        Paint()..color = const Color(0xFF558B2F).withOpacity(0.6),
+      );
+    }
+  }
+
+// ========== BIG CRYSTAL CLUSTER (wall decoration, upper left) ==========
+  void _drawBigCrystalCluster(Canvas canvas, double x, double y) {
+    // Deep purple glow (different from wall_crystal's blue)
+    canvas.drawCircle(
+      Offset(x, y),
+      35,
+      Paint()
+        ..color = const Color(0xFFAB47BC).withOpacity(0.3)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 25),
+    );
+
+    // Inner bright glow
+    canvas.drawCircle(
+      Offset(x, y),
+      18,
+      Paint()
+        ..color = const Color(0xFFE040FB).withOpacity(0.2)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
+    );
+
+    // 5 crystal shards (different sizes, angles, colors)
+    // Center tall crystal (amethyst purple)
+    _drawSingleCrystal(canvas, x, y, 22, const Color(0xFFAB47BC), 0);
+    // Left crystal (pink)
+    _drawSingleCrystal(canvas, x - 12, y + 5, 16, const Color(0xFFEC407A), -0.2);
+    // Right crystal (violet)
+    _drawSingleCrystal(canvas, x + 11, y + 3, 18, const Color(0xFF7E57C2), 0.15);
+    // Far left small (magenta)
+    _drawSingleCrystal(canvas, x - 18, y + 10, 10, const Color(0xFFE040FB), -0.35);
+    // Far right small (lavender)
+    _drawSingleCrystal(canvas, x + 18, y + 8, 12, const Color(0xFFBA68C8), 0.3);
+
+    // Sparkle dots
+    canvas.drawCircle(Offset(x - 8, y - 15), 1.5, Paint()..color = Colors.white);
+    canvas.drawCircle(Offset(x + 10, y - 10), 1, Paint()..color = Colors.white.withOpacity(0.8));
+    canvas.drawCircle(Offset(x + 2, y - 20), 1.5, Paint()..color = Colors.white);
+  }
+
+// Helper for crystal cluster - draws one crystal shard with rotation
+  void _drawSingleCrystal(Canvas canvas, double x, double y, double height, Color color, double tilt) {
+    canvas.save();
+    canvas.translate(x, y);
+    canvas.rotate(tilt);
+
+    final crystalPath = Path()
+      ..moveTo(0, -height)
+      ..lineTo(-height * 0.3, height * 0.4)
+      ..lineTo(height * 0.3, height * 0.4)
+      ..close();
+
+    // Fill
+    canvas.drawPath(crystalPath, Paint()..color = color.withOpacity(0.85));
+
+    // Lighter face (left half for 3D)
+    final lightFace = Path()
+      ..moveTo(0, -height)
+      ..lineTo(-height * 0.3, height * 0.4)
+      ..lineTo(0, height * 0.3)
+      ..close();
+    canvas.drawPath(lightFace, Paint()..color = color.withOpacity(0.5));
+
+    // Outline
+    canvas.drawPath(
+      crystalPath,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
+    );
+
+    // Highlight edge
+    canvas.drawLine(
+      Offset(-height * 0.15, 0),
+      Offset(0, -height),
+      Paint()
+        ..color = Colors.white.withOpacity(0.6)
+        ..strokeWidth = 1,
+    );
+
+    canvas.restore();
+  }
+
+// ========== ANCIENT ARTIFACT (floor decoration, center) ==========
+  void _drawAncientArtifact(Canvas canvas, double x, double y) {
+    // Mysterious ground glow
+    canvas.drawCircle(
+      Offset(x, y - 15),
+      20,
+      Paint()
+        ..color = const Color(0xFFFFAB00).withOpacity(0.2)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 15),
+    );
+    // Wooden wall shelf underneath
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(x - 22, y - 6, 44, 8),
+        const Radius.circular(2),
+      ),
+      Paint()..color = const Color(0xFF8D6E63),
+    );
+
+// Shelf top highlight
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(x - 22, y - 6, 44, 3),
+        const Radius.circular(2),
+      ),
+      Paint()..color = const Color(0xFF9E8B7E).withOpacity(0.5),
+    );
+
+// Shelf outline
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(x - 22, y - 6, 44, 8),
+        const Radius.circular(2),
+      ),
+      Paint()
+        ..color = const Color(0xFF5D4037)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2,
+    );
+
+// Shelf bracket (left)
+    final leftBracket = Path()
+      ..moveTo(x - 18, y + 2)
+      ..lineTo(x - 18, y + 14)
+      ..lineTo(x - 10, y + 2)
+      ..close();
+    canvas.drawPath(leftBracket, Paint()..color = const Color(0xFF6D4C41));
+
+// Shelf bracket (right)
+    final rightBracket = Path()
+      ..moveTo(x + 18, y + 2)
+      ..lineTo(x + 18, y + 14)
+      ..lineTo(x + 10, y + 2)
+      ..close();
+    canvas.drawPath(rightBracket, Paint()..color = const Color(0xFF6D4C41));
+    // Stone pedestal base
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(x - 16, y - 8, 32, 8),
+        const Radius.circular(2),
+      ),
+      Paint()..color = const Color(0xFF6D6D6D),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(x - 12, y - 12, 24, 6),
+        const Radius.circular(2),
+      ),
+      Paint()..color = const Color(0xFF7D7D7D),
+    );
+
+    // Main stone body (carved totem shape)
+    final totemPath = Path()
+      ..moveTo(x - 10, y - 12)
+      ..lineTo(x - 8, y - 40)
+      ..quadraticBezierTo(x, y - 46, x + 8, y - 40)
+      ..lineTo(x + 10, y - 12)
+      ..close();
+
+    canvas.drawPath(totemPath, Paint()..color = const Color(0xFF8D8D8D));
+
+    // Carved face - eyes
+    canvas.drawCircle(Offset(x - 4, y - 32), 3, Paint()..color = const Color(0xFF5D5D5D));
+    canvas.drawCircle(Offset(x + 4, y - 32), 3, Paint()..color = const Color(0xFF5D5D5D));
+
+    // Glowing eye centers (amber)
+    canvas.drawCircle(Offset(x - 4, y - 32), 1.5, Paint()..color = const Color(0xFFFFAB00));
+    canvas.drawCircle(Offset(x + 4, y - 32), 1.5, Paint()..color = const Color(0xFFFFAB00));
+
+    // Eye glow
+    canvas.drawCircle(
+      Offset(x - 4, y - 32), 4,
+      Paint()..color = const Color(0xFFFFAB00).withOpacity(0.3)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+    );
+    canvas.drawCircle(
+      Offset(x + 4, y - 32), 4,
+      Paint()..color = const Color(0xFFFFAB00).withOpacity(0.3)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+    );
+
+    // Carved mouth
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(x - 4, y - 24, 8, 4),
+        const Radius.circular(1),
+      ),
+      Paint()..color = const Color(0xFF5D5D5D),
+    );
+
+    // Carved rune lines on body
+    canvas.drawLine(
+      Offset(x - 6, y - 18), Offset(x + 6, y - 18),
+      Paint()..color = const Color(0xFF6D6D6D)..strokeWidth = 1.5,
+    );
+    canvas.drawLine(
+      Offset(x, y - 20), Offset(x, y - 14),
+      Paint()..color = const Color(0xFF6D6D6D)..strokeWidth = 1.5,
+    );
+
+    // Stone outline
+    canvas.drawPath(
+      totemPath,
+      Paint()..color = const Color(0xFF5D5D5D)..style = PaintingStyle.stroke..strokeWidth = 2,
+    );
+
+    // Floating rune particles (mystical)
+    canvas.drawCircle(Offset(x - 12, y - 38), 1.5, Paint()..color = const Color(0xFFFFAB00).withOpacity(0.7));
+    canvas.drawCircle(Offset(x + 14, y - 42), 1, Paint()..color = const Color(0xFFFFAB00).withOpacity(0.5));
+    canvas.drawCircle(Offset(x + 8, y - 48), 1.5, Paint()..color = const Color(0xFFFFD54F).withOpacity(0.6));
+  }
+
+// ========== ENCHANTED CRYSTAL (ceiling/wall, top center - premium!) ==========
+  void _drawEnchantedCrystal(Canvas canvas, double x, double y) {
+    // LARGE radiant glow (multi-layered, rainbow-ish)
+    canvas.drawCircle(
+      Offset(x, y),
+      45,
+      Paint()
+        ..color = const Color(0xFF00BCD4).withOpacity(0.15)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 35),
+    );
+    canvas.drawCircle(
+      Offset(x, y),
+      30,
+      Paint()
+        ..color = const Color(0xFF00E5FF).withOpacity(0.2)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20),
+    );
+    canvas.drawCircle(
+      Offset(x, y),
+      15,
+      Paint()
+        ..color = const Color(0xFFFFFFFF).withOpacity(0.3)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
+    );
+
+    // Mounting bracket (attached to ceiling/wall)
+    canvas.drawRect(
+      Rect.fromLTWH(x - 3, y - 20, 6, 10),
+      Paint()..color = const Color(0xFFD4AF37),
+    );
+
+    // Main large crystal (faceted diamond shape)
+    final mainPath = Path()
+      ..moveTo(x, y - 12)       // top point
+      ..lineTo(x - 14, y + 5)   // left
+      ..lineTo(x - 8, y + 20)   // bottom-left
+      ..lineTo(x + 8, y + 20)   // bottom-right
+      ..lineTo(x + 14, y + 5)   // right
+      ..close();
+
+    // Crystal fill (cyan/teal gradient effect)
+    canvas.drawPath(mainPath, Paint()..color = const Color(0xFF00BCD4).withOpacity(0.8));
+
+    // Left face (lighter)
+    final leftFace = Path()
+      ..moveTo(x, y - 12)
+      ..lineTo(x - 14, y + 5)
+      ..lineTo(x - 8, y + 20)
+      ..lineTo(x, y + 12)
+      ..close();
+    canvas.drawPath(leftFace, Paint()..color = const Color(0xFF4DD0E1).withOpacity(0.6));
+
+    // Right face (darker)
+    final rightFace = Path()
+      ..moveTo(x, y - 12)
+      ..lineTo(x + 14, y + 5)
+      ..lineTo(x + 8, y + 20)
+      ..lineTo(x, y + 12)
+      ..close();
+    canvas.drawPath(rightFace, Paint()..color = const Color(0xFF00838F).withOpacity(0.5));
+
+    // Crystal outline (gold trim - premium feel)
+    canvas.drawPath(
+      mainPath,
+      Paint()
+        ..color = const Color(0xFFD4AF37)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2,
+    );
+
+    // Internal facet lines
+    canvas.drawLine(Offset(x, y - 12), Offset(x, y + 20), Paint()..color = const Color(0xFF00ACC1)..strokeWidth = 1);
+    canvas.drawLine(Offset(x - 14, y + 5), Offset(x + 14, y + 5), Paint()..color = const Color(0xFF00ACC1)..strokeWidth = 1);
+
+    // Bright highlight (top-left reflection)
+    canvas.drawLine(
+      Offset(x - 6, y - 4),
+      Offset(x - 2, y - 10),
+      Paint()..color = Colors.white.withOpacity(0.8)..strokeWidth = 2,
+    );
+
+    // Sparkle rays emanating outward
+    for (int i = 0; i < 6; i++) {
+      double angle = (i * 60) * (3.14159 / 180);
+      double rayLen = 22 + (i % 2) * 8;
+      canvas.drawLine(
+        Offset(x + 16 * cos(angle), y + 5 + 16 * sin(angle)),
+        Offset(x + rayLen * cos(angle), y + 5 + rayLen * sin(angle)),
+        Paint()
+          ..color = const Color(0xFF00E5FF).withOpacity(0.4)
+          ..strokeWidth = 1.5,
+      );
+    }
+
+    // Bright sparkle dots
+    canvas.drawCircle(Offset(x - 18, y - 5), 2, Paint()..color = Colors.white);
+    canvas.drawCircle(Offset(x + 16, y + 15), 1.5, Paint()..color = Colors.white.withOpacity(0.8));
+    canvas.drawCircle(Offset(x - 10, y + 22), 1.5, Paint()..color = const Color(0xFF00E5FF));
+    canvas.drawCircle(Offset(x + 20, y - 8), 1, Paint()..color = Colors.white);
+  }
+
 
   void _drawEmoji(Canvas canvas, String emoji, double x, double y, double size) {
     final textPainter = TextPainter(
@@ -2978,7 +3433,7 @@ class ItemPickerSheet extends StatelessWidget {
   final PlacementSpot spot;
   final Function(String) onItemSelected;
 
-  ItemPickerSheet({
+  const ItemPickerSheet({super.key, 
     required this.character,
     required this.decorations,
     required this.spot,
@@ -2992,7 +3447,7 @@ class ItemPickerSheet extends StatelessWidget {
 
     return Container(
       height: MediaQuery.of(context).size.height * 0.7,
-      padding: EdgeInsets.all(20),
+      padding: const EdgeInsets.all(20),
       child: Column(
         children: [
           Row(
@@ -3000,28 +3455,28 @@ class ItemPickerSheet extends StatelessWidget {
             children: [
               Text(
                 "Choose ${spot.category.toUpperCase()}",
-                style: TextStyle(
+                style: const TextStyle(
                   color: Colors.white,
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
                 ),
               ),
               IconButton(
-                icon: Icon(Icons.close, color: Colors.white),
+                icon: const Icon(Icons.close, color: Colors.white),
                 onPressed: () => Navigator.pop(context),
               ),
             ],
           ),
-          Divider(color: Colors.white24),
-          SizedBox(height: 10),
+          const Divider(color: Colors.white24),
+          const SizedBox(height: 10),
           DefaultTabController(
             length: 2,
             child: Expanded(
               child: Column(
                 children: [
                   TabBar(
-                    indicatorColor: Color(0xFF00d4ff),
-                    labelColor: Color(0xFF00d4ff),
+                    indicatorColor: const Color(0xFF00d4ff),
+                    labelColor: const Color(0xFF00d4ff),
                     unselectedLabelColor: Colors.white54,
                     tabs: [
                       Tab(text: "Owned (${ownedItems.length})"),
@@ -3050,8 +3505,8 @@ class ItemPickerSheet extends StatelessWidget {
 
   Widget _buildItemGrid(List<DecorationItem> items, bool isOwned, BuildContext context) {
     return GridView.builder(
-      padding: EdgeInsets.only(top: 20),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+      padding: const EdgeInsets.only(top: 20),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
         crossAxisSpacing: 15,
         mainAxisSpacing: 15,
@@ -3088,12 +3543,12 @@ class ItemPickerSheet extends StatelessWidget {
           },
           child: Container(
             decoration: BoxDecoration(
-              color: Color(0xFF0f3460),
+              color: const Color(0xFF0f3460),
               borderRadius: BorderRadius.circular(15),
               border: Border.all(
                 color: alreadyOwned
                     ? Colors.green
-                    : (canAfford ? Color(0xFF00d4ff) : Colors.red),
+                    : (canAfford ? const Color(0xFF00d4ff) : Colors.red),
                 width: 2,
               ),
             ),
@@ -3102,12 +3557,12 @@ class ItemPickerSheet extends StatelessWidget {
               children: [
                 Text(
                   item.emoji,
-                  style: TextStyle(fontSize: 40),
+                  style: const TextStyle(fontSize: 40),
                 ),
-                SizedBox(height: 5),
+                const SizedBox(height: 5),
                 Text(
                   item.name,
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
@@ -3116,19 +3571,19 @@ class ItemPickerSheet extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                SizedBox(height: 5),
+                const SizedBox(height: 5),
                 if (!isOwned)
                   Container(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: alreadyOwned
                           ? Colors.green
-                          : (canAfford ? Color(0xFF00d4ff) : Colors.red),
+                          : (canAfford ? const Color(0xFF00d4ff) : Colors.red),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
                       alreadyOwned ? "Owned" : "\$${item.cost}",
-                      style: TextStyle(
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 10,
                         fontWeight: FontWeight.bold,

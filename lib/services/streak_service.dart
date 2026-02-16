@@ -41,7 +41,7 @@ class StreakService {
 
     // Check if last focus was yesterday
     if (_lastFocusDate != null) {
-      DateTime yesterday = today.subtract(Duration(days: 1));
+      DateTime yesterday = today.subtract(const Duration(days: 1));
       DateTime lastDate = DateTime(
         _lastFocusDate!.year,
         _lastFocusDate!.month,

@@ -8,6 +8,8 @@ import 'shop_screen.dart';
 import 'settings_screen.dart';
 
 class MainGameScreen extends StatefulWidget {
+  const MainGameScreen({super.key});
+
   @override
   _MainGameScreenState createState() => _MainGameScreenState();
 }
@@ -45,7 +47,7 @@ class _MainGameScreenState extends State<MainGameScreen> {
   }
 
   List<Widget> get _screens => [
-    ShopScreen(),
+    const ShopScreen(),
     CaveSceneScreen(
       character: character,
       farm: farm,
@@ -58,14 +60,14 @@ class _MainGameScreenState extends State<MainGameScreen> {
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
-      return Scaffold(
+      return const Scaffold(
         backgroundColor: Colors.black,
         body: Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
-      backgroundColor: Color(0xFF1a1a2e),
+      backgroundColor: const Color(0xFF1a1a2e),
       body: _screens[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
@@ -74,11 +76,11 @@ class _MainGameScreenState extends State<MainGameScreen> {
             _currentIndex = index;
           });
         },
-        backgroundColor: Color(0xFF16213e),
-        selectedItemColor: Color(0xFF00d4ff),
+        backgroundColor: const Color(0xFF16213e),
+        selectedItemColor: const Color(0xFF00d4ff),
         unselectedItemColor: Colors.white54,
         type: BottomNavigationBarType.fixed,
-        items: [
+        items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.store, size: 30),
             label: 'Shop',

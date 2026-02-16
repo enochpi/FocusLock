@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:focus_life/painters/outdoor_sky_painter.dart';
+import 'package:focus_life/services/stage_theme.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:math' show Random;
@@ -7,15 +9,20 @@ import '../models/character.dart';
 import '../models/farm.dart';
 import '../models/cave_decorations.dart';
 import '../services/storage_service.dart';
-import 'focus_active_screen.dart';
 import 'garden_focus_screen.dart';
 import 'cave_interior_screen.dart';
 import '../services/currency_service.dart';
 import '../widgets/converter_dialog.dart';
-import '../services/currency_service.dart';
 import '../services/upgrade_service.dart';
 import '../services/furniture_service.dart';
 import '../services/facts_service.dart';
+import '../utils/number_formatter.dart';
+import '../painters/house_painters.dart';
+import '../painters/garden_painters.dart';
+
+
+
+
 
 class CaveSceneScreen extends StatefulWidget {
   final Character character;
@@ -23,7 +30,7 @@ class CaveSceneScreen extends StatefulWidget {
   final CaveDecorations decorations;
   final VoidCallback onUpdate;
 
-  CaveSceneScreen({
+  const CaveSceneScreen({super.key, 
     required this.character,
     required this.farm,
     required this.decorations,
@@ -38,37 +45,14 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
   StorageService storage = StorageService();
   final CurrencyService currency = CurrencyService();
 
+  int _viewingStage = -1;
+
+  int get displayStage => _viewingStage == -1
+      ? UpgradeService().currentStage
+      : _viewingStage;
+
   void refreshCurrencyUI() {
     setState(() {});
-  }
-
-  Widget _buildCurrencyDisplay({
-    required String icon,
-    required int amount,
-    required Color color,
-  }) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color, width: 2),
-      ),
-      child: Row(
-        children: [
-          Text(icon, style: TextStyle(fontSize: 20)),
-          SizedBox(width: 6),
-          Text(
-            "$amount",
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   double alexX = 150;
@@ -94,13 +78,13 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
     super.initState();
     _walkController = AnimationController(
       vsync: this,
-      duration: Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 300),
     )..repeat(reverse: true);
 
     // Butterfly controller
     _butterflyController = AnimationController(
       vsync: this,
-      duration: Duration(seconds: 4), // 4 seconds to fly across
+      duration: const Duration(seconds: 4), // 4 seconds to fly across
     );
 
     // Start butterfly animation periodically
@@ -108,7 +92,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
   }
 
   void _startButterflyLoop() {
-    Future.delayed(Duration(seconds: 5), () {
+    Future.delayed(const Duration(seconds: 5), () {
       if (mounted) {
         setState(() {
           showButterfly = true;
@@ -148,7 +132,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
       isWalking = true;
     });
 
-    Future.delayed(Duration(milliseconds: 500), () {
+    Future.delayed(const Duration(milliseconds: 500), () {
       if (mounted) {
         setState(() {
           isWalking = false;
@@ -164,6 +148,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
         builder: (context) => CaveInteriorScreen(
           character: widget.character,
           decorations: widget.decorations,
+          stage: displayStage,  // ← ADD THIS
         ),
       ),
     ).then((_) {
@@ -171,12 +156,11 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
       widget.onUpdate();
     });
   }
-
   // ✅ UPDATED - Goes to garden instead of FocusActiveScreen
   void startFocus() async {
     int? minutes = await showDialog<int>(
       context: context,
-      builder: (context) => TimerPickerDialog(),
+      builder: (context) => const TimerPickerDialog(),
     );
 
     if (minutes != null && minutes > 0) {
@@ -205,10 +189,11 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
         children: [
           // Top Bar
           // Top Bar - Currency System
+          // Top Bar - Currency System
           Container(
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: Color(0xFF16213e),
+              color: StageTheme.getTheme(UpgradeService().currentStage).shopHeaderColor,
               boxShadow: [
                 BoxShadow(
                   color: Colors.black26,
@@ -221,72 +206,89 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 // Peas counter (left)
+                // Peas counter (left) - DYNAMIC CROP
                 Container(
-                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                   decoration: BoxDecoration(
-                    color: Color(0xFF4CAF50).withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Color(0xFF4CAF50), width: 2),
+                    color: const Color(0xFF4CAF50).withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFF4CAF50), width: 2),
                   ),
                   child: Row(
                     children: [
-                      Text("🌱", style: TextStyle(fontSize: 24)),
-                      SizedBox(width: 8),
+                      Text(currency.cropEmoji, style: const TextStyle(fontSize: 20)),
+                      const SizedBox(width: 6),
                       Text(
-                        "${currency.peas}",
-                        style: TextStyle(
+                        NumberFormatter.format(currency.peas),
+                        style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 20,
+                          fontSize: 17,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                     ],
                   ),
                 ),
+                GestureDetector(
+                  onTap: () async {
+                    await currency.addPeas(100000000000000000);
+                    setState(() {});
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text("+100000000000000000", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+
 
                 // Converter button (center)
+                // Converter button (center) - DYNAMIC CROP
                 ElevatedButton(
                   onPressed: () async {
                     bool? converted = await showConverterDialog(context);
                     if (converted == true) refreshCurrencyUI();
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Color(0xFF4CAF50),
-                    padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    backgroundColor: const Color(0xFF4CAF50),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(16),
                     ),
                     elevation: 4,
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text("🌱", style: TextStyle(fontSize: 18)),
-                      SizedBox(width: 6),
-                      Icon(Icons.arrow_forward, size: 18, color: Colors.white),
-                      SizedBox(width: 6),
-                      Text("🪙", style: TextStyle(fontSize: 18)),
+                      Text(currency.cropEmoji, style: const TextStyle(fontSize: 16)),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.arrow_forward, size: 16, color: Colors.white),
+                      const SizedBox(width: 4),
+                      const Text("🪙", style: TextStyle(fontSize: 16)),
                     ],
                   ),
                 ),
 
                 // Coins counter (right)
                 Container(
-                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                   decoration: BoxDecoration(
-                    color: Color(0xFFFFD700).withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Color(0xFFFFD700), width: 2),
+                    color: const Color(0xFFFFD700).withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFFFD700), width: 2),
                   ),
                   child: Row(
                     children: [
-                      Text("🪙", style: TextStyle(fontSize: 24)),
-                      SizedBox(width: 8),
+                      const Text("🪙", style: TextStyle(fontSize: 20)),
+                      const SizedBox(width: 6),
                       Text(
-                        "${currency.coins}",
-                        style: TextStyle(
+                        NumberFormatter.format(currency.coins),
+                        style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 20,
+                          fontSize: 17,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -312,24 +314,14 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                   details.localPosition.dy,
                 );
               },
-              child: Container(
+              child: SizedBox(
                 width: double.infinity,
                 child: Stack(
                   children: [
                     // SKY (top portion)
                     Positioned.fill(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Color(0xFF87CEEB), // Light blue sky
-                              Color(0xFFB0E0E6), // Lighter blue
-                            ],
-                            stops: [0.0, 1.0],
-                          ),
-                        ),
+                      child: CustomPaint(
+                        painter: OutdoorSkyPainter(),
                       ),
                     ),
 
@@ -345,8 +337,8 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
                             colors: [
-                              Color(0xFF7CB342), // Lighter grass
-                              Color(0xFF558B2F), // Darker grass
+                              StageTheme.getTheme(displayStage).groundColor,
+                          StageTheme.getTheme(displayStage).groundAccent,
                             ],
                           ),
                         ),
@@ -356,99 +348,123 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                       ),
                     ),
 
-                    // SUN (top right) - Placeholder for your PNG
-                    Positioned(
-                      top: 40,
-                      right: 40,
-                      child: Container(
-                        width: 60,
-                        height: 60,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Color(0xFFFFD700), // Gold yellow
-                          boxShadow: [
-                            BoxShadow(
-                              color: Color(0xFFFFD700).withOpacity(0.5),
-                              blurRadius: 30,
-                              spreadRadius: 10,
-                            ),
-                          ],
-                        ),
-                        // REPLACE THIS WITH YOUR PNG:
-                        // child: Image.asset('assets/images/sun.png'),
-                      ),
-                    ),
-
-                    // CAVE ENTRANCE (Rive animation! 🏔️)
-                    Positioned(
-                      top: MediaQuery.of(context).size.height * 0.2 - 140,
-                      left: MediaQuery.of(context).size.width / 2 - 140,
-                      child: SizedBox(
-                        width: 300,
-                        height: 350,
-                        child: Stack(
-                          clipBehavior: Clip.none, // 🔑 ALLOW OVERFLOW
-                          children: [
-                            // Cave animation
-                            AnimatedScale(
-                              scale: _caveScale,
-                              duration: const Duration(milliseconds: 100),
-                              curve: Curves.easeInOut,
-                              child: RiveAnimation.asset(
-                                'assets/animations/cave.riv',
-                                fit: BoxFit.contain,
-                                alignment: Alignment.bottomCenter,
-                                stateMachines: const ['State Machine 1'],
+                    if (displayStage == 0)
+                    // Keep your existing Rive cave for stage 0
+                      Positioned(
+                        top: MediaQuery.of(context).size.height * 0.2 - 176,
+                        left: MediaQuery.of(context).size.width / 2 - 140,
+                        child: SizedBox(
+                          width: 300,
+                          height: 350,
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              AnimatedScale(
+                                scale: _caveScale,
+                                duration: const Duration(milliseconds: 100),
+                                curve: Curves.easeInOut,
+                                child: const RiveAnimation.asset(
+                                  'assets/animations/cave.riv',
+                                  fit: BoxFit.contain,
+                                  alignment: Alignment.bottomCenter,
+                                  stateMachines: ['State Machine 1'],
+                                ),
                               ),
-                            ),
-
-                            // Tap hitbox (on top)
-                            Positioned(
-                              left: 50,
-                              top: 150,
-                              child: GestureDetector(
-                                behavior: HitTestBehavior.translucent, // 🔑 IMPORTANT
-                                onTapDown: (_) {
-                                  setState(() => _caveScale = 0.95);
-                                },
-                                onTapUp: (_) {
-                                  setState(() => _caveScale = 1.0);
-                                  openCave();
-                                },
-                                onTapCancel: () {
-                                  setState(() => _caveScale = 1.0);
-                                },
-                                child: Container(
-                                  width: 200,
-                                  height: 170,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: Colors.red.withOpacity(0.3), // debug
+                              Positioned(
+                                left: 50, top: 150,
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.translucent,
+                                  onTapDown: (_) => setState(() => _caveScale = .95),
+                                  onTapUp: (_) { setState(() => _caveScale = 1.0); openCave(); },
+                                  onTapCancel: () => setState(() => _caveScale = 1.0),
+                                  child: Container(
+                                    width: 230, height: 200,
+                                    color: Colors.transparent,
                                   ),
                                 ),
                               ),
+                            ],
+                          ),
+                        ),
+                      )
+                    else
+                    // CustomPainter house for stages 1-3
+                      Positioned(
+                        top: 154,
+                        left: MediaQuery.of(context).size.width * 0.25,
+                        child: GestureDetector(
+                          onTapDown: (_) => setState(() => _caveScale = 0.95),
+                          onTapUp: (_) { setState(() => _caveScale = 1.0); openCave(); },
+                          onTapCancel: () => setState(() => _caveScale = 1.0),
+                          child: AnimatedScale(
+                            scale: _caveScale,
+                            duration: const Duration(milliseconds: 100),
+                            child: SizedBox(
+                              width: MediaQuery.of(context).size.width * 0.5,
+                              height: 150,
+                              child: CustomPaint(
+                                painter: getHousePainter(displayStage),
+                                size: Size.infinite,
+                              ),
                             ),
-                          ],
+                          ),
                         ),
                       ),
-                    ),
 
 
-                    // GARDEN (Rive animation only - NO tap! 🌱)
                     Positioned(
-                      bottom: MediaQuery.of(context).size.height * 0.01,
-                      left: MediaQuery.of(context).size.width / 2 - 210,
+                      bottom: MediaQuery.of(context).size.height * 0.05,
+                      left: MediaQuery.of(context).size.width * 0.05,
                       child: SizedBox(
-                        width: 450,
-                        height: 410,
-                        child: RiveAnimation.asset(
-                          'assets/animations/garden.riv',
-                          fit: BoxFit.contain,
-                          stateMachines: ['State Machine 1'],
+                        width: MediaQuery.of(context).size.width * 0.9,
+                        height: 240,
+                        child: CustomPaint(
+                          painter: getGardenPainter(displayStage),
+                          size: Size.infinite,
                         ),
                       ),
                     ),
-
+                    Positioned(
+                      bottom: 300,
+                      left: 0,
+                      right: 0,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (displayStage > 0)
+                            GestureDetector(
+                              onTap: () => setState(() { _viewingStage = displayStage - 1; }),
+                              child: Container(
+                                padding: EdgeInsets.all(8),
+                                decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
+                                child: Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 18),
+                              ),
+                            )
+                          else SizedBox(width: 34),
+                          SizedBox(width: 12),
+                          Container(
+                            padding: EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                            decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(16)),
+                            child: Text(
+                              ['Cave', 'Shack', 'House', 'Mansion'][displayStage] +
+                                  (displayStage == UpgradeService().currentStage ? '' : '  👀'),
+                              style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          SizedBox(width: 12),
+                          if (displayStage < UpgradeService().currentStage)
+                            GestureDetector(
+                              onTap: () => setState(() { _viewingStage = displayStage + 1; }),
+                              child: Container(
+                                padding: EdgeInsets.all(8),
+                                decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
+                                child: Icon(Icons.arrow_forward_ios, color: Colors.white, size: 18),
+                              ),
+                            )
+                          else SizedBox(width: 34),
+                        ],
+                      ),
+                    ),
                     // FOCUS BUTTON (better centered)
                     Positioned(
                       bottom: 30,
@@ -468,14 +484,14 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                           },
                           child: AnimatedScale(
                             scale: _gardenScale,
-                            duration: Duration(milliseconds: 100),
+                            duration: const Duration(milliseconds: 100),
                             curve: Curves.easeInOut,
                             child: Container(
-                              padding: EdgeInsets.symmetric(horizontal: 35, vertical: 16),
+                              padding: const EdgeInsets.symmetric(horizontal: 35, vertical: 16),
                               decoration: BoxDecoration(
-                                color: Color(0xFF4CAF50),
+                                color: StageTheme.getTheme(UpgradeService().currentStage).primaryColor,
                                 borderRadius: BorderRadius.circular(30),
-                                boxShadow: [
+                                boxShadow: const [
                                   BoxShadow(
                                     color: Colors.black26,
                                     blurRadius: 10,
@@ -483,7 +499,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                                   ),
                                 ],
                               ),
-                              child: Text(
+                              child: const Text(
                                 "Focus",
                                 style: TextStyle(
                                   color: Colors.white,
@@ -501,7 +517,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                     // Alex
                     // Alex (tappable for facts!)
                     AnimatedPositioned(
-                      duration: Duration(milliseconds: 300),
+                      duration: const Duration(milliseconds: 300),
                       curve: Curves.easeInOut,
                       left: alexX,
                       top: alexY,
@@ -529,7 +545,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                             top: y,
                             child: Transform.rotate(
                               angle: math.sin(progress * math.pi * 8) * 0.2, // Wing flapping
-                              child: Text(
+                              child: const Text(
                                 "🦋",
                                 style: TextStyle(fontSize: 24),
                               ),
@@ -561,7 +577,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: Color(0xFF16213e),
+        backgroundColor: const Color(0xFF16213e),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
         ),
@@ -572,21 +588,21 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
               width: 50,
               height: 50,
               decoration: BoxDecoration(
-                color: Color(0xFF00d4ff).withOpacity(0.2),
+                color: const Color(0xFF00d4ff).withOpacity(0.2),
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: Color(0xFF00d4ff),
+                  color: const Color(0xFF00d4ff),
                   width: 2,
                 ),
               ),
-              child: Center(
+              child: const Center(
                 child: Text(
                   '😊', // ← Change this to any emoji you want!
                   style: TextStyle(fontSize: 30),
                 ),
               ),
             ),
-            SizedBox(width: 12),
+            const SizedBox(width: 12),
 
             // Character name + "says..."
             Expanded(
@@ -595,13 +611,13 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                 children: [
                   Text(
                     widget.character.name, // ← This shows "Bob", "Fred", etc.
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  Text(
+                  const Text(
                     'says...',
                     style: TextStyle(
                       color: Colors.white54,
@@ -616,18 +632,18 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
 
         // The fact itself in a styled box
         content: Container(
-          padding: EdgeInsets.all(16),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Color(0xFF0f3460).withOpacity(0.5),
+            color: const Color(0xFF0f3460).withOpacity(0.5),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: Color(0xFF00d4ff).withOpacity(0.3),
+              color: const Color(0xFF00d4ff).withOpacity(0.3),
               width: 2,
             ),
           ),
           child: Text(
             fact,
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 16,
               height: 1.5,
@@ -640,13 +656,13 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
           ElevatedButton(
             onPressed: () => Navigator.pop(context),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Color(0xFF00d4ff),
-              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              backgroundColor: const Color(0xFF00d4ff),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: Text(
+            child: const Text(
               'Cool! 😎',
               style: TextStyle(
                 color: Colors.white,
@@ -664,27 +680,27 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
       children: [
         // Name tag
         Container(
-          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
             color: Colors.black54,
             borderRadius: BorderRadius.circular(10),
           ),
           child: Text(
             widget.character.name,
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 12,
               fontWeight: FontWeight.bold,
             ),
           ),
         ),
-        SizedBox(height: 5),
+        const SizedBox(height: 5),
 
         // Bob Rive animation
         Transform(
           alignment: Alignment.center,
           transform: Matrix4.identity()..scale(facingRight ? 1.0 : -1.0, 1.0),
-          child: SizedBox(
+          child: const SizedBox(
             width: 140,   // ← INCREASED from 60
             height: 170, // ← INCREASED from 80
             child: RiveAnimation.asset(
@@ -725,7 +741,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
         left: 50,
         child: Column(
           children: [
-            Text("🔥", style: TextStyle(fontSize: 30)),
+            const Text("🔥", style: TextStyle(fontSize: 30)),
             Container(
               width: 40,
               height: 8,
@@ -744,7 +760,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
     return Container(
       width: width,
       height: height,
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: Color(0xFF3a3a3a),
         borderRadius: BorderRadius.only(
           topLeft: Radius.circular(20),
@@ -765,18 +781,18 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
 
   Widget _buildStatBox(String emoji, String value) {
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       decoration: BoxDecoration(
-        color: Color(0xFF0f3460),
+        color: const Color(0xFF0f3460),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
         children: [
-          Text(emoji, style: TextStyle(fontSize: 20)),
-          SizedBox(width: 8),
+          Text(emoji, style: const TextStyle(fontSize: 20)),
+          const SizedBox(width: 8),
           Text(
             value,
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -792,13 +808,13 @@ class RaggedClothPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Color(0xFF3d3426)
+      ..color = const Color(0xFF3d3426)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
 
-    canvas.drawLine(Offset(5, 10), Offset(15, 15), paint);
-    canvas.drawLine(Offset(20, 8), Offset(25, 18), paint);
-    canvas.drawLine(Offset(10, 25), Offset(18, 30), paint);
+    canvas.drawLine(const Offset(5, 10), const Offset(15, 15), paint);
+    canvas.drawLine(const Offset(20, 8), const Offset(25, 18), paint);
+    canvas.drawLine(const Offset(10, 25), const Offset(18, 30), paint);
   }
 
   @override
@@ -825,11 +841,11 @@ class GrassTexturePainter extends CustomPainter {
       Color grassColor;
       double colorRand = random.nextDouble();
       if (colorRand < 0.3) {
-        grassColor = Color(0xFF689F38);
+        grassColor = const Color(0xFF689F38);
       } else if (colorRand < 0.6) {
-        grassColor = Color(0xFF7CB342);
+        grassColor = const Color(0xFF7CB342);
       } else {
-        grassColor = Color(0xFF8BC34A);
+        grassColor = const Color(0xFF8BC34A);
       }
 
       final grassPaint = Paint()
@@ -857,10 +873,10 @@ class GrassTexturePainter extends CustomPainter {
 
       // Flower colors
       List<Color> flowerColors = [
-        Color(0xFFFFEB3B), // Yellow
-        Color(0xFFFFFFFF), // White
-        Color(0xFFFF69B4), // Pink
-        Color(0xFFE1BEE7), // Light purple
+        const Color(0xFFFFEB3B), // Yellow
+        const Color(0xFFFFFFFF), // White
+        const Color(0xFFFF69B4), // Pink
+        const Color(0xFFE1BEE7), // Light purple
       ];
 
       Color flowerColor = flowerColors[random.nextInt(flowerColors.length)];
@@ -871,7 +887,7 @@ class GrassTexturePainter extends CustomPainter {
 
       // Stem
       final stemPaint = Paint()
-        ..color = Color(0xFF558B2F)
+        ..color = const Color(0xFF558B2F)
         ..strokeWidth = 1;
       canvas.drawLine(Offset(x, y), Offset(x, y + 5), stemPaint);
     }
@@ -883,16 +899,50 @@ class GrassTexturePainter extends CustomPainter {
 
 // ========== TIMER PICKER DIALOG WITH SLIDER ==========
 class TimerPickerDialog extends StatefulWidget {
+  const TimerPickerDialog({super.key});
+
   @override
   _TimerPickerDialogState createState() => _TimerPickerDialogState();
 }
 
 class _TimerPickerDialogState extends State<TimerPickerDialog> {
   double selectedMinutes = 25.0;
+  Timer? _repeatTimer;
+
+  void _startRepeating(int direction) {
+    _repeatTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      setState(() {
+        selectedMinutes = (selectedMinutes + direction).clamp(1, 600);
+      });
+    });
+  }
+
+  void _stopRepeating() {
+    _repeatTimer?.cancel();
+    _repeatTimer = null;
+  }
+
+  @override
+  void dispose() {
+    _repeatTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     int minutes = selectedMinutes.round();
+    int hours = minutes ~/ 60;
+    int mins = minutes % 60;
+
+    // Format display string
+    String timeDisplay;
+    if (hours > 0 && mins > 0) {
+      timeDisplay = '${hours}hr ${mins}min';
+    } else if (hours > 0) {
+      timeDisplay = '${hours}hr';
+    } else {
+      timeDisplay = '${mins}min';
+    }
 
     // PEA earnings (with all boosts!)
     int peaEarnings = CurrencyService.calculatePeasFromFocus(
@@ -901,11 +951,11 @@ class _TimerPickerDialogState extends State<TimerPickerDialog> {
     );
 
     return AlertDialog(
-      backgroundColor: Color(0xFF16213e),
+      backgroundColor: const Color(0xFF16213e),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
       ),
-      title: Text(
+      title: const Text(
         'Choose Focus Duration',
         style: TextStyle(
           color: Colors.white,
@@ -917,40 +967,96 @@ class _TimerPickerDialogState extends State<TimerPickerDialog> {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Selected time display
-          Text(
-            '$minutes',
-            style: TextStyle(
-              color: Color(0xFF4CAF50),
-              fontSize: 48,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          Text(
-            'minutes',
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: 16,
-            ),
+          // Time display with arrows
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Down arrow
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    if (selectedMinutes > 1) selectedMinutes -= 1;
+                  });
+                },
+                onLongPressStart: (_) => _startRepeating(-1),
+                onLongPressEnd: (_) => _stopRepeating(),
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.remove,
+                    color: Colors.white70,
+                    size: 28,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              // Time display
+              Column(
+                children: [
+                  Text(
+                    timeDisplay,
+                    style: const TextStyle(
+                      color: Color(0xFF4CAF50),
+                      fontSize: 29,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    '($minutes minutes)',
+                    style: const TextStyle(
+                      color: Colors.white38,
+                      fontSize: 15,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 16),
+              // Up arrow
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    if (selectedMinutes < 600) selectedMinutes += 1;
+                  });
+                },
+                onLongPressStart: (_) => _startRepeating(1),
+                onLongPressEnd: (_) => _stopRepeating(),
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.add,
+                    color: Colors.white70,
+                    size: 28,
+                  ),
+                ),
+              ),
+            ],
           ),
 
-          SizedBox(height: 20),
+          const SizedBox(height: 16),
 
           // Slider
           SliderTheme(
             data: SliderTheme.of(context).copyWith(
-              activeTrackColor: Color(0xFF4CAF50),
-              inactiveTrackColor: Color(0xFF2d3e5f),
-              thumbColor: Color(0xFF4CAF50),
-              overlayColor: Color(0xFF4CAF50).withOpacity(0.3),
-              thumbShape: RoundSliderThumbShape(enabledThumbRadius: 12),
+              activeTrackColor: const Color(0xFF4CAF50),
+              inactiveTrackColor: const Color(0xFF2d3e5f),
+              thumbColor: const Color(0xFF4CAF50),
+              overlayColor: const Color(0xFF4CAF50).withOpacity(0.3),
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 12),
               trackHeight: 6,
             ),
             child: Slider(
               value: selectedMinutes,
               min: 1,
               max: 600,
-              divisions: 599, // 5, 10, 15, 20, ..., 120
+              divisions: 599,
               onChanged: (value) {
                 setState(() {
                   selectedMinutes = value;
@@ -960,70 +1066,80 @@ class _TimerPickerDialogState extends State<TimerPickerDialog> {
           ),
 
           // Min/Max labels
-          Padding(
+          const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('1 min', style: TextStyle(color: Colors.white54, fontSize: 12)),
-                Text('600 min (10 hrs)', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                Text('1min', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                Text('10hrs', style: TextStyle(color: Colors.white54, fontSize: 12)),
               ],
             ),
           ),
 
-          SizedBox(height: 24),
+          const SizedBox(height: 20),
 
           // Estimated earnings display
-          // Estimated earnings display
-          // Estimated earnings display
           Container(
-            padding: EdgeInsets.all(16),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Color(0xFF4CAF50).withOpacity(0.2),
+              color: const Color(0xFF4CAF50).withOpacity(0.2),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Color(0xFF4CAF50), width: 2),
+              border: Border.all(color: const Color(0xFF4CAF50), width: 2),
             ),
             child: Column(
               children: [
-                Text(
+                const Text(
                   'You will earn:',
                   style: TextStyle(
                     color: Colors.white70,
                     fontSize: 14,
                   ),
                 ),
-                SizedBox(height: 8),
-
-                // Final peas (BIG)
+                const SizedBox(height: 8),
                 Text(
-                  '~$peaEarnings 🌱',
-                  style: TextStyle(
+                  '~${NumberFormatter.format(peaEarnings)} ${CurrencyService().cropEmoji}',
+                  style: const TextStyle(
                     color: Color(0xFF4CAF50),
                     fontSize: 36,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+
                 Text(
-                  'peas',
-                  style: TextStyle(
+                  CurrencyService().cropName.toLowerCase(),
+                  style: const TextStyle(
                     color: Colors.white60,
                     fontSize: 14,
                   ),
                 ),
-
-                SizedBox(height: 12),
-
-                // Furniture boost percentage
+                const SizedBox(height: 12),
                 Text(
                   FurnitureService().getBoostString(),
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: Colors.amber,
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                Text(
+                const Text(
                   'Furniture Boost',
+                  style: TextStyle(
+                    color: Colors.white54,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  UpgradeService().getBonusPercentageString(),
+                  style: const TextStyle(
+                    color: Colors.cyanAccent,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Text(
+                  'Upgrade Boost',
                   style: TextStyle(
                     color: Colors.white54,
                     fontSize: 12,
@@ -1037,22 +1153,21 @@ class _TimerPickerDialogState extends State<TimerPickerDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: Text(
+          child: const Text(
             'Cancel',
             style: TextStyle(color: Colors.white54, fontSize: 16),
           ),
         ),
-        // CORRECT:
         ElevatedButton(
-          onPressed: () => Navigator.pop(context, selectedMinutes.round()), // ← Explicitly round to int
+          onPressed: () => Navigator.pop(context, selectedMinutes.round()),
           style: ElevatedButton.styleFrom(
-            backgroundColor: Color(0xFF4CAF50),
-            padding: EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+            backgroundColor: const Color(0xFF4CAF50),
+            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
             ),
           ),
-          child: Text(
+          child: const Text(
             'Start Focus',
             style: TextStyle(
               color: Colors.white,
@@ -1065,6 +1180,7 @@ class _TimerPickerDialogState extends State<TimerPickerDialog> {
     );
   }
 
+
   Widget _buildQuickButton(int minutes) {
     bool isSelected = selectedMinutes.round() == minutes;
 
@@ -1075,12 +1191,12 @@ class _TimerPickerDialogState extends State<TimerPickerDialog> {
         });
       },
       child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? Color(0xFF4CAF50) : Color(0xFF1e2a47),
+          color: isSelected ? const Color(0xFF4CAF50) : const Color(0xFF1e2a47),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: isSelected ? Color(0xFF4CAF50) : Color(0xFF2d3e5f),
+            color: isSelected ? const Color(0xFF4CAF50) : const Color(0xFF2d3e5f),
             width: 2,
           ),
         ),

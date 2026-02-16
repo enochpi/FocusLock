@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import '../services/currency_service.dart';
 import '../services/upgrade_service.dart';
+import '../utils/number_formatter.dart';
 
 class ShopScreen extends StatefulWidget {
   const ShopScreen({Key? key}) : super(key: key);
-  // ← No parameters needed!
 
   @override
   State<ShopScreen> createState() => _ShopScreenState();
@@ -14,21 +14,23 @@ class _ShopScreenState extends State<ShopScreen> {
   final CurrencyService currency = CurrencyService();
   final UpgradeService upgrades = UpgradeService();
 
+  int selectedShopStage = 0; // Which shop tab is selected
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFF1a1a1a),
+      backgroundColor: const Color(0xFF1a1a1a),
       appBar: AppBar(
-        backgroundColor: Color(0xFF2d2d2d),
-        title: Text('🛒 Upgrade Shop'),
+        backgroundColor: const Color(0xFF2d2d2d),
+        title: const Text('🛒 Upgrade Shop'),
         centerTitle: true,
       ),
       body: Column(
         children: [
           // Currency Display at top
           Container(
-            padding: EdgeInsets.all(16),
-            decoration: BoxDecoration(
+            padding: const EdgeInsets.all(16),
+            decoration: const BoxDecoration(
               color: Color(0xFF2d2d2d),
               boxShadow: [
                 BoxShadow(
@@ -43,19 +45,19 @@ class _ShopScreenState extends State<ShopScreen> {
               children: [
                 // Peas
                 Container(
-                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   decoration: BoxDecoration(
-                    color: Color(0xFF4CAF50).withOpacity(0.2),
+                    color: const Color(0xFF4CAF50).withOpacity(0.2),
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Color(0xFF4CAF50), width: 2),
+                    border: Border.all(color: const Color(0xFF4CAF50), width: 2),
                   ),
                   child: Row(
                     children: [
-                      Text('🌱', style: TextStyle(fontSize: 24)),
-                      SizedBox(width: 8),
+                      Text(CurrencyService().cropEmoji, style: TextStyle(fontSize: 24)),
+                      const SizedBox(width: 8),
                       Text(
-                        '${currency.peas}',
-                        style: TextStyle(
+                        NumberFormatter.format(currency.peas),
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
@@ -67,19 +69,19 @@ class _ShopScreenState extends State<ShopScreen> {
 
                 // Current Multiplier
                 Container(
-                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   decoration: BoxDecoration(
-                    color: Color(0xFFFFD700).withOpacity(0.2),
+                    color: const Color(0xFFFFD700).withOpacity(0.2),
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Color(0xFFFFD700), width: 2),
+                    border: Border.all(color: const Color(0xFFFFD700), width: 2),
                   ),
                   child: Row(
                     children: [
-                      Text('⚡', style: TextStyle(fontSize: 24)),
-                      SizedBox(width: 8),
+                      const Text('⚡', style: TextStyle(fontSize: 24)),
+                      const SizedBox(width: 8),
                       Text(
                         upgrades.getMultiplierString(),
-                        style: TextStyle(
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
@@ -94,16 +96,16 @@ class _ShopScreenState extends State<ShopScreen> {
 
           // Bonus info
           Container(
-            padding: EdgeInsets.all(12),
-            color: Color(0xFF4CAF50).withOpacity(0.1),
+            padding: const EdgeInsets.all(12),
+            color: const Color(0xFF4CAF50).withOpacity(0.1),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.info_outline, color: Color(0xFF4CAF50), size: 20),
-                SizedBox(width: 8),
+                const Icon(Icons.info_outline, color: Color(0xFF4CAF50), size: 20),
+                const SizedBox(width: 8),
                 Text(
                   'Current Bonus: ${upgrades.getBonusPercentageString()}',
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: Colors.white70,
                     fontSize: 14,
                   ),
@@ -112,27 +114,291 @@ class _ShopScreenState extends State<ShopScreen> {
             ),
           ),
 
+          // Shop tabs (Cave, Shack, House, Mansion)
+          _buildShopTabs(),
+
           // Upgrades List
           Expanded(
-            child: upgrades.allUpgrades.isEmpty
-                ? Center(
-              child: Text(
-                'No upgrades available',
-                style: TextStyle(color: Colors.white54),
-              ),
-            )
-                : ListView.builder(
-              padding: EdgeInsets.all(16),
-              itemCount: upgrades.allUpgrades.length,
-              itemBuilder: (context, index) {
-                Upgrade upgrade = upgrades.allUpgrades[index];
-                return _buildUpgradeCard(upgrade);
-              },
-            ),
+            child: _buildUpgradesList(),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildShopTabs() {
+    List<String> shopNames = ['Cave', 'Shack', 'House', 'Mansion'];
+    List<String> shopEmojis = ['🏔️', '🏚️', '🏠', '🏰'];
+
+    return SizedBox(
+      height: 70,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        itemCount: 4, // Always show all 4
+        itemBuilder: (context, index) {
+          bool isUnlocked = index <= upgrades.currentStage;
+          bool isSelected = selectedShopStage == index;
+
+          return GestureDetector(
+            onTap: isUnlocked ? () => setState(() => selectedShopStage = index) : null,
+            child: Container(
+              margin: const EdgeInsets.all(8),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              decoration: BoxDecoration(
+                color: isUnlocked
+                    ? (isSelected ? const Color(0xFF4CAF50) : const Color(0xFF2d2d2d))
+                    : const Color(0xFF1a1a1a),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isUnlocked
+                      ? (isSelected ? const Color(0xFF4CAF50) : Colors.grey)
+                      : Colors.grey[800]!,
+                  width: 2,
+                ),
+              ),
+              child: Row(
+                children: [
+                  // Locked icon or emoji
+                  Text(
+                    isUnlocked ? shopEmojis[index] : '🔒',
+                    style: const TextStyle(fontSize: 24),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${shopNames[index]} Shop',
+                    style: TextStyle(
+                      color: isUnlocked ? Colors.white : Colors.grey,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildUpgradesList() {
+    List<Upgrade> shopUpgrades = upgrades.getUpgradesForStage(selectedShopStage);
+    HouseUnlock? nextUnlock = upgrades.getNextUnlock();
+
+    // Show unlock card if this is the current stage and there's a next unlock
+    bool showUnlock = nextUnlock != null && selectedShopStage == upgrades.currentStage;
+
+    if (shopUpgrades.isEmpty && !showUnlock) {
+      return const Center(
+        child: Text(
+          'No upgrades available',
+          style: TextStyle(color: Colors.white54),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: shopUpgrades.length + (showUnlock ? 1 : 0),
+      itemBuilder: (context, index) {
+        // Show unlock card first if available
+        if (showUnlock && index == 0) {
+          return _buildUnlockCard(nextUnlock);
+        }
+
+        // Adjust index if unlock card is shown
+        int upgradeIndex = showUnlock ? index - 1 : index;
+        return _buildUpgradeCard(shopUpgrades[upgradeIndex]);
+      },
+    );
+  }
+
+  Widget _buildUnlockCard(HouseUnlock unlock) {
+    bool canAfford = currency.peas >= unlock.cost;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFFFD700), Color(0xFFFFA500)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFFFFD700),
+          width: 3,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFFFD700).withOpacity(0.3),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            // Title
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(unlock.emoji, style: const TextStyle(fontSize: 48)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        unlock.name,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        unlock.description,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
+            // Cost and button
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // Cost
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      Text(CurrencyService().cropEmoji, style: TextStyle(fontSize: 24)),
+                      const SizedBox(width: 8),
+                      Text(
+                        NumberFormatter.format(unlock.cost),
+                        style: TextStyle(
+                          color: canAfford ? Colors.white : Colors.red,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Buy button
+                ElevatedButton(
+                  onPressed: canAfford ? () => _purchaseUnlock(unlock) : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: canAfford ? Colors.white : Colors.grey[600],
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text(
+                    'UNLOCK',
+                    style: TextStyle(
+                      color: canAfford ? const Color(0xFFFFD700) : Colors.white38,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _purchaseUnlock(HouseUnlock unlock) async {
+    bool success = await upgrades.purchaseHouseUnlock(unlock.id, currency.peas.toDouble());
+
+    if (success) {
+      await currency.removePeas(unlock.cost.round());
+      await currency.upgradeStage();
+
+      if (!mounted) return;
+
+      // Show success dialog
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: const Color(0xFF2d2d2d),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: Row(
+            children: [
+              Text(unlock.emoji, style: const TextStyle(fontSize: 48)),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Unlocked!',
+                  style: TextStyle(color: Color(0xFFFFD700)),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                unlock.name,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                unlock.description,
+                style: const TextStyle(color: Color(0xFF4CAF50)),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                setState(() {
+                  selectedShopStage = upgrades.currentStage; // Switch to new shop
+                });
+              },
+              child: const Text(
+                'Explore New Shop!',
+                style: TextStyle(
+                  color: Color(0xFFFFD700),
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+
+      setState(() {});
+    }
   }
 
   Widget _buildUpgradeCard(Upgrade upgrade) {
@@ -140,21 +406,21 @@ class _ShopScreenState extends State<ShopScreen> {
     bool isPurchased = upgrade.isPurchased;
 
     return Container(
-      margin: EdgeInsets.only(bottom: 16),
+      margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: Color(0xFF2d2d2d),
+        color: const Color(0xFF2d2d2d),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isPurchased
-              ? Color(0xFF4CAF50)
+              ? const Color(0xFF4CAF50)
               : canAfford
-              ? Color(0xFF4CAF50).withOpacity(0.5)
+              ? const Color(0xFF4CAF50).withOpacity(0.5)
               : Colors.white24,
           width: 2,
         ),
       ),
       child: Padding(
-        padding: EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
         child: Row(
           children: [
             // Emoji Icon
@@ -163,19 +429,19 @@ class _ShopScreenState extends State<ShopScreen> {
               height: 60,
               decoration: BoxDecoration(
                 color: isPurchased
-                    ? Color(0xFF4CAF50).withOpacity(0.2)
-                    : Color(0xFF1a1a1a),
+                    ? const Color(0xFF4CAF50).withOpacity(0.2)
+                    : const Color(0xFF1a1a1a),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Center(
                 child: Text(
                   upgrade.emoji,
-                  style: TextStyle(fontSize: 32),
+                  style: const TextStyle(fontSize: 32),
                 ),
               ),
             ),
 
-            SizedBox(width: 16),
+            const SizedBox(width: 16),
 
             // Info
             Expanded(
@@ -184,27 +450,27 @@ class _ShopScreenState extends State<ShopScreen> {
                 children: [
                   Text(
                     upgrade.name,
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  SizedBox(height: 4),
+                  const SizedBox(height: 4),
                   Text(
                     upgrade.description,
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Color(0xFF4CAF50),
                       fontSize: 14,
                     ),
                   ),
-                  SizedBox(height: 8),
+                  const SizedBox(height: 8),
                   Row(
                     children: [
-                      Text('🌱', style: TextStyle(fontSize: 16)),
-                      SizedBox(width: 4),
+                      Text(CurrencyService().cropEmoji, style: TextStyle(fontSize: 24)),
+                      const SizedBox(width: 4),
                       Text(
-                        '${upgrade.cost}',
+                        NumberFormatter.format(upgrade.cost),
                         style: TextStyle(
                           color: canAfford ? Colors.white : Colors.white38,
                           fontSize: 16,
@@ -218,7 +484,7 @@ class _ShopScreenState extends State<ShopScreen> {
             ),
 
             // Button
-            SizedBox(width: 16),
+            const SizedBox(width: 16),
             _buildPurchaseButton(upgrade, canAfford, isPurchased),
           ],
         ),
@@ -229,13 +495,13 @@ class _ShopScreenState extends State<ShopScreen> {
   Widget _buildPurchaseButton(Upgrade upgrade, bool canAfford, bool isPurchased) {
     if (isPurchased) {
       return Container(
-        padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         decoration: BoxDecoration(
-          color: Color(0xFF4CAF50).withOpacity(0.2),
+          color: const Color(0xFF4CAF50).withOpacity(0.2),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Color(0xFF4CAF50), width: 2),
+          border: Border.all(color: const Color(0xFF4CAF50), width: 2),
         ),
-        child: Row(
+        child: const Row(
           children: [
             Icon(Icons.check, color: Color(0xFF4CAF50), size: 20),
             SizedBox(width: 4),
@@ -261,9 +527,9 @@ class _ShopScreenState extends State<ShopScreen> {
       }
           : null,
       style: ElevatedButton.styleFrom(
-        backgroundColor: canAfford ? Color(0xFF4CAF50) : Colors.grey[800],
+        backgroundColor: canAfford ? const Color(0xFF4CAF50) : Colors.grey[800],
         disabledBackgroundColor: Colors.grey[800],
-        padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
         ),
@@ -281,26 +547,26 @@ class _ShopScreenState extends State<ShopScreen> {
 
   Future<bool> _purchaseUpgrade(Upgrade upgrade) async {
     // Try to purchase
-    bool success = await upgrades.purchaseUpgrade(upgrade.id, currency.peas);
+    bool success = await upgrades.purchaseUpgrade(upgrade.id, currency.peas.toDouble());
 
     if (success) {
       // Deduct peas
-      await currency.removePeas(upgrade.cost);
+      await currency.removePeas(upgrade.cost.round());
 
       // Show success dialog
       if (!mounted) return true;
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
-          backgroundColor: Color(0xFF2d2d2d),
+          backgroundColor: const Color(0xFF2d2d2d),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
           title: Row(
             children: [
-              Text(upgrade.emoji, style: TextStyle(fontSize: 32)),
-              SizedBox(width: 12),
-              Expanded(
+              Text(upgrade.emoji, style: const TextStyle(fontSize: 32)),
+              const SizedBox(width: 12),
+              const Expanded(
                 child: Text(
                   'Purchased!',
                   style: TextStyle(color: Colors.white),
@@ -314,31 +580,31 @@ class _ShopScreenState extends State<ShopScreen> {
             children: [
               Text(
                 upgrade.name,
-                style: TextStyle(
+                style: const TextStyle(
                   color: Colors.white,
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
               Text(
                 upgrade.description,
-                style: TextStyle(color: Color(0xFF4CAF50)),
+                style: const TextStyle(color: Color(0xFF4CAF50)),
               ),
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               Container(
-                padding: EdgeInsets.all(12),
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Color(0xFF4CAF50).withOpacity(0.2),
+                  color: const Color(0xFF4CAF50).withOpacity(0.2),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
                   children: [
-                    Text('⚡', style: TextStyle(fontSize: 20)),
-                    SizedBox(width: 8),
+                    const Text('⚡', style: TextStyle(fontSize: 20)),
+                    const SizedBox(width: 8),
                     Text(
                       'New Multiplier: ${upgrades.getMultiplierString()}',
-                      style: TextStyle(
+                      style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
                       ),
@@ -351,7 +617,7 @@ class _ShopScreenState extends State<ShopScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: Text(
+              child: const Text(
                 'Awesome!',
                 style: TextStyle(
                   color: Color(0xFF4CAF50),
@@ -368,12 +634,7 @@ class _ShopScreenState extends State<ShopScreen> {
     } else {
       // Show error (shouldn't happen with proper checks)
       if (!mounted) return false;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Could not purchase upgrade'),
-          backgroundColor: Colors.red,
-        ),
-      );
+
       return false;
     }
   }
