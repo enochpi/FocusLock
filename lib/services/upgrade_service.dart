@@ -412,6 +412,19 @@ class UpgradeService {
     }
     return null;
   }
+  int getTotalUpgradesPurchased() {
+    int total = 0;
+
+    for (int stage = 0; stage < 4; stage++) {
+      for (var upgrade in getUpgradesForStage(stage)) {
+        if (isPurchased(upgrade.id)) {
+          total++;
+        }
+      }
+    }
+
+    return total;
+  }
 
   /// Get next upgrade to save for
   Upgrade? getNextGoal(double currentPeas) {

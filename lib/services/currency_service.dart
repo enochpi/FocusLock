@@ -1,3 +1,4 @@
+import 'package:focus_life/services/daily_reward_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'furniture_service.dart';
 import 'upgrade_service.dart';
@@ -42,7 +43,8 @@ class CurrencyService {
     int timeBonus2 = (minutes ~/ 5) * 2;
     int totalBase = basePeas + timeBonus1 + timeBonus2;
     double furnitureMultiplier = FurnitureService().getBoostMultiplier();
-    int finalPeas = (totalBase * furnitureMultiplier * upgradeMultiplier).round();
+    double streakMultiplier = DailyRewardService().getStreakMultiplier();
+    int finalPeas = (totalBase * furnitureMultiplier * upgradeMultiplier * streakMultiplier).round();
     return finalPeas;
   }
 

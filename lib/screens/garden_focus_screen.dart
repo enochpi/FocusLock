@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:focus_life/services/achievements_service.dart';
 import 'package:focus_life/services/streak_service.dart';
 import 'dart:async';
 import 'dart:math' as math;
@@ -213,6 +214,9 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     );
 
     await currency.addPeas(peasEarned);
+
+    // ✅ ADD THESE 4 LINES:
+    await AchievementService().onFocusSessionCompleted(widget.focusDurationMinutes);
 
     int earnings = widget.focusDurationMinutes * 5;
     widget.character.earnMoney(earnings);

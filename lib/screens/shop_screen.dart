@@ -125,6 +125,7 @@ class _ShopScreenState extends State<ShopScreen> {
       ),
     );
   }
+  
 
   Widget _buildShopTabs() {
     List<String> shopNames = ['Cave', 'Shack', 'House', 'Mansion'];

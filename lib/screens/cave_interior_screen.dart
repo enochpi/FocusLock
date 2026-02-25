@@ -1,3600 +1,4806 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart';
-import 'package:focus_life/painters/interior_painters.dart';
-import 'package:focus_life/services/currency_service.dart';
-import 'package:focus_life/services/upgrade_service.dart';
-import 'package:focus_life/utils/number_formatter.dart';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
+import 'package:flutter/services.dart';
 import '../models/character.dart';
 import '../models/cave_decorations.dart';
-import '../services/storage_service.dart';
-import 'package:focus_life/services/furniture_service.dart';
+import '../services/furniture_service.dart';
+import '../services/currency_service.dart';
 import 'cave_shop_screen.dart';
-
 
 class CaveInteriorScreen extends StatefulWidget {
   final Character character;
   final CaveDecorations decorations;
-  final int stage;  // ← ADD THIS
+  final int stage;
 
   const CaveInteriorScreen({
     super.key,
     required this.character,
     required this.decorations,
-    this.stage = -1,  // -1 means use current
+    required this.stage,
   });
 
   @override
-  _CaveInteriorScreenState createState() => _CaveInteriorScreenState();
+  State<CaveInteriorScreen> createState() => _CaveInteriorScreenState();
 }
 
 class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
-  StorageService storage = StorageService();
-  Timer? _dayNightTimer;
-  int get activeStage => widget.stage == -1
-      ? UpgradeService().currentStage
-      : widget.stage;
+  ui.Image? _backgroundImage;
+
+  // Furniture positions (spotId -> {x, y} percentages)
+  Map<String, Offset> _furniturePositions = {};
+  String? _draggingSpotId;
+  Offset? _dragOffset;
+
+  // Furniture upgrade levels (furnitureId -> level 1-10)
+  Map<String, int> _furnitureLevels = {};
 
   @override
   void initState() {
     super.initState();
-    // Refresh every 60 seconds for sky movement
-    _dayNightTimer = Timer.periodic(Duration(seconds: 60), (_) {
-      if (mounted) setState(() {});
+    _loadBackgroundImage();
+    _initializeDefaultPositions();
+  }
+
+  void _initializeDefaultPositions() {
+    // Default positions near the back wall (lower y values = closer to wall)
+    _furniturePositions = {
+      // Floor items - positioned near back wall
+      'bed_spot': const Offset(0.15, 0.58),        // Far left, against wall
+      'kitchen_spot': const Offset(0.40, 0.56),    // Center-left, near wall
+      'desk_spot': const Offset(0.70, 0.58),       // Right side, against wall
+      'chair_spot': const Offset(0.70, 0.68),      // In front of desk
+
+      // Wall decorations - scattered on walls
+      'decoration_spot_1': const Offset(0.12, 0.18),
+      'decoration_spot_2': const Offset(0.28, 0.22),
+      'decoration_spot_3': const Offset(0.72, 0.20),
+      'decoration_spot_4': const Offset(0.88, 0.24),
+      'decoration_spot_5': const Offset(0.20, 0.38),
+      'decoration_spot_6': const Offset(0.50, 0.35),
+      'decoration_spot_7': const Offset(0.82, 0.40),
+      'decoration_spot_8': const Offset(0.35, 0.52),
+    };
+  }
+
+  int _getFurnitureLevel(String furnitureId) {
+    return _furnitureLevels[furnitureId] ?? 1;
+  }
+
+  int _getUpgradeCost(String furnitureId) {
+    final currentLevel = _getFurnitureLevel(furnitureId);
+    if (currentLevel >= 10) return 0;
+
+    // Base cost of 50 coins, exponentially scaling
+    // Level 1->2: 50, 2->3: 75, 3->4: 113, 5->6: 253, 9->10: 1925
+    return (50 * math.pow(1.5, currentLevel)).round();
+  }
+
+  double _getFurnitureBoost(String furnitureId) {
+    final level = _getFurnitureLevel(furnitureId);
+    // Boost: Level 1 = 1x, Level 5 = 2x, Level 10 = 3.25x
+    return 1.0 + (level - 1) * 0.25;
+  }
+
+  void _showUpgradeDialog(String spotId, String furnitureId) {
+    final level = _getFurnitureLevel(furnitureId);
+    final cost = _getUpgradeCost(furnitureId);
+    final boost = _getFurnitureBoost(furnitureId);
+    final nextBoost = level < 10 ? _getFurnitureBoost(furnitureId) + 0.25 : boost;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Text(_getFurnitureName(furnitureId)),
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: _getLevelColor(level),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                'Lv $level',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Current boost
+            Text(
+              'Current Boost: ${boost.toStringAsFixed(2)}x',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+
+            // Progress bar
+            LinearProgressIndicator(
+              value: level / 10,
+              backgroundColor: Colors.grey[300],
+              valueColor: AlwaysStoppedAnimation(_getLevelColor(level)),
+            ),
+            const SizedBox(height: 16),
+
+            if (level < 10) ...[
+              // Next level info
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue[200]!),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Upgrade to Level ${level + 1}',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    Text('New Boost: ${nextBoost.toStringAsFixed(2)}x'),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Text('Cost: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                        const Text('🪙', style: TextStyle(fontSize: 16)),
+                        const SizedBox(width: 4),
+                        Text(
+                          '$cost',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: CurrencyService().coins >= cost
+                                ? Colors.green
+                                : Colors.red,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              // Max level reached
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.amber[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.amber[300]!),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.star, color: Colors.amber, size: 24),
+                    SizedBox(width: 8),
+                    Text(
+                      'MAX LEVEL!',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.amber,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          if (level < 10)
+            ElevatedButton.icon(
+              onPressed: CurrencyService().coins >= cost
+                  ? () {
+                setState(() {
+                  CurrencyService().addCoins(-cost);
+                  _furnitureLevels[furnitureId] = level + 1;
+                });
+                Navigator.pop(context);
+
+                // Show success message
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Upgraded to Level ${level + 1}! 🎉'),
+                    backgroundColor: Colors.green,
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              }
+                  : null,
+              icon: const Icon(Icons.arrow_upward),
+              label: const Text('Upgrade'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  String _getFurnitureName(String furnitureId) {
+    return furnitureId.split('_').map((word) =>
+    word[0].toUpperCase() + word.substring(1)
+    ).join(' ');
+  }
+
+  Color _getLevelColor(int level) {
+    if (level >= 10) return Colors.amber;
+    if (level >= 7) return Colors.purple;
+    if (level >= 4) return Colors.blue;
+    return Colors.green;
+  }
+
+  void _handleLongPress(LongPressStartDetails details, Size size) {
+    final tapPos = details.localPosition;
+    final furnitureService = FurnitureService();
+
+    // Check which furniture was long-pressed
+    for (var entry in _furniturePositions.entries) {
+      final spotId = entry.key;
+      final position = entry.value;
+      final furnitureId = furnitureService.placedFurniture[spotId];
+
+      if (furnitureId == null) continue;
+
+      final furnitureX = size.width * position.dx;
+      final furnitureY = size.height * position.dy;
+
+      final hitArea = Rect.fromCenter(
+        center: Offset(furnitureX, furnitureY),
+        width: 80,
+        height: 80,
+      );
+
+      if (hitArea.contains(tapPos)) {
+        _showUpgradeDialog(spotId, furnitureId);
+        break;
+      }
+    }
+  }
+
+  void _handlePanStart(DragStartDetails details, Size size) {
+    final tapPos = details.localPosition;
+    final furnitureService = FurnitureService();
+
+    // Check which furniture was tapped (in reverse order so top items are checked first)
+    final spots = _furniturePositions.keys.toList().reversed;
+
+    for (var spotId in spots) {
+      final furnitureId = furnitureService.placedFurniture[spotId];
+      if (furnitureId == null) continue;
+
+      final pos = _furniturePositions[spotId]!;
+      final furnitureX = size.width * pos.dx;
+      final furnitureY = size.height * pos.dy;
+
+      // Hit test (50x50 pixel hit area)
+      final hitArea = Rect.fromCenter(
+        center: Offset(furnitureX, furnitureY),
+        width: 80,
+        height: 80,
+      );
+
+      if (hitArea.contains(tapPos)) {
+        setState(() {
+          _draggingSpotId = spotId;
+          _dragOffset = Offset(tapPos.dx - furnitureX, tapPos.dy - furnitureY);
+        });
+        break;
+      }
+    }
+  }
+
+  void _handlePanUpdate(DragUpdateDetails details, Size size) {
+    if (_draggingSpotId == null) return;
+
+    setState(() {
+      final newX = (details.localPosition.dx - _dragOffset!.dx) / size.width;
+      final newY = (details.localPosition.dy - _dragOffset!.dy) / size.height;
+
+      // Clamp to screen bounds
+      _furniturePositions[_draggingSpotId!] = Offset(
+        newX.clamp(0.05, 0.95),
+        newY.clamp(0.10, 0.90),
+      );
     });
   }
 
-  @override
-  void dispose() {
-    _dayNightTimer?.cancel();
-    super.dispose();
+  void _handlePanEnd(DragEndDetails details) {
+    setState(() {
+      _draggingSpotId = null;
+      _dragOffset = null;
+    });
   }
 
-  // Rotation control
-  double rotationX = 0.25;
-  double rotationY = 0.35;
-
-  // Pan control
-  double offsetX = 0.0;
-  double offsetY = 0.0;
-
-  // For tracking gestures
-  Offset? _lastDragPosition;
-  double _scale = 1.0;
-
-  Color get backgroundColor {
-    int level = widget.decorations.lightingLevel;
-    switch (level) {
-      case 0: return const Color(0xFF2a2a2a);
-      case 1: return const Color(0xFF3a3a3a);
-      case 2: return const Color(0xFF4a4a4a);
-      case 3: return const Color(0xFF5a5a5a);
-      case 4: return const Color(0xFF6a6a6a);
-      default: return const Color(0xFF2a2a2a);
-    }
+  Future<void> _loadBackgroundImage() async {
+    final ByteData data = await rootBundle.load('assets/images/cave_background.png');
+    final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
+    final frame = await codec.getNextFrame();
+    setState(() {
+      _backgroundImage = frame.image;
+    });
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0a0a0a),
+      backgroundColor: const Color(0xFF1a1a2e),
+      body: SafeArea(
+        child: Stack(
+          children: [
+            // Main 2D room view with draggable furniture
+            Positioned.fill(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final size = Size(constraints.maxWidth, constraints.maxHeight);
 
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        title: const Text("My Cave"),
-        actions: [
-          // Debug money button
-          IconButton(
-            icon: const Icon(Icons.attach_money, color: Colors.green),
-            onPressed: () async {
-              await CurrencyService().addCoins(100);
-              setState(() {});
-            },
-            tooltip: "Add Coins (Debug)",
-          ),
-
-
-          // Show coins
-          // Show coins
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Center(
-              child: Text(
-                "🪙 ${NumberFormatter.format(CurrencyService().coins)}",  // ← ADD NumberFormatter.format()
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+                  return GestureDetector(
+                    onPanStart: (details) => _handlePanStart(details, size),
+                    onPanUpdate: (details) => _handlePanUpdate(details, size),
+                    onPanEnd: _handlePanEnd,
+                    onLongPressStart: (details) => _handleLongPress(details, size),
+                    child: CustomPaint(
+                      painter: Simple2DRoomPainter(
+                        stage: widget.stage,
+                        backgroundImage: _backgroundImage,
+                        furniturePositions: _furniturePositions,
+                        draggingSpotId: _draggingSpotId,
+                        furnitureLevels: _furnitureLevels,
+                      ),
+                      size: Size.infinite,
+                    ),
+                  );
+                },
               ),
             ),
-          ),
-        ],
-      ),
-      body: Stack(
-        children: [
-          SizedBox.expand(
-            child: CustomPaint(
-              painter: getInteriorPainter(activeStage, furnitureService: FurnitureService()),
-            ),
-          ),
-          // Cave with animated pea
-          Listener(
-            onPointerSignal: (event) {
-              if (event is PointerScrollEvent) {
-                setState(() {
-                  _scale = (_scale - event.scrollDelta.dy * 0.001).clamp(0.7, 2.0);
-                });
-              }
-            },
-            child: GestureDetector(
-              onScaleStart: (details) {
-                _lastDragPosition = details.focalPoint;
-              },
-              onScaleUpdate: (details) {
-                setState(() {
-                  if (details.scale != 1.0) {
-                    _scale = (_scale * details.scale).clamp(0.7, 2.0);
-                  }
 
-                  if (_lastDragPosition != null) {
-                    double dx = details.focalPoint.dx - _lastDragPosition!.dx;
-                    double dy = details.focalPoint.dy - _lastDragPosition!.dy;
+            // Top UI
+            Positioned(
+              top: 16,
+              left: 16,
+              right: 16,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // Back button
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                    onPressed: () => Navigator.pop(context),
+                  ),
 
-                    if (details.pointerCount == 2) {
-                      offsetX += dx;
-                      offsetY += dy;
-                    } else {
-                      rotationY += dx * 0.005;
-                      rotationX += dy * 0.005;
-                      rotationX = rotationX.clamp(0.0, 0.5);
-                      rotationY = rotationY.clamp(0.1, 0.6);
-                    }
-                  }
-                  _lastDragPosition = details.focalPoint;
-                });
-              },
-              onScaleEnd: (details) {
-                _lastDragPosition = null;
-              },
-              onTapUp: (details) {
-                _handleTap(details.localPosition);
-              },
-              child: Center(
-                child: Transform.translate(
-                  offset: Offset(offsetX, offsetY),
-                  child: Transform.scale(
-                    scale: _scale,
-                    child: SizedBox(
-                      width: 400,
-                      height: 500,
-                      child: Stack(
-                        children: [
-                          // Cave painting
-                          CustomPaint(
-                            size: const Size(400, 500),
-                            painter: UpgradeService().currentStage == 0
-                                ? ThickWallCubePainter(
-                              backgroundColor: backgroundColor,
-                              lightLevel: widget.decorations.lightingLevel,
-                              decorations: widget.decorations,
-                              rotationX: rotationX,
-                              rotationY: rotationY,
-                              furnitureService: FurnitureService(),
-                            )
-                                : null,  // no cube for higher stages
-                          ),
-                        ],
-                      ),
+                  // Drag & upgrade instructions
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.touch_app, color: Colors.white70, size: 14),
+                            SizedBox(width: 4),
+                            Text(
+                              'Drag to move',
+                              style: TextStyle(color: Colors.white70, fontSize: 11),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 2),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.upgrade, color: Colors.amber, size: 14),
+                            SizedBox(width: 4),
+                            Text(
+                              'Hold to upgrade',
+                              style: TextStyle(color: Colors.amber, fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
-                ),
-              ),
-            ),
-          ),
 
-          // Shop button
-          Positioned(
-            bottom: 50,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: ElevatedButton.icon(
-                onPressed: () async {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => CaveShopScreen()),
-                  );
-                  setState(() {});
-                },
-                icon: const Icon(Icons.shopping_bag, size: 22, color: Colors.white),
-                label: const Text(
-                  "Shop",
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4CAF50),
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _handleTap(Offset position) {
-    // Adjust for scale and offset
-    double adjustedX = (position.dx - MediaQuery.of(context).size.width / 2 - offsetX) / _scale + 200;
-    double adjustedY = (position.dy - MediaQuery.of(context).size.height / 2 - offsetY) / _scale + 250;
-
-    // Screen center
-    double cx = 200.0;
-    double cy = 250.0;
-
-    // Project 3D positions of placement spots to screen coordinates
-    double tapRadius = 35.0;
-
-    // Helper function to project and check
-    bool checkSpot(double x3d, double y3d, double z3d) {
-      Offset projected = _project3D(x3d, y3d, z3d, cx, cy);
-      return _isNear(adjustedX, adjustedY, projected.dx, projected.dy, tapRadius);
-    }
-
-    // Bed spot
-    if (checkSpot(60, -150, 80) &&
-        widget.decorations.getEquippedItem('bed_main') == null) {
-      _openItemPicker('bed_main');
-      return;
-    }
-
-    // Table spot
-    if (checkSpot(-20, -150, 40) &&
-        widget.decorations.getEquippedItem('decoration_3') == null) {
-      _openItemPicker('decoration_3');
-      return;
-    }
-
-    // Light spot
-    if (checkSpot(0, 80, -150) &&
-        widget.decorations.getEquippedItem('light_main') == null) {
-      _openItemPicker('light_main');
-      return;
-    }
-
-    // Wall decoration 1
-    if (checkSpot(-80, 0, -150) &&
-        widget.decorations.getEquippedItem('decoration_1') == null) {
-      _openItemPicker('decoration_1');
-      return;
-    }
-
-    // Wall decoration 2
-    if (checkSpot(150, 0, -50) &&
-        widget.decorations.getEquippedItem('decoration_2') == null) {
-      _openItemPicker('decoration_2');
-      return;
-    }
-  }
-
-  Offset _project3D(double x, double y, double z, double cx, double cy) {
-    // Same rotation math as in painter
-    double cosX = math.cos(rotationX);
-    double sinX = math.sin(rotationX);
-    double y1 = y * cosX - z * sinX;
-    double z1 = y * sinX + z * cosX;
-
-    double cosY = math.cos(rotationY);
-    double sinY = math.sin(rotationY);
-    double x2 = x * cosY + z1 * sinY;
-    double y2 = y1;
-
-    return Offset(cx + x2, cy - y2);
-  }
-
-  bool _isNear(double x, double y, double targetX, double targetY, double radius) {
-    double dx = x - targetX;
-    double dy = y - targetY;
-    return (dx * dx + dy * dy) < (radius * radius);
-  }
-
-  void _openItemPicker(String spotId) {
-    PlacementSpot spot = widget.decorations.spots.firstWhere((s) => s.id == spotId);
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF16213e),
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => ItemPickerSheet(
-        character: widget.character,
-        decorations: widget.decorations,
-        spot: spot,
-        onItemSelected: (itemId) {
-          setState(() {
-            widget.decorations.equipItem(spot.id, itemId);
-          });
-          storage.saveCaveDecorations(widget.decorations);
-          storage.saveCharacter(widget.character);
-          Navigator.pop(context);
-        },
-      ),
-    );
-  }
-}
-
-// SIMPLE TWO-WALL PAINTER with placement spots
-class ThickWallCubePainter extends CustomPainter {
-  final Color backgroundColor;
-  final int lightLevel;
-  final CaveDecorations decorations;
-  final double rotationX;
-  final double rotationY;
-  final FurnitureService? furnitureService;
-
-  ThickWallCubePainter({
-    required this.backgroundColor,
-    required this.lightLevel,
-    required this.decorations,
-    required this.rotationX,
-    required this.rotationY,
-    this.furnitureService,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // 1. Background
-    _drawSimpleBackground(canvas, size);
-
-    // 2. Back wall
-    _drawBackWall(canvas, size);
-
-    // 3. Floor
-    _drawFloor(canvas, size);
-
-    // 4. PLACED FURNITURE (from shop!)
-    _drawPlacedFurniture(canvas, size);
-  }
-
-  void _drawSimpleBackground(Canvas canvas, Size size) {
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, size.width, size.height),
-      Paint()..color = const Color(0xFF4a4440),
-    );
-  }
-
-  void _drawBackWall(Canvas canvas, Size size) {
-    final wallHeight = size.height * 0.6;
-
-    final blockPaint = Paint()
-      ..color = Colors.black.withOpacity(0.15)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-
-    for (int i = 1; i < 5; i++) {
-      double y = (wallHeight / 5) * i;
-      canvas.drawLine(
-        Offset(0, y),
-        Offset(size.width, y),
-        blockPaint,
-      );
-    }
-
-    for (int row = 0; row < 5; row++) {
-      double y = (wallHeight / 5) * row;
-      int blocks = 6 + (row % 2);
-
-      for (int i = 1; i < blocks; i++) {
-        double x = (size.width / blocks) * i;
-        canvas.drawLine(
-          Offset(x, y),
-          Offset(x, y + wallHeight / 5),
-          blockPaint,
-        );
-      }
-    }
-
-    canvas.drawLine(
-      Offset(0, wallHeight),
-      Offset(size.width, wallHeight),
-      Paint()
-        ..color = const Color(0xFF2a2420)
-        ..strokeWidth = 4,
-    );
-  }
-
-  void _drawFloor(Canvas canvas, Size size) {
-    final floorTop = size.height * 0.6;
-
-    final plankPaint = Paint()
-      ..color = const Color(0xFF3d2f22)
-      ..strokeWidth = 2;
-
-    for (int i = 1; i < 8; i++) {
-      double y = floorTop + (size.height * 0.4 / 8) * i;
-      canvas.drawLine(
-        Offset(0, y),
-        Offset(size.width, y),
-        plankPaint,
-      );
-    }
-  }
-
-  void _drawPlacedFurniture(Canvas canvas, Size size) {
-    if (furnitureService == null) return;
-
-    final floorY = size.height * 0.6;
-
-    Furniture? bed = furnitureService!.getPlacedFurniture('bed_spot');      // ← ADD THIS!
-    Furniture? desk = furnitureService!.getPlacedFurniture('desk_spot');
-    Furniture? chair = furnitureService!.getPlacedFurniture('chair_spot');
-    Furniture? kitchen = furnitureService!.getPlacedFurniture('kitchen_spot');
-
-    List<Furniture> allDecorations = [];
-    for (int i = 1; i <= 8; i++) {
-      Furniture? deco = furnitureService!.getPlacedFurniture('decoration_spot_$i');
-      if (deco != null) {
-        allDecorations.add(deco);
-      }
-    }
-
-    bool hasHangingPlant = allDecorations.any((d) => d.id == 'hanging_plant');
-    bool hasWallTorch = allDecorations.any((d) => d.id == 'wall_torch');
-    bool hasPainting = allDecorations.any((d) => d.id == 'simple_painting');
-    bool hasWallCrystal = allDecorations.any((d) => d.id == 'wall_crystal');
-    bool hasGlowingMushroom = allDecorations.any((d) => d.id == 'glowing_mushroom');
-    bool hasCrystalCluster = allDecorations.any((d) => d.id == 'crystal_cluster');
-    bool hasAncientArtifact = allDecorations.any((d) => d.id == 'ancient_artifact');
-    bool hasEnchantedCrystal = allDecorations.any((d) => d.id == 'enchanted_crystal');
-
-    if (hasHangingPlant) {
-      _drawHangingPlant(canvas, size.width * 0.25, 6);
-      _drawHangingPlant(canvas, size.width * 0.75, 6);
-    }
-
-    if (hasWallTorch) {
-      _drawWallTorch(canvas, size.width * 0.1, size.height * 0.20);
-      _drawWallTorch(canvas, size.width * 0.9, size.height * 0.20);
-    }
-
-    if (hasPainting) {
-      _drawPictureFrame(canvas, size.width * 0.70, size.height * 0.25);
-    }
-
-    if (hasWallCrystal) {
-      _drawCrystalCluster(canvas, size.width * 0.5, size.height * 0.25);
-    }
-
-// NEW DECORATIONS (unique visuals + better spots!)
-    if (hasGlowingMushroom) {
-      _drawGlowingMushroom(canvas, size.width * 0.073, floorY - 2);
-    }
-    if (hasCrystalCluster) {
-      _drawBigCrystalCluster(canvas, size.width * 0.84, floorY - 100);
-    }
-    if (hasAncientArtifact) {
-      _drawAncientArtifact(canvas, size.width * 0.30, floorY - 154);
-    }
-    if (hasEnchantedCrystal) {
-      _drawEnchantedCrystal(canvas, size.width * 0.50, size.height * 0.08);
-    }
-
-    // Draw bed based on type (against right wall)
-    if (bed != null) {
-      if (bed.id == 'hay_bed') {
-        _drawHayBed(canvas, size.width - 100, floorY - 40);
-      } else if (bed.id == 'simple_cot') {
-        _drawSimpleCot(canvas, size.width - 110, floorY - 45);
-      } else if (bed.id == 'wood_bed') {
-        _drawWoodFrameBed(canvas, size.width - 120, floorY - 55);
-      }
-    }
-
-    // Draw desks based on type
-    if (desk != null) {
-      if (desk.id == 'simple_desk') {
-        _drawSimpleDesk(canvas, size.width * 0.40, floorY - 20); // ← ADJUST THESE NUMBERS
-      } else if (desk.id == 'oak_desk') {
-        _drawOakDesk(canvas, size.width * 0.40, floorY - 20); // ← ADJUST THESE NUMBERS
-      } else if (desk.id == 'executive_desk') {
-        _drawExecutiveDesk(canvas, size.width * 0.40, floorY - 20); // ← ADJUST THESE NUMBERS
-      }
-    }
-
-    // Draw chair in front of desk (position adjusts based on chair type)
-    if (chair != null && desk != null) {
-      double chairX = size.width * 0.42 + 35;
-      double chairY = floorY + 25;
-
-      if (chair.id == 'old_stool') {
-        _drawOldStool(canvas, chairX, chairY);
-      } else if (chair.id == 'wooden_chair') {
-        _drawWoodenChair(canvas, chairX, chairY);
-      } else if (chair.id == 'comfy_chair') {
-        _drawComfyChair(canvas, chairX, chairY);
-      }
-    }
-
-    if (kitchen != null) {
-      if (kitchen.id == 'campfire') {
-        _drawCampfire(canvas, 80, floorY);
-      } else if (kitchen.id == 'simple_stove') {
-        _drawSimpleStove(canvas, 60, floorY);
-      } else if (kitchen.id == 'wood_stove') {
-        _drawWoodStove(canvas, 60, floorY);
-      }
-    }
-  }
-
-// Draw decorations based on type
-  void _drawDecoration(Canvas canvas, double x, double y, Furniture furniture) {
-    if (furniture.id.contains('hanging_plant')) {
-      _drawHangingPlant(canvas, x, y - 30);
-    } else if (furniture.id.contains('wall_torch')) {
-      _drawWallTorch(canvas, x, y);
-    } else if (furniture.id.contains('painting')) {
-      _drawPictureFrame(canvas, x, y);
-    } else if (furniture.id.contains('crystal')) {
-      _drawCrystalCluster(canvas, x, y - 20);
-    }
-  }
-
-// Wall torch for decoration spot
-  void _drawWallTorch(Canvas canvas, double x, double y) {
-    // Brown wooden handle
-    final handlePath = Path()
-      ..moveTo(x - 3, y + 15)
-      ..lineTo(x + 3, y + 15)
-      ..lineTo(x + 2, y - 15)
-      ..lineTo(x - 2, y - 15)
-      ..close();
-
-    canvas.drawPath(
-      handlePath,
-      Paint()..color = const Color(0xFF6D4C41), // Brown wood
-    );
-
-    // Handle texture (wood grain lines)
-    for (int i = 0; i < 3; i++) {
-      canvas.drawLine(
-        Offset(x - 2, y - 10 + (i * 8)),
-        Offset(x + 2, y - 10 + (i * 8)),
-        Paint()
-          ..color = const Color(0xFF5D4037)
-          ..strokeWidth = 1,
-      );
-    }
-
-    // Metal bracket (holds torch to wall)
-    final bracketPaint = Paint()
-      ..color = const Color(0xFF424242)
-      ..strokeWidth = 3
-      ..strokeCap = StrokeCap.round;
-
-    // Vertical bracket bar
-    canvas.drawLine(
-      Offset(x - 10, y - 5),
-      Offset(x - 10, y + 10),
-      bracketPaint,
-    );
-
-    // Horizontal bracket holder
-    canvas.drawLine(
-      Offset(x - 10, y),
-      Offset(x - 3, y),
-      bracketPaint,
-    );
-
-    // Torch top (fire holder - black iron)
-    canvas.drawCircle(
-      Offset(x, y - 18),
-      5,
-      Paint()..color = const Color(0xFF2C2C2C),
-    );
-
-    // Fire glow effect
-    canvas.drawCircle(
-      Offset(x, y - 18),
-      18,
-      Paint()
-        ..color = const Color(0xFFFF8C42).withOpacity(0.3)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 15),
-    );
-
-    // Bright inner glow
-    canvas.drawCircle(
-      Offset(x, y - 18),
-      10,
-      Paint()
-        ..color = const Color(0xFFFFD54F).withOpacity(0.5)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
-    );
-
-    // Fire flame emoji
-    _drawEmoji(canvas, '🔥', x, y - 18, 22);
-  }
-  // Picture frame with landscape
-  void _drawPictureFrame(Canvas canvas, double x, double y) {
-    // Outer wood frame
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(x, y), width: 50, height: 60),
-        const Radius.circular(3),
-      ),
-      Paint()..color = const Color(0xFF8D6E63),
-    );
-
-    // Inner canvas (picture area)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(x, y), width: 40, height: 50),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFFE8D4B8),
-    );
-
-    // Sky
-    canvas.drawRect(
-      Rect.fromLTWH(x - 18, y - 23, 36, 20),
-      Paint()..color = const Color(0xFF87CEEB),
-    );
-
-    // Mountains
-    final mountainPath = Path()
-      ..moveTo(x - 18, y - 3)
-      ..lineTo(x - 8, y - 15)
-      ..lineTo(x + 2, y - 3)
-      ..close();
-    canvas.drawPath(
-      mountainPath,
-      Paint()..color = const Color(0xFF8B7355),
-    );
-
-    final mountainPath2 = Path()
-      ..moveTo(x - 5, y - 3)
-      ..lineTo(x + 5, y - 12)
-      ..lineTo(x + 15, y - 3)
-      ..close();
-    canvas.drawPath(
-      mountainPath2,
-      Paint()..color = const Color(0xFF6B5B4D),
-    );
-
-    // Ground
-    canvas.drawRect(
-      Rect.fromLTWH(x - 18, y - 3, 36, 20),
-      Paint()..color = const Color(0xFF7CB342),
-    );
-
-    // Simple tree
-    canvas.drawCircle(
-      Offset(x - 10, y + 5),
-      6,
-      Paint()..color = const Color(0xFF4CAF50),
-    );
-    canvas.drawRect(
-      Rect.fromLTWH(x - 11, y + 10, 2, 7),
-      Paint()..color = const Color(0xFF5D4037),
-    );
-
-    // Frame border
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(x, y), width: 50, height: 60),
-        const Radius.circular(3),
-      ),
-      Paint()
-        ..color = const Color(0xFF5D4037)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-  }
-
-// Crystal cluster
-  void _drawCrystalCluster(Canvas canvas, double x, double y) {
-    // Glow effect
-    canvas.drawCircle(
-      Offset(x, y),
-      30,
-      Paint()
-        ..color = const Color(0xFF6EC6FF).withOpacity(0.3)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20),
-    );
-
-    // Crystal shards
-    for (int i = 0; i < 3; i++) {
-      double offsetX = (i - 1) * 15;
-      Color color = i == 0 ? const Color(0xFF6EC6FF) :
-      i == 1 ? const Color(0xFF9D6EFF) : const Color(0xFF6EFFB4);
-
-      _drawCrystal(canvas, x + offsetX, y, color);
-    }
-  }
-
-// Individual crystal
-  void _drawCrystal(Canvas canvas, double x, double y, Color color) {
-    final crystalPath = Path()
-      ..moveTo(x, y - 15)
-      ..lineTo(x - 6, y + 10)
-      ..lineTo(x + 6, y + 10)
-      ..close();
-
-    // Fill
-    canvas.drawPath(
-      crystalPath,
-      Paint()..color = color.withOpacity(0.8),
-    );
-
-    // Outline
-    canvas.drawPath(
-      crystalPath,
-      Paint()
-        ..color = color
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-    // Highlight
-    canvas.drawLine(
-      Offset(x - 3, y),
-      Offset(x, y - 15),
-      Paint()
-        ..color = Colors.white.withOpacity(0.7)
-        ..strokeWidth = 1.5,
-    );
-  }
-
-// Hanging plant for decoration spot
-  void _drawHangingPlant(Canvas canvas, double x, double y) {
-    // Rope/chain hanging down
-    canvas.drawLine(
-      Offset(x, 0),
-      Offset(x, y + 25),
-      Paint()
-        ..color = const Color(0xFF8D6E63)
-        ..strokeWidth = 2,
-    );
-
-    // Rope knot at top of pot
-    canvas.drawCircle(
-      Offset(x, y + 23),
-      3,
-      Paint()..color = const Color(0xFF6D4C41),
-    );
-
-    // Terracotta pot (wider trapezoid)
-    final potPath = Path()
-      ..moveTo(x - 14, y + 25)
-      ..lineTo(x - 10, y + 42)
-      ..lineTo(x + 10, y + 42)
-      ..lineTo(x + 14, y + 25)
-      ..close();
-
-    // Pot fill (terracotta orange)
-    canvas.drawPath(
-      potPath,
-      Paint()..color = const Color(0xFFD4866A),
-    );
-
-    // Pot rim (darker band at top)
-    canvas.drawRect(
-      Rect.fromLTWH(x - 14, y + 25, 28, 3),
-      Paint()..color = const Color(0xFFB86F56),
-    );
-
-    // Decorative stripe on pot
-    canvas.drawLine(
-      Offset(x - 12, y + 33),
-      Offset(x + 12, y + 33),
-      Paint()
-        ..color = const Color(0xFFB86F56)
-        ..strokeWidth = 2,
-    );
-
-    // Pot outline (clean edges)
-    canvas.drawPath(
-      potPath,
-      Paint()
-        ..color = const Color(0xFFAA6652)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-    // Soil surface (dark brown)
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(x, y + 26), width: 24, height: 6),
-      Paint()..color = const Color(0xFF4A3C2E),
-    );
-
-    // Soil texture (little dots)
-    for (int i = 0; i < 5; i++) {
-      canvas.drawCircle(
-        Offset(x - 8 + (i * 4), y + 26),
-        1,
-        Paint()..color = const Color(0xFF3A2C1E),
-      );
-    }
-
-    // SPROUT 1 (Left side - taller with 2 leaves)
-    // Stem
-    canvas.drawLine(
-      Offset(x - 5, y + 26),
-      Offset(x - 5, y + 14),
-      Paint()
-        ..color = const Color(0xFF6B8E23)
-        ..strokeWidth = 2,
-    );
-
-    // Left leaf
-    final leaf1Path = Path()
-      ..moveTo(x - 5, y + 18)
-      ..quadraticBezierTo(x - 10, y + 16, x - 11, y + 19)
-      ..quadraticBezierTo(x - 10, y + 20, x - 5, y + 19)
-      ..close();
-    canvas.drawPath(
-      leaf1Path,
-      Paint()..color = const Color(0xFF7CB342),
-    );
-
-    // Right leaf
-    final leaf2Path = Path()
-      ..moveTo(x - 5, y + 16)
-      ..quadraticBezierTo(x, y + 14, x + 1, y + 17)
-      ..quadraticBezierTo(x, y + 18, x - 5, y + 17)
-      ..close();
-    canvas.drawPath(
-      leaf2Path,
-      Paint()..color = const Color(0xFF7CB342),
-    );
-
-    // SPROUT 2 (Right side - shorter with rounded leaves)
-    // Stem
-    canvas.drawLine(
-      Offset(x + 6, y + 26),
-      Offset(x + 5, y + 16),
-      Paint()
-        ..color = const Color(0xFF6B8E23)
-        ..strokeWidth = 2,
-    );
-
-    // Left rounded leaf
-    canvas.drawCircle(
-      Offset(x + 2, y + 18),
-      3.5,
-      Paint()..color = const Color(0xFF8BC34A),
-    );
-
-    // Right rounded leaf
-    canvas.drawCircle(
-      Offset(x + 8, y + 19),
-      3,
-      Paint()..color = const Color(0xFF8BC34A),
-    );
-
-    // SPROUT 3 (Center back - tiny baby sprout)
-    // Stem
-    canvas.drawLine(
-      Offset(x, y + 26),
-      Offset(x, y + 21),
-      Paint()
-        ..color = const Color(0xFF7CB342)
-        ..strokeWidth = 1.5,
-    );
-
-    // Tiny leaves (just circles)
-    canvas.drawCircle(
-      Offset(x - 2, y + 22),
-      2,
-      Paint()..color = const Color(0xFF9CCC65),
-    );
-    canvas.drawCircle(
-      Offset(x + 2, y + 22),
-      2,
-      Paint()..color = const Color(0xFF9CCC65),
-    );
-  }
-
-// REALISTIC BED (against right wall)
-  void _drawRealisticBed(Canvas canvas, double x, double y) {
-    // Bed frame base
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, y, 90, 120),
-        const Radius.circular(5),
-      ),
-      Paint()..color = const Color(0xFF8D6E63),
-    );
-
-    // Bed frame outline
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, y, 90, 120),
-        const Radius.circular(5),
-      ),
-      Paint()
-        ..color = const Color(0xFF6D4C41)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3,
-    );
-
-    // Mattress
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 5, y + 5, 80, 110),
-        const Radius.circular(4),
-      ),
-      Paint()..color = const Color(0xFFE8E8E8),
-    );
-
-    // Pillow
-    canvas.drawOval(
-      Rect.fromLTWH(x + 15, y + 15, 60, 30),
-      Paint()..color = const Color(0xFFFFFFFF),
-    );
-
-    canvas.drawOval(
-      Rect.fromLTWH(x + 15, y + 15, 60, 30),
-      Paint()
-        ..color = const Color(0xFFCCCCCC)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-    // Blanket
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 10, y + 50, 70, 60),
-        const Radius.circular(4),
-      ),
-      Paint()..color = const Color(0xFF4CAF50),
-    );
-
-    // Blanket folds
-    for (int i = 0; i < 3; i++) {
-      canvas.drawLine(
-        Offset(x + 15, y + 60 + (i * 15)),
-        Offset(x + 75, y + 60 + (i * 15)),
-        Paint()
-          ..color = const Color(0xFF388E3C)
-          ..strokeWidth = 1.5,
-      );
-    }
-  }
-
-// REALISTIC DESK (against wall)
-  void _drawRealisticDesk(Canvas canvas, double x, double y) {
-    // Desk top
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, y, 100, 18),
-        const Radius.circular(3),
-      ),
-      Paint()..color = const Color(0xFF795548),
-    );
-
-    // Desk top highlight
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, y, 100, 5),
-        const Radius.circular(3),
-      ),
-      Paint()..color = const Color(0xFF8D6E63).withOpacity(0.5),
-    );
-
-    // Desk outline
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, y, 100, 18),
-        const Radius.circular(3),
-      ),
-      Paint()
-        ..color = const Color(0xFF5D4037)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-    // Left leg
-    canvas.drawRect(
-      Rect.fromLTWH(x + 8, y + 18, 10, 75),
-      Paint()..color = const Color(0xFF6D4C41),
-    );
-
-    // Right leg
-    canvas.drawRect(
-      Rect.fromLTWH(x + 82, y + 18, 10, 75),
-      Paint()..color = const Color(0xFF6D4C41),
-    );
-
-    // Chair in front of desk
-    _drawRealisticChair(canvas, x + 35, y + 100);
-
-    // Lamp on desk
-    _drawRealisticLamp(canvas, x + 75, y - 15);
-  }
-
-// REALISTIC CHAIR
-  void _drawRealisticChair(Canvas canvas, double x, double y) {
-    // Chair seat
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, y, 40, 40),
-        const Radius.circular(3),
-      ),
-      Paint()..color = const Color(0xFF8D6E63),
-    );
-
-    // Seat outline
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, y, 40, 40),
-        const Radius.circular(3),
-      ),
-      Paint()
-        ..color = const Color(0xFF6D4C41)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-    // Chair back
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 5, y - 50, 30, 55),
-        const Radius.circular(3),
-      ),
-      Paint()..color = const Color(0xFF8D6E63),
-    );
-
-    // Back outline
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 5, y - 50, 30, 55),
-        const Radius.circular(3),
-      ),
-      Paint()
-        ..color = const Color(0xFF6D4C41)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-    // Chair legs (4 legs)
-    // Chair legs (4 legs)
-    List<List<double>> legPositions = [
-      [5, 5],
-      [5, 30],
-      [30, 5],
-      [30, 30]
-    ];
-
-    for (var pos in legPositions) {
-      canvas.drawRect(
-        Rect.fromLTWH(x + pos[0], y + 40, 5, 35),
-        Paint()..color = const Color(0xFF6D4C41),
-      );
-    }
-  }
-
-// REALISTIC LAMP
-  void _drawRealisticLamp(Canvas canvas, double x, double y) {
-    // Lamp base
-    canvas.drawCircle(
-      Offset(x, y + 30),
-      8,
-      Paint()..color = const Color(0xFF757575),
-    );
-
-    // Lamp stem
-    canvas.drawRect(
-      Rect.fromLTWH(x - 2, y + 5, 4, 25),
-      Paint()..color = const Color(0xFF9E9E9E),
-    );
-
-    // Lamp shade (cone)
-    final lampPath = Path()
-      ..moveTo(x - 15, y + 5)
-      ..lineTo(x + 15, y + 5)
-      ..lineTo(x + 10, y - 10)
-      ..lineTo(x - 10, y - 10)
-      ..close();
-
-    canvas.drawPath(
-      lampPath,
-      Paint()..color = const Color(0xFFFFE082),
-    );
-
-    canvas.drawPath(
-      lampPath,
-      Paint()
-        ..color = const Color(0xFFFFD54F)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-    // Light glow
-    canvas.drawCircle(
-      Offset(x, y),
-      20,
-      Paint()
-        ..color = const Color(0xFFFFE082).withOpacity(0.3)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 15),
-    );
-
-    // Light bulb
-    canvas.drawCircle(
-      Offset(x, y - 5),
-      4,
-      Paint()..color = const Color(0xFFFFFFFF),
-    );
-  }
-
-// REALISTIC FIREPLACE
-  void _drawCampfire(Canvas canvas, double x, double floorY) {
-    // Stone circle on ground
-    final stonePositions = [
-      [-15, 0], [-10, -8], [0, -10], [10, -8], [15, 0],
-      [12, 8], [0, 10], [-12, 8]
-    ];
-
-    for (var pos in stonePositions) {
-      canvas.drawCircle(
-        Offset(x + pos[0], floorY - 15 + pos[1]),
-        6,
-        Paint()..color = const Color(0xFF7A7A7A),
-      );
-      // Stone shadow
-      canvas.drawCircle(
-        Offset(x + pos[0], floorY - 15 + pos[1]),
-        6,
-        Paint()
-          ..color = const Color(0xFF5A5A5A)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1,
-      );
-    }
-
-    // Wooden logs (brown rectangles crossed)
-    // Log 1 (horizontal)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(x, floorY - 15), width: 30, height: 6),
-        const Radius.circular(3),
-      ),
-      Paint()..color = const Color(0xFF6D4C41),
-    );
-
-    // Log 2 (diagonal left)
-    canvas.save();
-    canvas.translate(x - 8, floorY - 18);
-    canvas.rotate(-0.5);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset.zero, width: 25, height: 5),
-        const Radius.circular(2.5),
-      ),
-      Paint()..color = const Color(0xFF5D4037),
-    );
-    canvas.restore();
-
-    // Log 3 (diagonal right)
-    canvas.save();
-    canvas.translate(x + 8, floorY - 18);
-    canvas.rotate(0.5);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset.zero, width: 25, height: 5),
-        const Radius.circular(2.5),
-      ),
-      Paint()..color = const Color(0xFF5D4037),
-    );
-    canvas.restore();
-
-    // Fire glow (large, ground-level)
-    canvas.drawCircle(
-      Offset(x, floorY - 25),
-      30,
-      Paint()
-        ..color = const Color(0xFFFF6B35).withOpacity(0.4)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 25),
-    );
-
-    // Inner glow
-    canvas.drawCircle(
-      Offset(x, floorY - 25),
-      18,
-      Paint()
-        ..color = const Color(0xFFFFD54F).withOpacity(0.6)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
-    );
-
-    // Fire flames (multiple sizes)
-    _drawEmoji(canvas, '🔥', x, floorY - 30, 28);
-    _drawEmoji(canvas, '🔥', x - 10, floorY - 25, 22);
-    _drawEmoji(canvas, '🔥', x + 10, floorY - 25, 22);
-  }
-  void _drawSimpleStove(Canvas canvas, double x, double floorY) {
-    // Wall recess (shadow behind stove)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x - 5, floorY - 90, 70, 90),
-        const Radius.circular(5),
-      ),
-      Paint()..color = const Color(0xFF2a2420),
-    );
-
-    // Main stove body (brick red)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, floorY - 85, 60, 85),
-        const Radius.circular(4),
-      ),
-      Paint()..color = const Color(0xFFB85450),
-    );
-
-    // Stove outline
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, floorY - 85, 60, 85),
-        const Radius.circular(4),
-      ),
-      Paint()
-        ..color = const Color(0xFF8B3A3A)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3,
-    );
-
-    // Brick pattern (horizontal lines)
-    for (int i = 1; i < 5; i++) {
-      canvas.drawLine(
-        Offset(x, floorY - 85 + (i * 17)),
-        Offset(x + 60, floorY - 85 + (i * 17)),
-        Paint()
-          ..color = const Color(0xFF8B3A3A)
-          ..strokeWidth = 2,
-      );
-    }
-
-    // Oven door (black metal)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 8, floorY - 60, 44, 35),
-        const Radius.circular(3),
-      ),
-      Paint()..color = const Color(0xFF2C2C2C),
-    );
-
-    // Door window (orange glow inside)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 14, floorY - 52, 32, 20),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFFFF8C42),
-    );
-
-    // Fire glow through window
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 14, floorY - 52, 32, 20),
-        const Radius.circular(2),
-      ),
-      Paint()
-        ..color = const Color(0xFFFFD54F).withOpacity(0.7)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
-    );
-
-    // Door handle (silver)
-    canvas.drawCircle(
-      Offset(x + 45, floorY - 42),
-      3,
-      Paint()..color = const Color(0xFFAAAAAA),
-    );
-
-    // Top cooking surface (black metal)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, floorY - 90, 60, 8),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFF1C1C1C),
-    );
-
-    // Stovetop burner (circular)
-    canvas.drawCircle(
-      Offset(x + 30, floorY - 86),
-      8,
-      Paint()..color = const Color(0xFF0C0C0C),
-    );
-
-    // Burner rings
-    canvas.drawCircle(
-      Offset(x + 30, floorY - 86),
-      6,
-      Paint()
-        ..color = const Color(0xFF666666)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1,
-    );
-
-    // Small flame on top
-    _drawEmoji(canvas, '🔥', x + 30, floorY - 86, 12);
-
-    // Chimney smoke
-    _drawEmoji(canvas, '💨', x + 50, floorY - 100, 14);
-  }
-void _drawWoodStove(Canvas canvas, double x, double floorY) {
-  // Wall alcove (deep shadow)
-  canvas.drawRRect(
-    RRect.fromRectAndRadius(
-      Rect.fromLTWH(x - 10, floorY - 120, 90, 120),
-      const Radius.circular(8),
-    ),
-    Paint()..color = const Color(0xFF1a1a1a),
-  );
-
-  // Main stove body (cast iron black)
-  canvas.drawRRect(
-    RRect.fromRectAndRadius(
-      Rect.fromLTWH(x, floorY - 110, 80, 110),
-      const Radius.circular(6),
-    ),
-    Paint()..color = const Color(0xFF2C2C2C),
-  );
-
-  // Metallic sheen (top highlight)
-  canvas.drawRRect(
-    RRect.fromRectAndRadius(
-      Rect.fromLTWH(x + 5, floorY - 108, 70, 15),
-      const Radius.circular(4),
-    ),
-    Paint()..color = const Color(0xFF444444).withOpacity(0.6),
-  );
-
-  // Stove legs (bottom supports)
-  canvas.drawRect(
-    Rect.fromLTWH(x + 10, floorY - 5, 8, 5),
-    Paint()..color = const Color(0xFF1C1C1C),
-  );
-  canvas.drawRect(
-    Rect.fromLTWH(x + 62, floorY - 5, 8, 5),
-    Paint()..color = const Color(0xFF1C1C1C),
-  );
-
-  // Large oven door (ornate)
-  canvas.drawRRect(
-    RRect.fromRectAndRadius(
-      Rect.fromLTWH(x + 10, floorY - 85, 60, 50),
-      const Radius.circular(4),
-    ),
-    Paint()..color = const Color(0xFF1C1C1C),
-  );
-
-  // Door decorative border (brass)
-  canvas.drawRRect(
-    RRect.fromRectAndRadius(
-      Rect.fromLTWH(x + 10, floorY - 85, 60, 50),
-      const Radius.circular(4),
-    ),
-    Paint()
-      ..color = const Color(0xFFD4AF37)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3,
-  );
-
-  // Large window (bright fire inside)
-  canvas.drawRRect(
-    RRect.fromRectAndRadius(
-      Rect.fromLTWH(x + 18, floorY - 75, 44, 32),
-      const Radius.circular(3),
-    ),
-    Paint()..color = const Color(0xFFFF6B35),
-  );
-
-  // Bright inner fire glow
-  canvas.drawRRect(
-    RRect.fromRectAndRadius(
-      Rect.fromLTWH(x + 18, floorY - 75, 44, 32),
-      const Radius.circular(3),
-    ),
-    Paint()
-      ..color = const Color(0xFFFFD54F).withOpacity(0.9)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
-  );
-
-  // NO FIRE EMOJIS IN WINDOW - just the glow!
-
-  // Fancy brass handle
-  canvas.drawCircle(
-    Offset(x + 60, floorY - 59),
-    5,
-    Paint()..color = const Color(0xFFD4AF37),
-  );
-  canvas.drawCircle(
-    Offset(x + 60, floorY - 59),
-    3,
-    Paint()..color = const Color(0xFFFFE55C),
-  );
-
-  // Top cooking surface (premium black)
-  canvas.drawRRect(
-    RRect.fromRectAndRadius(
-      Rect.fromLTWH(x, floorY - 115, 80, 10),
-      const Radius.circular(3),
-    ),
-    Paint()..color = const Color(0xFF0C0C0C),
-  );
-
-  // Two burners on top
-  canvas.drawCircle(
-    Offset(x + 25, floorY - 110),
-    10,
-    Paint()..color = const Color(0xFF1C1C1C),
-  );
-  canvas.drawCircle(
-    Offset(x + 55, floorY - 110),
-    10,
-    Paint()..color = const Color(0xFF1C1C1C),
-  );
-
-  // Burner coils (detailed)
-  for (int i = 0; i < 3; i++) {
-    canvas.drawCircle(
-      Offset(x + 25, floorY - 110),
-      8 - (i * 2.5),
-      Paint()
-        ..color = const Color(0xFF666666)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5,
-    );
-    canvas.drawCircle(
-      Offset(x + 55, floorY - 110),
-      8 - (i * 2.5),
-      Paint()
-        ..color = const Color(0xFF666666)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5,
-    );
-  }
-
-  // NO FIRE EMOJIS ON BURNERS - just the coils!
-
-  // Stovepipe (chimney)
-  canvas.drawRect(
-    Rect.fromLTWH(x + 65, floorY - 140, 10, 30),
-    Paint()..color = const Color(0xFF3A3A3A),
-  );
-
-  // Pipe segments (bands)
-  canvas.drawLine(
-    Offset(x + 65, floorY - 125),
-    Offset(x + 75, floorY - 125),
-    Paint()
-      ..color = const Color(0xFF1C1C1C)
-      ..strokeWidth = 2,
-  );
-
-  // NO SMOKE EMOJIS - just the pipe!
-}
-
-
-// REALISTIC RUG
-  void _drawRealisticRug(Canvas canvas, double x, double y) {
-    // Rug base
-    final rugRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(x, y, 130, 90),
-      const Radius.circular(5),
-    );
-
-    canvas.drawRRect(
-      rugRect,
-      Paint()..color = const Color(0xFFD32F2F),
-    );
-
-    // Inner pattern
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 15, y + 15, 100, 60),
-        const Radius.circular(3),
-      ),
-      Paint()..color = const Color(0xFFFFEB3B).withOpacity(0.4),
-    );
-
-    // Diamond pattern
-    canvas.drawLine(
-      Offset(x + 65, y + 15),
-      Offset(x + 115, y + 45),
-      Paint()
-        ..color = const Color(0xFFFF9800)
-        ..strokeWidth = 3,
-    );
-    canvas.drawLine(
-      Offset(x + 115, y + 45),
-      Offset(x + 65, y + 75),
-      Paint()
-        ..color = const Color(0xFFFF9800)
-        ..strokeWidth = 3,
-    );
-    canvas.drawLine(
-      Offset(x + 65, y + 75),
-      Offset(x + 15, y + 45),
-      Paint()
-        ..color = const Color(0xFFFF9800)
-        ..strokeWidth = 3,
-    );
-    canvas.drawLine(
-      Offset(x + 15, y + 45),
-      Offset(x + 65, y + 15),
-      Paint()
-        ..color = const Color(0xFFFF9800)
-        ..strokeWidth = 3,
-    );
-
-    // Rug border
-    canvas.drawRRect(
-      rugRect,
-      Paint()
-        ..color = const Color(0xFF8D6E63)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 4,
-    );
-
-    // Fringe tassels
-    for (int i = 0; i < 13; i++) {
-      double tassX = x + (i * 10);
-      canvas.drawLine(
-        Offset(tassX, y),
-        Offset(tassX, y - 8),
-        Paint()
-          ..color = const Color(0xFF8D6E63)
-          ..strokeWidth = 2,
-      );
-      canvas.drawLine(
-        Offset(tassX, y + 90),
-        Offset(tassX, y + 98),
-        Paint()
-          ..color = const Color(0xFF8D6E63)
-          ..strokeWidth = 2,
-      );
-    }
-  }
-  void _drawHayBed(Canvas canvas, double x, double y) {
-    // Simple wooden pallet base (VERY CLEAR)
-    // Bottom planks
-    for (int i = 0; i < 5; i++) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(x + (i * 18), y + 95, 16, 8),
-          const Radius.circular(1),
-        ),
-        Paint()..color = const Color(0xFF8D6E63),
-      );
-      // Wood grain
-      canvas.drawLine(
-        Offset(x + 2 + (i * 18), y + 97),
-        Offset(x + 14 + (i * 18), y + 97),
-        Paint()
-          ..color = const Color(0xFF6D4C41)
-          ..strokeWidth = 1,
-      );
-    }
-
-    // Support beams under planks
-    canvas.drawRect(
-      Rect.fromLTWH(x + 5, y + 103, 80, 4),
-      Paint()..color = const Color(0xFF5D4037),
-    );
-
-    // BIG GOLDEN HAY PILE (very obvious!)
-    // Bottom layer - wide base
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, y + 65, 90, 32),
-        const Radius.circular(6),
-      ),
-      Paint()..color = const Color(0xFFEBB759), // Bright golden
-    );
-
-    // Middle layer - medium
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 8, y + 48, 74, 28),
-        const Radius.circular(8),
-      ),
-      Paint()..color = const Color(0xFFE0AC4D),
-    );
-
-    // Top layer - small mound
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 22, y + 35, 46, 22),
-        const Radius.circular(10),
-      ),
-      Paint()..color = const Color(0xFFD4A041),
-    );
-
-    // LOTS of hay strands (make it VERY obvious it's straw)
-    final strandPaint = Paint()
-      ..color = const Color(0xFFC89235)
-      ..strokeWidth = 2.5
-      ..strokeCap = StrokeCap.round;
-
-    // Left side strands
-    canvas.drawLine(Offset(x + 5, y + 70), Offset(x - 2, y + 62), strandPaint);
-    canvas.drawLine(Offset(x + 8, y + 75), Offset(x + 1, y + 68), strandPaint);
-    canvas.drawLine(Offset(x + 3, y + 80), Offset(x - 4, y + 74), strandPaint);
-    canvas.drawLine(Offset(x + 12, y + 58), Offset(x + 8, y + 50), strandPaint);
-    canvas.drawLine(Offset(x + 15, y + 52), Offset(x + 10, y + 44), strandPaint);
-
-    // Right side strands
-    canvas.drawLine(Offset(x + 85, y + 72), Offset(x + 92, y + 64), strandPaint);
-    canvas.drawLine(Offset(x + 82, y + 77), Offset(x + 89, y + 70), strandPaint);
-    canvas.drawLine(Offset(x + 87, y + 82), Offset(x + 94, y + 76), strandPaint);
-    canvas.drawLine(Offset(x + 78, y + 60), Offset(x + 84, y + 52), strandPaint);
-    canvas.drawLine(Offset(x + 75, y + 54), Offset(x + 80, y + 46), strandPaint);
-
-    // Top strands
-    canvas.drawLine(Offset(x + 35, y + 38), Offset(x + 32, y + 30), strandPaint);
-    canvas.drawLine(Offset(x + 45, y + 36), Offset(x + 47, y + 28), strandPaint);
-    canvas.drawLine(Offset(x + 55, y + 40), Offset(x + 58, y + 32), strandPaint);
-    canvas.drawLine(Offset(x + 40, y + 42), Offset(x + 38, y + 34), strandPaint);
-    canvas.drawLine(Offset(x + 50, y + 44), Offset(x + 53, y + 36), strandPaint);
-
-    // Hay texture lines (vertical straw pattern)
-    final texturePaint = Paint()
-      ..color = const Color(0xFFB8852E)
-      ..strokeWidth = 1.5;
-
-    for (int i = 0; i < 20; i++) {
-      double lineX = x + 10 + (i * 3.5);
-      double lineStartY = y + 50 + ((i % 3) * 8);
-      double lineEndY = lineStartY + 15 + ((i % 4) * 5);
-
-      canvas.drawLine(
-        Offset(lineX, lineStartY),
-        Offset(lineX - 1, lineEndY),
-        texturePaint,
-      );
-    }
-
-    // Dark shadows for depth
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, y + 65, 90, 32),
-        const Radius.circular(6),
-      ),
-      Paint()
-        ..color = const Color(0xFF9C7328)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-    // Old sack cloth (roughly thrown over)
-    final sackPath = Path()
-      ..moveTo(x + 15, y + 55)
-      ..lineTo(x + 70, y + 52)
-      ..lineTo(x + 72, y + 85)
-      ..lineTo(x + 18, y + 88)
-      ..close();
-
-    canvas.drawPath(
-      sackPath,
-      Paint()..color = const Color(0xFF9E8B7E).withOpacity(0.75),
-    );
-
-    // Sack weave texture
-    for (int i = 0; i < 6; i++) {
-      canvas.drawLine(
-        Offset(x + 20 + (i * 8), y + 56),
-        Offset(x + 22 + (i * 8), y + 84),
-        Paint()
-          ..color = const Color(0xFF7D6B5F)
-          ..strokeWidth = 1,
-      );
-    }
-
-    // Sack tears/holes (worn)
-    canvas.drawCircle(Offset(x + 35, y + 68), 3, Paint()..color = const Color(0xFF6B5A4E));
-    canvas.drawCircle(Offset(x + 55, y + 75), 2.5, Paint()..color = const Color(0xFF6B5A4E));
-
-    // Sack edge fraying
-    canvas.drawLine(
-      Offset(x + 15, y + 55),
-      Offset(x + 12, y + 52),
-      Paint()
-        ..color = const Color(0xFF7D6B5F)
-        ..strokeWidth = 2,
-    );
-    canvas.drawLine(
-      Offset(x + 20, y + 56),
-      Offset(x + 18, y + 52),
-      Paint()
-        ..color = const Color(0xFF7D6B5F)
-        ..strokeWidth = 2,
-    );
-  }
-  void _drawSimpleCot(Canvas canvas, double x, double y) {
-    // Back legs (darker, further away)
-    canvas.drawRect(
-      Rect.fromLTWH(x + 8, y + 8, 7, 22),
-      Paint()..color = const Color(0xFF5D4037),
-    );
-    canvas.drawRect(
-      Rect.fromLTWH(x + 85, y + 8, 7, 22),
-      Paint()..color = const Color(0xFF5D4037),
-    );
-
-    // Side rails connecting back legs
-    canvas.drawRect(
-      Rect.fromLTWH(x + 8, y + 8, 7, 82),
-      Paint()..color = const Color(0xFF6D4C41),
-    );
-    canvas.drawRect(
-      Rect.fromLTWH(x + 85, y + 8, 7, 82),
-      Paint()..color = const Color(0xFF6D4C41),
-    );
-
-    // Front legs (lighter, closer)
-    canvas.drawRect(
-      Rect.fromLTWH(x + 8, y + 82, 7, 38),
-      Paint()..color = const Color(0xFF8D6E63),
-    );
-    canvas.drawRect(
-      Rect.fromLTWH(x + 85, y + 82, 7, 38),
-      Paint()..color = const Color(0xFF8D6E63),
-    );
-
-    // Canvas fabric stretched tight (beige/tan)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 12, y + 12, 78, 75),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFFD7CCC8),
-    );
-
-    // Canvas stretched effect (slightly sagging in middle)
-    final sagPath = Path()
-      ..moveTo(x + 12, y + 50)
-      ..quadraticBezierTo(x + 50, y + 52, x + 90, y + 50);
-
-    canvas.drawPath(
-      sagPath,
-      Paint()
-        ..color = const Color(0xFFBCAAA4)
-        ..strokeWidth = 1.5,
-    );
-
-    // Woven texture (crosshatch)
-    for (int i = 0; i < 8; i++) {
-      canvas.drawLine(
-        Offset(x + 12, y + 12 + (i * 9)),
-        Offset(x + 90, y + 12 + (i * 9)),
-        Paint()
-          ..color = const Color(0xFFBCAAA4).withOpacity(0.5)
-          ..strokeWidth = 1,
-      );
-    }
-
-    for (int i = 0; i < 8; i++) {
-      canvas.drawLine(
-        Offset(x + 12 + (i * 10), y + 12),
-        Offset(x + 12 + (i * 10), y + 87),
-        Paint()
-          ..color = const Color(0xFFBCAAA4).withOpacity(0.5)
-          ..strokeWidth = 1,
-      );
-    }
-
-    // Stitching around edges
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 12, y + 12, 78, 75),
-        const Radius.circular(2),
-      ),
-      Paint()
-        ..color = const Color(0xFF8D6E63)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-    // Flat pillow (simple, worn)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 22, y + 18, 45, 18),
-        const Radius.circular(3),
-      ),
-      Paint()..color = const Color(0xFFECEFF1),
-    );
-
-    // Pillow seam
-    canvas.drawLine(
-      Offset(x + 44, y + 20),
-      Offset(x + 44, y + 34),
-      Paint()
-        ..color = const Color(0xFFCFD8DC)
-        ..strokeWidth = 1.5,
-    );
-
-    // Pillow outline
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 22, y + 18, 45, 18),
-        const Radius.circular(3),
-      ),
-      Paint()
-        ..color = const Color(0xFFB0BEC5)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5,
-    );
-
-    // Simple wool blanket (folded at bottom)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 18, y + 55, 64, 28),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFF78909C),
-    );
-
-    // Blanket folds (3D effect)
-    for (int i = 1; i < 4; i++) {
-      canvas.drawLine(
-        Offset(x + 18, y + 55 + (i * 7)),
-        Offset(x + 82, y + 55 + (i * 7)),
-        Paint()
-          ..color = const Color(0xFF607D8B)
-          ..strokeWidth = 2,
-      );
-    }
-
-    // Blanket edge stitching
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 18, y + 55, 64, 28),
-        const Radius.circular(2),
-      ),
-      Paint()
-        ..color = const Color(0xFF546E7A)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5,
-    );
-  }
-  void _drawWoodFrameBed(Canvas canvas, double x, double y) {
-    // BED LEGS (TALL - elevating the whole bed!)
-    final legPaint = Paint()..color = const Color(0xFF6D4C41);
-
-    // Front left leg
-    canvas.drawRect(Rect.fromLTWH(x + 12, y + 95, 8, 40), legPaint);
-    // Front right leg
-    canvas.drawRect(Rect.fromLTWH(x + 90, y + 95, 8, 40), legPaint);
-    // Back left leg
-    canvas.drawRect(Rect.fromLTWH(x + 12, y + 55, 8, 40), Paint()..color = const Color(0xFF5D4037));
-    // Back right leg
-    canvas.drawRect(Rect.fromLTWH(x + 90, y + 55, 8, 40), Paint()..color = const Color(0xFF5D4037));
-
-    // TALL ORNATE HEADBOARD
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, y, 110, 60),
-        const Radius.circular(6),
-      ),
-      Paint()..color = const Color(0xFF8D6E63),
-    );
-
-    // Headboard crown molding
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x - 2, y - 5, 114, 12),
-        const Radius.circular(3),
-      ),
-      Paint()..color = const Color(0xFF6D4C41),
-    );
-
-    canvas.drawLine(
-      Offset(x - 2, y + 3),
-      Offset(x + 112, y + 3),
-      Paint()
-        ..color = const Color(0xFF4E342E)
-        ..strokeWidth = 2,
-    );
-
-    // Inner decorative panel
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 10, y + 12, 90, 40),
-        const Radius.circular(4),
-      ),
-      Paint()..color = const Color(0xFF6D4C41),
-    );
-
-    // Carved vertical panels
-    for (int i = 0; i < 4; i++) {
-      double panelX = x + 18 + (i * 21);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(panelX, y + 16, 15, 32),
-          const Radius.circular(2),
-        ),
-        Paint()..color = const Color(0xFF5D4037),
-      );
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(panelX, y + 16, 15, 32),
-          const Radius.circular(2),
-        ),
-        Paint()
-          ..color = const Color(0xFF4E342E)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2,
-      );
-    }
-    // ========== BACK FRAME STRUCTURE (connecting headboard to bed) ==========
-
-// Back frame horizontal support (top)
-    canvas.drawRect(
-      Rect.fromLTWH(x + 8, y + 58, 94, 6),
-      Paint()..color = const Color(0xFF6D4C41),
-    );
-
-// Back frame decorative trim
-    canvas.drawLine(
-      Offset(x + 8, y + 61),
-      Offset(x + 102, y + 61),
-      Paint()
-        ..color = const Color(0xFF4E342E)
-        ..strokeWidth = 2,
-    );
-
-// Vertical support posts (connecting headboard to frame)
-// Left post
-    canvas.drawRect(
-      Rect.fromLTWH(x + 8, y + 40, 6, 24),
-      Paint()..color = const Color(0xFF7D5E52),
-    );
-// Right post
-    canvas.drawRect(
-      Rect.fromLTWH(x + 96, y + 40, 6, 24),
-      Paint()..color = const Color(0xFF7D5E52),
-    );
-
-// Decorative post caps (top of vertical posts)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 6, y + 36, 10, 8),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFF5D4037),
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 94, y + 36, 10, 8),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFF5D4037),
-    );
-
-    // ELEVATED BED FRAME (sits on tall legs)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 5, y + 40, 100, 60), // ← LONGER! starts at y+40 instead of y+55, height 60 instead of 45
-        const Radius.circular(4),
-      ),
-      Paint()..color = const Color(0xFF8D6E63),
-    );
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 5, y + 40, 100, 60),
-        const Radius.circular(4),
-      ),
-      Paint()
-        ..color = const Color(0xFF5D4037)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3,
-    );
-
-    // Side rails (connecting legs visibly)
-    canvas.drawRect(
-      Rect.fromLTWH(x + 10, y + 55, 6, 40),
-      Paint()..color = const Color(0xFF7D5E52),
-    );
-    canvas.drawRect(
-      Rect.fromLTWH(x + 94, y + 55, 6, 40),
-      Paint()..color = const Color(0xFF7D5E52),
-    );
-
-    // Under-bed support beam (visible between legs)
-    canvas.drawRect(
-      Rect.fromLTWH(x + 15, y + 110, 80, 6),
-      Paint()..color = const Color(0xFF5D4037),
-    );
-
-    // THICK MATTRESS (on elevated frame)
-    // THICK MATTRESS (on elevated frame - ADJUSTED!)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 10, y + 43, 90, 55), // ← MOVED UP and LENGTHENED
-        const Radius.circular(5),
-      ),
-      Paint()..color = const Color(0xFFFAFAFA),
-    );
-
-// Mattress quilted tufting
-    for (int row = 0; row < 3; row++) {
-      for (int col = 0; col < 5; col++) {
-        double tuftX = x + 20 + (col * 16);
-        double tuftY = y + 55 + (row * 15); // ← ADJUSTED
-
-        canvas.drawCircle(Offset(tuftX, tuftY), 2.5, Paint()..color = const Color(0xFFD0D0D0));
-        canvas.drawCircle(
-            Offset(tuftX, tuftY),
-            2.5,
-            Paint()
-              ..color = const Color(0xFFE0E0E0)
-              ..style = PaintingStyle.stroke
-        );
-      }
-    }
-
-// Mattress piping
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 10, y + 43, 90, 55), // ← MATCHES NEW MATTRESS
-        const Radius.circular(5),
-      ),
-      Paint()
-        ..color = const Color(0xFFBDBDBD)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-    // LUXURY PILLOWS (ADJUSTED TO NEW MATTRESS!)
-// Left pillow
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 18, y + 48, 38, 20), // ← MOVED UP
-        const Radius.circular(6),
-      ),
-      Paint()..color = const Color(0xFFFFFFFF),
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 20, y + 50, 34, 8), // ← MOVED UP
-        const Radius.circular(4),
-      ),
-      Paint()..color = const Color(0xFFFEFEFE).withOpacity(0.7),
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 18, y + 48, 38, 20),
-        const Radius.circular(6),
-      ),
-      Paint()
-        ..color = const Color(0xFFE0E0E0)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-// Right pillow
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 54, y + 50, 38, 18), // ← MOVED UP
-        const Radius.circular(6),
-      ),
-      Paint()..color = const Color(0xFFFDFDFD),
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 56, y + 52, 34, 7), // ← MOVED UP
-        const Radius.circular(4),
-      ),
-      Paint()..color = const Color(0xFFFEFEFE).withOpacity(0.7),
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 54, y + 50, 38, 18),
-        const Radius.circular(6),
-      ),
-      Paint()
-        ..color = const Color(0xFFE0E0E0)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-    // LUXURY DUVET (ADJUSTED!)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 15, y + 70, 80, 26), // ← MOVED UP and ADJUSTED SIZE
-        const Radius.circular(4),
-      ),
-      Paint()..color = const Color(0xFF5C6BC0),
-    );
-
-// Quilted pattern
-    for (int i = 0; i < 5; i++) {
-      canvas.drawLine(
-        Offset(x + 20 + (i * 15), y + 70), // ← ADJUSTED
-        Offset(x + 20 + (i * 15), y + 96), // ← ADJUSTED
-        Paint()
-          ..color = const Color(0xFF3F51B5)
-          ..strokeWidth = 2,
-      );
-    }
-    for (int i = 0; i < 4; i++) {
-      canvas.drawLine(
-        Offset(x + 15, y + 74 + (i * 6)), // ← ADJUSTED
-        Offset(x + 95, y + 74 + (i * 6)), // ← ADJUSTED
-        Paint()
-          ..color = const Color(0xFF3F51B5)
-          ..strokeWidth = 2,
-      );
-    }
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 15, y + 70, 80, 26),
-        const Radius.circular(4),
-      ),
-      Paint()
-        ..color = const Color(0xFF3949AB)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 15, y + 82, 80, 18),
-        const Radius.circular(4),
-      ),
-      Paint()
-        ..color = const Color(0xFF3949AB)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-    // FOOTBOARD (at elevated height)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 8, y + 97, 94, 12),
-        const Radius.circular(3),
-      ),
-      Paint()..color = const Color(0xFF8D6E63),
-    );
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 8, y + 97, 94, 12),
-        const Radius.circular(3),
-      ),
-      Paint()
-        ..color = const Color(0xFF5D4037)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-  }
-  void _drawSimpleDesk(Canvas canvas, double x, double y) {
-    // Simple wooden legs (4 legs)
-    final legPaint = Paint()..color = const Color(0xFF6D4C41);
-
-    // Front left leg
-    canvas.drawRect(Rect.fromLTWH(x + 10, y + 12, 6, 40), legPaint);
-    // Front right leg
-    canvas.drawRect(Rect.fromLTWH(x + 84, y + 12, 6, 40), legPaint);
-    // Back left leg (darker for depth)
-    canvas.drawRect(Rect.fromLTWH(x + 10, y, 6, 18), Paint()..color = const Color(0xFF5D4037));
-    // Back right leg
-    canvas.drawRect(Rect.fromLTWH(x + 84, y, 6, 18), Paint()..color = const Color(0xFF5D4037));
-
-    // Simple plank desktop (rough wood)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, y + 8, 100, 10),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFF8D6E63),
-    );
-
-    // Wood grain lines (rough texture)
-    for (int i = 0; i < 8; i++) {
-      canvas.drawLine(
-        Offset(x + 5 + (i * 12), y + 9),
-        Offset(x + 8 + (i * 12), y + 17),
-        Paint()
-          ..color = const Color(0xFF6D4C41)
-          ..strokeWidth = 1.5,
-      );
-    }
-
-    // Desktop edge (darker)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, y + 8, 100, 10),
-        const Radius.circular(2),
-      ),
-      Paint()
-        ..color = const Color(0xFF5D4037)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-    // Visible nails/screws (rustic look)
-    for (int i = 0; i < 4; i++) {
-      double nailX = x + 15 + (i * 22);
-      canvas.drawCircle(
-        Offset(nailX, y + 12),
-        2,
-        Paint()..color = const Color(0xFF424242),
-      );
-    }
-
-    // Simple support beam under desktop
-    canvas.drawRect(
-      Rect.fromLTWH(x + 15, y + 18, 70, 4),
-      Paint()..color = const Color(0xFF5D4037),
-    );
-  }
-  void _drawOakDesk(Canvas canvas, double x, double y) {
-    // Sturdy wooden legs
-    final legPaint = Paint()..color = const Color(0xFF7D5E52);
-
-    // Front legs (thicker)
-    canvas.drawRect(Rect.fromLTWH(x + 8, y + 18, 8, 50), legPaint); // ← TALLER
-    canvas.drawRect(Rect.fromLTWH(x + 84, y + 18, 8, 50), legPaint);
-    // Back legs
-    canvas.drawRect(Rect.fromLTWH(x + 8, y, 8, 22), Paint()..color = const Color(0xFF6D4C41));
-    canvas.drawRect(Rect.fromLTWH(x + 84, y, 8, 22), Paint()..color = const Color(0xFF6D4C41));
-
-    // Desktop (smooth oak finish)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, y + 12, 100, 12),
-        const Radius.circular(3),
-      ),
-      Paint()..color = const Color(0xFF9E8B7E),
-    );
-
-    // Desktop shine/polish effect
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 2, y + 13, 96, 4),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFFB8A89A).withOpacity(0.5),
-    );
-
-    // Desktop edge trim
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, y + 12, 100, 12),
-        const Radius.circular(3),
-      ),
-      Paint()
-        ..color = const Color(0xFF6D4C41)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-    // Drawer (center)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 25, y + 26, 50, 18),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFF8D7367),
-    );
-
-    // Drawer panel inset
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 28, y + 29, 44, 12),
-        const Radius.circular(1),
-      ),
-      Paint()..color = const Color(0xFF7D6357),
-    );
-
-    // Drawer handle (brass)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 46, y + 33, 8, 4),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFFD4AF37),
-    );
-
-    // Handle highlight
-    canvas.drawLine(
-      Offset(x + 47, y + 34),
-      Offset(x + 53, y + 34),
-      Paint()
-        ..color = const Color(0xFFFFE55C)
-        ..strokeWidth = 1,
-    );
-
-    // Drawer outline
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 25, y + 26, 50, 18),
-        const Radius.circular(2),
-      ),
-      Paint()
-        ..color = const Color(0xFF5D4037)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5,
-    );
-
-    // Side support panels
-    canvas.drawRect(
-      Rect.fromLTWH(x + 6, y + 24, 10, 44),
-      Paint()..color = const Color(0xFF8D7367),
-    );
-    canvas.drawRect(
-      Rect.fromLTWH(x + 84, y + 24, 10, 44),
-      Paint()..color = const Color(0xFF8D7367),
-    );
-
-    // BASIC LAMP ON DESK (right side)
-    _drawBasicLamp(canvas, x + 80, y + 2);
-  }
-  void _drawExecutiveDesk(Canvas canvas, double x, double y) {
-    // Elegant carved legs
-    final legPaint = Paint()..color = const Color(0xFF5D4037);
-
-    // Front legs (ornate, thicker)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 5, y + 22, 10, 55), // ← TALLER
-        const Radius.circular(2),
-      ),
-      legPaint,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 85, y + 22, 10, 55),
-        const Radius.circular(2),
-      ),
-      legPaint,
-    );
-
-    // Back legs
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 5, y, 10, 26),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFF4E342E),
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 85, y, 10, 26),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFF4E342E),
-    );
-
-    // Decorative leg carvings
-    for (int i = 0; i < 3; i++) {
-      canvas.drawCircle(
-        Offset(x + 10, y + 30 + (i * 10)),
-        2,
-        Paint()..color = const Color(0xFF3E2723),
-      );
-      canvas.drawCircle(
-        Offset(x + 90, y + 30 + (i * 10)),
-        2,
-        Paint()..color = const Color(0xFF3E2723),
-      );
-    }
-
-    // Thick mahogany desktop (premium wood)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x - 5, y + 14, 110, 14),
-        const Radius.circular(4),
-      ),
-      Paint()..color = const Color(0xFF6D4C41),
-    );
-
-    // Desktop leather inlay (green leather writing surface)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 5, y + 18, 90, 6),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFF2E5A3E),
-    );
-
-    // Leather texture (diamond pattern)
-    for (int i = 0; i < 8; i++) {
-      canvas.drawLine(
-        Offset(x + 10 + (i * 11), y + 18),
-        Offset(x + 10 + (i * 11), y + 24),
-        Paint()
-          ..color = const Color(0xFF234A32)
-          ..strokeWidth = 0.5,
-      );
-    }
-
-    // Desktop gold trim
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x - 5, y + 14, 110, 14),
-        const Radius.circular(4),
-      ),
-      Paint()
-        ..color = const Color(0xFFD4AF37)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-    // Desktop edge molding (3D effect)
-    canvas.drawLine(
-      Offset(x - 5, y + 16),
-      Offset(x + 105, y + 16),
-      Paint()
-        ..color = const Color(0xFF8D6E63)
-        ..strokeWidth = 1.5,
-    );
-
-    // TWO drawers (stacked, left side)
-    // Top drawer
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 8, y + 30, 35, 14),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFF5D4037),
-    );
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 11, y + 32, 29, 10),
-        const Radius.circular(1),
-      ),
-      Paint()..color = const Color(0xFF4E342E),
-    );
-
-    // Top drawer brass handle
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(x + 36, y + 37), width: 6, height: 4),
-      Paint()..color = const Color(0xFFD4AF37),
-    );
-
-    // Bottom drawer
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 8, y + 46, 35, 14),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFF5D4037),
-    );
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 11, y + 48, 29, 10),
-        const Radius.circular(1),
-      ),
-      Paint()..color = const Color(0xFF4E342E),
-    );
-
-    // Bottom drawer brass handle
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(x + 36, y + 53), width: 6, height: 4),
-      Paint()..color = const Color(0xFFD4AF37),
-    );
-
-    // Center panel (decorative wood panel)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 18, y + 28, 20, 32),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFF6D4C41),
-    );
-
-    // Panel carving detail
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 20, y + 32, 16, 24),
-        const Radius.circular(1),
-      ),
-      Paint()
-        ..color = const Color(0xFF5D4037)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5,
-    );
-
-    // FANCY LAMP ON DESK (center-right)
-    _drawFancyLamp(canvas, x + 60, y + 2);
-
-    // BOOKSHELF ON DESK (right side)
-    _drawMiniBookshelf(canvas, x + 80, y - 15);
-  }
-  void _drawOldStool(Canvas canvas, double x, double y) {
-    // Simple wooden stool (no back, just a seat)
-
-    // 3 legs (tripod style - cheaper construction)
-    final legPaint = Paint()..color = const Color(0xFF6D4C41);
-
-    // Center leg (front)
-    canvas.drawRect(
-      Rect.fromLTWH(x + 17, y + 28, 6, 35),
-      legPaint,
-    );
-
-    // Left leg (angled)
-    canvas.save();
-    canvas.translate(x + 8, y + 30);
-    canvas.rotate(-0.2);
-    canvas.drawRect(
-      const Rect.fromLTWH(0, 0, 5, 32),
-      Paint()..color = const Color(0xFF5D4037),
-    );
-    canvas.restore();
-
-    // Right leg (angled)
-    canvas.save();
-    canvas.translate(x + 30, y + 30);
-    canvas.rotate(0.2);
-    canvas.drawRect(
-      const Rect.fromLTWH(0, 0, 5, 32),
-      Paint()..color = const Color(0xFF5D4037),
-    );
-    canvas.restore();
-
-    // Round wooden seat (worn and simple)
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(x + 20, y + 30), width: 32, height: 28),
-      Paint()..color = const Color(0xFF8D6E63),
-    );
-
-    // Wood grain on seat
-    for (int i = 0; i < 3; i++) {
-      canvas.drawLine(
-        Offset(x + 8 + (i * 6), y + 28),
-        Offset(x + 10 + (i * 6), y + 32),
-        Paint()
-          ..color = const Color(0xFF6D4C41)
-          ..strokeWidth = 1.5,
-      );
-    }
-
-    // Seat outline (rough edges)
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(x + 20, y + 30), width: 32, height: 28),
-      Paint()
-        ..color = const Color(0xFF5D4037)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-    // Visible nail in center
-    canvas.drawCircle(
-      Offset(x + 20, y + 30),
-      2,
-      Paint()..color = const Color(0xFF424242),
-    );
-  }
-  void _drawWoodenChair(Canvas canvas, double x, double y) {
-    // 4-legged wooden chair with backrest
-
-    final legPaint = Paint()..color = const Color(0xFF7D5E52);
-
-    // Back legs (slightly darker)
-    canvas.drawRect(
-      Rect.fromLTWH(x + 6, y - 8, 6, 45),
-      Paint()..color = const Color(0xFF6D4C41),
-    );
-    canvas.drawRect(
-      Rect.fromLTWH(x + 28, y - 8, 6, 45),
-      Paint()..color = const Color(0xFF6D4C41),
-    );
-
-    // Front legs
-    canvas.drawRect(
-      Rect.fromLTWH(x + 6, y + 28, 6, 35),
-      legPaint,
-    );
-    canvas.drawRect(
-      Rect.fromLTWH(x + 28, y + 28, 6, 35),
-      legPaint,
-    );
-
-    // Seat (flat wooden plank)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 4, y + 24, 32, 30),
-        const Radius.circular(3),
-      ),
-      Paint()..color = const Color(0xFF9E8B7E),
-    );
-
-    // Seat wood grain
-    for (int i = 0; i < 4; i++) {
-      canvas.drawLine(
-        Offset(x + 8 + (i * 7), y + 26),
-        Offset(x + 8 + (i * 7), y + 52),
-        Paint()
-          ..color = const Color(0xFF8D7367)
-          ..strokeWidth = 1,
-      );
-    }
-
-    // Seat outline
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 4, y + 24, 32, 30),
-        const Radius.circular(3),
-      ),
-      Paint()
-        ..color = const Color(0xFF6D4C41)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-    // Backrest (vertical slats)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 6, y - 10, 28, 38),
-        const Radius.circular(3),
-      ),
-      Paint()..color = const Color(0xFF9E8B7E),
-    );
-
-    // Backrest slats (3 vertical bars)
-    for (int i = 0; i < 3; i++) {
-      canvas.drawRect(
-        Rect.fromLTWH(x + 10 + (i * 8), y - 6, 4, 30),
-        Paint()..color = const Color(0xFF8D7367),
-      );
-    }
-
-    // Backrest outline
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 6, y - 10, 28, 38),
-        const Radius.circular(3),
-      ),
-      Paint()
-        ..color = const Color(0xFF6D4C41)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-    // Top rail (curved)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 4, y - 12, 32, 6),
-        const Radius.circular(3),
-      ),
-      Paint()..color = const Color(0xFF8D6E63),
-    );
-  }
-  void _drawComfyChair(Canvas canvas, double x, double y) {
-    // Premium office chair with cushioning
-
-    // 5-wheel base (star shape)
-    canvas.drawCircle(
-      Offset(x + 20, y + 60),
-      15,
-      Paint()..color = const Color(0xFF424242),
-    );
-
-    // 5 wheel spokes
-    for (int i = 0; i < 5; i++) {
-      double angle = (i * 72) * (3.14159 / 180);
-      double endX = x + 20 + (12 * cos(angle));
-      double endY = y + 60 + (12 * sin(angle));
-
-      canvas.drawLine(
-        Offset(x + 20, y + 60),
-        Offset(endX, endY),
-        Paint()
-          ..color = const Color(0xFF333333)
-          ..strokeWidth = 3,
-      );
-
-      // Wheel at end
-      canvas.drawCircle(
-        Offset(endX, endY),
-        3,
-        Paint()..color = const Color(0xFF1C1C1C),
-      );
-    }
-
-    // Pneumatic cylinder (adjustable height mechanism)
-    canvas.drawRect(
-      Rect.fromLTWH(x + 16, y + 42, 8, 20),
-      Paint()..color = const Color(0xFF666666),
-    );
-
-    // Cylinder segments (shows it's adjustable)
-    for (int i = 0; i < 3; i++) {
-      canvas.drawLine(
-        Offset(x + 16, y + 47 + (i * 5)),
-        Offset(x + 24, y + 47 + (i * 5)),
-        Paint()
-          ..color = const Color(0xFF444444)
-          ..strokeWidth = 1.5,
-      );
-    }
-
-    // Padded seat (thick cushion)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 2, y + 22, 36, 28),
-        const Radius.circular(5),
-      ),
-      Paint()..color = const Color(0xFF2E5A3E), // Dark green fabric
-    );
-
-    // Seat cushion tufting (buttons)
-    for (int row = 0; row < 2; row++) {
-      for (int col = 0; col < 3; col++) {
-        canvas.drawCircle(
-          Offset(x + 10 + (col * 9), y + 30 + (row * 10)),
-          2,
-          Paint()..color = const Color(0xFF234A32),
-        );
-      }
-    }
-
-    // Seat outline
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 2, y + 22, 36, 28),
-        const Radius.circular(5),
-      ),
-      Paint()
-        ..color = const Color(0xFF1C3A2A)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-    // High backrest (ergonomic curve)
-    final backPath = Path()
-      ..moveTo(x + 6, y + 24)
-      ..lineTo(x + 6, y - 18)
-      ..quadraticBezierTo(x + 20, y - 22, x + 34, y - 18)
-      ..lineTo(x + 34, y + 24)
-      ..close();
-
-    canvas.drawPath(
-      backPath,
-      Paint()..color = const Color(0xFF2E5A3E),
-    );
-
-    // Backrest padding pattern
-    for (int i = 0; i < 3; i++) {
-      canvas.drawLine(
-        Offset(x + 10, y - 12 + (i * 10)),
-        Offset(x + 30, y - 12 + (i * 10)),
-        Paint()
-          ..color = const Color(0xFF234A32)
-          ..strokeWidth = 1.5,
-      );
-    }
-
-    // Lumbar support (extra padding in middle)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 12, y + 4, 16, 12),
-        const Radius.circular(3),
-      ),
-      Paint()..color = const Color(0xFF3A6A4A).withOpacity(0.7),
-    );
-
-    // Backrest outline
-    canvas.drawPath(
-      backPath,
-      Paint()
-        ..color = const Color(0xFF1C3A2A)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-    // Armrests (on both sides)
-    // Left armrest
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x - 2, y + 28, 8, 18),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFF424242),
-    );
-
-    // Right armrest
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 34, y + 28, 8, 18),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFF424242),
-    );
-  }
-  void _drawBasicLamp(Canvas canvas, double x, double y) {
-    // Small circular base
-    canvas.drawCircle(
-      Offset(x, y + 8),
-      6,
-      Paint()..color = const Color(0xFF757575),
-    );
-
-    // Thin stem
-    canvas.drawRect(
-      Rect.fromLTWH(x - 1.5, y - 8, 3, 16),
-      Paint()..color = const Color(0xFF9E9E9E),
-    );
-
-    // Simple conical shade
-    final shadePath = Path()
-      ..moveTo(x - 8, y - 8)
-      ..lineTo(x + 8, y - 8)
-      ..lineTo(x + 6, y - 16)
-      ..lineTo(x - 6, y - 16)
-      ..close();
-
-    canvas.drawPath(
-      shadePath,
-      Paint()..color = const Color(0xFFFFE082),
-    );
-
-    // Shade outline
-    canvas.drawPath(
-      shadePath,
-      Paint()
-        ..color = const Color(0xFFFFD54F)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5,
-    );
-
-    // Small light glow
-    canvas.drawCircle(
-      Offset(x, y - 12),
-      8,
-      Paint()
-        ..color = const Color(0xFFFFE082).withOpacity(0.3)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
-    );
-  }
-  void _drawFancyLamp(Canvas canvas, double x, double y) {
-    // Ornate brass base (wider and decorative)
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(x, y + 10), width: 14, height: 8),
-      Paint()..color = const Color(0xFFD4AF37),
-    );
-
-    // Base decorative rings
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(x, y + 8), width: 10, height: 4),
-      Paint()..color = const Color(0xFFB8932E),
-    );
-
-    // Elegant curved stem
-    final stemPath = Path()
-      ..moveTo(x - 2, y + 6)
-      ..quadraticBezierTo(x - 3, y - 4, x - 1, y - 10)
-      ..lineTo(x + 1, y - 10)
-      ..quadraticBezierTo(x + 3, y - 4, x + 2, y + 6)
-      ..close();
-
-    canvas.drawPath(
-      stemPath,
-      Paint()..color = const Color(0xFFFFE55C),
-    );
-
-    // Premium glass shade (frosted)
-    final glassPath = Path()
-      ..moveTo(x - 12, y - 10)
-      ..lineTo(x + 12, y - 10)
-      ..lineTo(x + 10, y - 22)
-      ..quadraticBezierTo(x, y - 24, x - 10, y - 22)
-      ..close();
-
-    canvas.drawPath(
-      glassPath,
-      Paint()..color = const Color(0xFFFFF8DC).withOpacity(0.7),
-    );
-
-    // Glass rim (gold)
-    canvas.drawLine(
-      Offset(x - 12, y - 10),
-      Offset(x + 12, y - 10),
-      Paint()
-        ..color = const Color(0xFFD4AF37)
-        ..strokeWidth = 2,
-    );
-
-    // Bright warm glow
-    canvas.drawCircle(
-      Offset(x, y - 16),
-      15,
-      Paint()
-        ..color = const Color(0xFFFFE082).withOpacity(0.5)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 15),
-    );
-
-    // Light bulb visible inside
-    canvas.drawCircle(
-      Offset(x, y - 14),
-      4,
-      Paint()..color = const Color(0xFFFFFFFF),
-    );
-  }
-  void _drawMiniBookshelf(Canvas canvas, double x, double y) {
-    // Wooden bookshelf frame
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, y, 18, 28),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFF6D4C41),
-    );
-
-    // Shelf divider (middle)
-    canvas.drawRect(
-      Rect.fromLTWH(x + 1, y + 14, 16, 2),
-      Paint()..color = const Color(0xFF5D4037),
-    );
-
-    // Books on top shelf (colorful spines)
-    List<Color> bookColors = [
-      const Color(0xFF8B0000), // Dark red
-      const Color(0xFF2E5A3E), // Dark green
-      const Color(0xFF1C3A5A), // Dark blue
-      const Color(0xFF5D4037), // Brown
-    ];
-
-    for (int i = 0; i < 4; i++) {
-      canvas.drawRect(
-        Rect.fromLTWH(x + 2 + (i * 3.5), y + 2, 3, 11),
-        Paint()..color = bookColors[i],
-      );
-
-      // Book spine detail
-      canvas.drawLine(
-        Offset(x + 2.5 + (i * 3.5), y + 4),
-        Offset(x + 2.5 + (i * 3.5), y + 11),
-        Paint()
-          ..color = Colors.white.withOpacity(0.3)
-          ..strokeWidth = 0.5,
-      );
-    }
-
-    // Books on bottom shelf (different heights)
-    canvas.drawRect(
-      Rect.fromLTWH(x + 2, y + 17, 3, 10),
-      Paint()..color = const Color(0xFF4A5A2A),
-    );
-    canvas.drawRect(
-      Rect.fromLTWH(x + 6, y + 19, 3, 8),
-      Paint()..color = const Color(0xFF6A3A2A),
-    );
-    canvas.drawRect(
-      Rect.fromLTWH(x + 10, y + 18, 3, 9),
-      Paint()..color = const Color(0xFF2A3A5A),
-    );
-    canvas.drawRect(
-      Rect.fromLTWH(x + 14, y + 20, 3, 7),
-      Paint()..color = const Color(0xFF5A2A4A),
-    );
-
-    // Shelf outline
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, y, 18, 28),
-        const Radius.circular(2),
-      ),
-      Paint()
-        ..color = const Color(0xFF4E342E)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5,
-    );
-  }
-  // ========== GLOWING MUSHROOM (floor decoration, right corner) ==========
-  void _drawGlowingMushroom(Canvas canvas, double x, double y) {
-    // Soft bioluminescent glow on ground
-    canvas.drawCircle(
-      Offset(x, y - 10),
-      25,
-      Paint()
-        ..color = const Color(0xFF00E676).withOpacity(0.25)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20),
-    );
-
-    // Big mushroom stem
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x - 4, y - 18, 8, 18),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFFE0D6C8),
-    );
-    // Stem spots
-    canvas.drawCircle(Offset(x - 2, y - 10), 1.5, Paint()..color = const Color(0xFFCDBFAF));
-    canvas.drawCircle(Offset(x + 2, y - 14), 1, Paint()..color = const Color(0xFFCDBFAF));
-
-    // Big mushroom cap (glowing green)
-    final capPath = Path()
-      ..moveTo(x - 14, y - 16)
-      ..quadraticBezierTo(x - 15, y - 30, x, y - 34)
-      ..quadraticBezierTo(x + 15, y - 30, x + 14, y - 16)
-      ..close();
-    canvas.drawPath(capPath, Paint()..color = const Color(0xFF4CAF50));
-
-    // Cap glow
-    canvas.drawCircle(
-      Offset(x, y - 25),
-      12,
-      Paint()
-        ..color = const Color(0xFF69F0AE).withOpacity(0.5)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
-    );
-
-    // Cap spots (lighter circles)
-    canvas.drawCircle(Offset(x - 5, y - 26), 3, Paint()..color = const Color(0xFF81C784));
-    canvas.drawCircle(Offset(x + 4, y - 22), 2, Paint()..color = const Color(0xFF81C784));
-    canvas.drawCircle(Offset(x + 1, y - 30), 2.5, Paint()..color = const Color(0xFFA5D6A7));
-
-    // Cap outline
-    canvas.drawPath(
-      capPath,
-      Paint()
-        ..color = const Color(0xFF388E3C)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-    // Small mushroom (left, shorter)
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x - 14, y - 10, 5, 10),
-        const Radius.circular(1),
-      ),
-      Paint()..color = const Color(0xFFE0D6C8),
-    );
-
-    final smallCapPath = Path()
-      ..moveTo(x - 20, y - 9)
-      ..quadraticBezierTo(x - 20, y - 18, x - 12, y - 20)
-      ..quadraticBezierTo(x - 4, y - 18, x - 4, y - 9)
-      ..close();
-    canvas.drawPath(smallCapPath, Paint()..color = const Color(0xFF66BB6A));
-    canvas.drawCircle(Offset(x - 12, y - 15), 2, Paint()..color = const Color(0xFFA5D6A7));
-
-    // Tiny mushroom (right)
-    canvas.drawRect(
-      Rect.fromLTWH(x + 10, y - 6, 3, 6),
-      Paint()..color = const Color(0xFFE0D6C8),
-    );
-    canvas.drawCircle(Offset(x + 11, y - 7), 5, Paint()..color = const Color(0xFF81C784));
-    canvas.drawCircle(Offset(x + 10, y - 9), 1.5, Paint()..color = const Color(0xFFC8E6C9));
-
-    // Ground moss
-    for (int i = 0; i < 5; i++) {
-      canvas.drawCircle(
-        Offset(x - 12 + (i * 6), y + 2),
-        2,
-        Paint()..color = const Color(0xFF558B2F).withOpacity(0.6),
-      );
-    }
-  }
-
-// ========== BIG CRYSTAL CLUSTER (wall decoration, upper left) ==========
-  void _drawBigCrystalCluster(Canvas canvas, double x, double y) {
-    // Deep purple glow (different from wall_crystal's blue)
-    canvas.drawCircle(
-      Offset(x, y),
-      35,
-      Paint()
-        ..color = const Color(0xFFAB47BC).withOpacity(0.3)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 25),
-    );
-
-    // Inner bright glow
-    canvas.drawCircle(
-      Offset(x, y),
-      18,
-      Paint()
-        ..color = const Color(0xFFE040FB).withOpacity(0.2)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
-    );
-
-    // 5 crystal shards (different sizes, angles, colors)
-    // Center tall crystal (amethyst purple)
-    _drawSingleCrystal(canvas, x, y, 22, const Color(0xFFAB47BC), 0);
-    // Left crystal (pink)
-    _drawSingleCrystal(canvas, x - 12, y + 5, 16, const Color(0xFFEC407A), -0.2);
-    // Right crystal (violet)
-    _drawSingleCrystal(canvas, x + 11, y + 3, 18, const Color(0xFF7E57C2), 0.15);
-    // Far left small (magenta)
-    _drawSingleCrystal(canvas, x - 18, y + 10, 10, const Color(0xFFE040FB), -0.35);
-    // Far right small (lavender)
-    _drawSingleCrystal(canvas, x + 18, y + 8, 12, const Color(0xFFBA68C8), 0.3);
-
-    // Sparkle dots
-    canvas.drawCircle(Offset(x - 8, y - 15), 1.5, Paint()..color = Colors.white);
-    canvas.drawCircle(Offset(x + 10, y - 10), 1, Paint()..color = Colors.white.withOpacity(0.8));
-    canvas.drawCircle(Offset(x + 2, y - 20), 1.5, Paint()..color = Colors.white);
-  }
-
-// Helper for crystal cluster - draws one crystal shard with rotation
-  void _drawSingleCrystal(Canvas canvas, double x, double y, double height, Color color, double tilt) {
-    canvas.save();
-    canvas.translate(x, y);
-    canvas.rotate(tilt);
-
-    final crystalPath = Path()
-      ..moveTo(0, -height)
-      ..lineTo(-height * 0.3, height * 0.4)
-      ..lineTo(height * 0.3, height * 0.4)
-      ..close();
-
-    // Fill
-    canvas.drawPath(crystalPath, Paint()..color = color.withOpacity(0.85));
-
-    // Lighter face (left half for 3D)
-    final lightFace = Path()
-      ..moveTo(0, -height)
-      ..lineTo(-height * 0.3, height * 0.4)
-      ..lineTo(0, height * 0.3)
-      ..close();
-    canvas.drawPath(lightFace, Paint()..color = color.withOpacity(0.5));
-
-    // Outline
-    canvas.drawPath(
-      crystalPath,
-      Paint()
-        ..color = color
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5,
-    );
-
-    // Highlight edge
-    canvas.drawLine(
-      Offset(-height * 0.15, 0),
-      Offset(0, -height),
-      Paint()
-        ..color = Colors.white.withOpacity(0.6)
-        ..strokeWidth = 1,
-    );
-
-    canvas.restore();
-  }
-
-// ========== ANCIENT ARTIFACT (floor decoration, center) ==========
-  void _drawAncientArtifact(Canvas canvas, double x, double y) {
-    // Mysterious ground glow
-    canvas.drawCircle(
-      Offset(x, y - 15),
-      20,
-      Paint()
-        ..color = const Color(0xFFFFAB00).withOpacity(0.2)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 15),
-    );
-    // Wooden wall shelf underneath
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x - 22, y - 6, 44, 8),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFF8D6E63),
-    );
-
-// Shelf top highlight
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x - 22, y - 6, 44, 3),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFF9E8B7E).withOpacity(0.5),
-    );
-
-// Shelf outline
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x - 22, y - 6, 44, 8),
-        const Radius.circular(2),
-      ),
-      Paint()
-        ..color = const Color(0xFF5D4037)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-// Shelf bracket (left)
-    final leftBracket = Path()
-      ..moveTo(x - 18, y + 2)
-      ..lineTo(x - 18, y + 14)
-      ..lineTo(x - 10, y + 2)
-      ..close();
-    canvas.drawPath(leftBracket, Paint()..color = const Color(0xFF6D4C41));
-
-// Shelf bracket (right)
-    final rightBracket = Path()
-      ..moveTo(x + 18, y + 2)
-      ..lineTo(x + 18, y + 14)
-      ..lineTo(x + 10, y + 2)
-      ..close();
-    canvas.drawPath(rightBracket, Paint()..color = const Color(0xFF6D4C41));
-    // Stone pedestal base
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x - 16, y - 8, 32, 8),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFF6D6D6D),
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x - 12, y - 12, 24, 6),
-        const Radius.circular(2),
-      ),
-      Paint()..color = const Color(0xFF7D7D7D),
-    );
-
-    // Main stone body (carved totem shape)
-    final totemPath = Path()
-      ..moveTo(x - 10, y - 12)
-      ..lineTo(x - 8, y - 40)
-      ..quadraticBezierTo(x, y - 46, x + 8, y - 40)
-      ..lineTo(x + 10, y - 12)
-      ..close();
-
-    canvas.drawPath(totemPath, Paint()..color = const Color(0xFF8D8D8D));
-
-    // Carved face - eyes
-    canvas.drawCircle(Offset(x - 4, y - 32), 3, Paint()..color = const Color(0xFF5D5D5D));
-    canvas.drawCircle(Offset(x + 4, y - 32), 3, Paint()..color = const Color(0xFF5D5D5D));
-
-    // Glowing eye centers (amber)
-    canvas.drawCircle(Offset(x - 4, y - 32), 1.5, Paint()..color = const Color(0xFFFFAB00));
-    canvas.drawCircle(Offset(x + 4, y - 32), 1.5, Paint()..color = const Color(0xFFFFAB00));
-
-    // Eye glow
-    canvas.drawCircle(
-      Offset(x - 4, y - 32), 4,
-      Paint()..color = const Color(0xFFFFAB00).withOpacity(0.3)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
-    );
-    canvas.drawCircle(
-      Offset(x + 4, y - 32), 4,
-      Paint()..color = const Color(0xFFFFAB00).withOpacity(0.3)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
-    );
-
-    // Carved mouth
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(x - 4, y - 24, 8, 4),
-        const Radius.circular(1),
-      ),
-      Paint()..color = const Color(0xFF5D5D5D),
-    );
-
-    // Carved rune lines on body
-    canvas.drawLine(
-      Offset(x - 6, y - 18), Offset(x + 6, y - 18),
-      Paint()..color = const Color(0xFF6D6D6D)..strokeWidth = 1.5,
-    );
-    canvas.drawLine(
-      Offset(x, y - 20), Offset(x, y - 14),
-      Paint()..color = const Color(0xFF6D6D6D)..strokeWidth = 1.5,
-    );
-
-    // Stone outline
-    canvas.drawPath(
-      totemPath,
-      Paint()..color = const Color(0xFF5D5D5D)..style = PaintingStyle.stroke..strokeWidth = 2,
-    );
-
-    // Floating rune particles (mystical)
-    canvas.drawCircle(Offset(x - 12, y - 38), 1.5, Paint()..color = const Color(0xFFFFAB00).withOpacity(0.7));
-    canvas.drawCircle(Offset(x + 14, y - 42), 1, Paint()..color = const Color(0xFFFFAB00).withOpacity(0.5));
-    canvas.drawCircle(Offset(x + 8, y - 48), 1.5, Paint()..color = const Color(0xFFFFD54F).withOpacity(0.6));
-  }
-
-// ========== ENCHANTED CRYSTAL (ceiling/wall, top center - premium!) ==========
-  void _drawEnchantedCrystal(Canvas canvas, double x, double y) {
-    // LARGE radiant glow (multi-layered, rainbow-ish)
-    canvas.drawCircle(
-      Offset(x, y),
-      45,
-      Paint()
-        ..color = const Color(0xFF00BCD4).withOpacity(0.15)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 35),
-    );
-    canvas.drawCircle(
-      Offset(x, y),
-      30,
-      Paint()
-        ..color = const Color(0xFF00E5FF).withOpacity(0.2)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20),
-    );
-    canvas.drawCircle(
-      Offset(x, y),
-      15,
-      Paint()
-        ..color = const Color(0xFFFFFFFF).withOpacity(0.3)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
-    );
-
-    // Mounting bracket (attached to ceiling/wall)
-    canvas.drawRect(
-      Rect.fromLTWH(x - 3, y - 20, 6, 10),
-      Paint()..color = const Color(0xFFD4AF37),
-    );
-
-    // Main large crystal (faceted diamond shape)
-    final mainPath = Path()
-      ..moveTo(x, y - 12)       // top point
-      ..lineTo(x - 14, y + 5)   // left
-      ..lineTo(x - 8, y + 20)   // bottom-left
-      ..lineTo(x + 8, y + 20)   // bottom-right
-      ..lineTo(x + 14, y + 5)   // right
-      ..close();
-
-    // Crystal fill (cyan/teal gradient effect)
-    canvas.drawPath(mainPath, Paint()..color = const Color(0xFF00BCD4).withOpacity(0.8));
-
-    // Left face (lighter)
-    final leftFace = Path()
-      ..moveTo(x, y - 12)
-      ..lineTo(x - 14, y + 5)
-      ..lineTo(x - 8, y + 20)
-      ..lineTo(x, y + 12)
-      ..close();
-    canvas.drawPath(leftFace, Paint()..color = const Color(0xFF4DD0E1).withOpacity(0.6));
-
-    // Right face (darker)
-    final rightFace = Path()
-      ..moveTo(x, y - 12)
-      ..lineTo(x + 14, y + 5)
-      ..lineTo(x + 8, y + 20)
-      ..lineTo(x, y + 12)
-      ..close();
-    canvas.drawPath(rightFace, Paint()..color = const Color(0xFF00838F).withOpacity(0.5));
-
-    // Crystal outline (gold trim - premium feel)
-    canvas.drawPath(
-      mainPath,
-      Paint()
-        ..color = const Color(0xFFD4AF37)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-
-    // Internal facet lines
-    canvas.drawLine(Offset(x, y - 12), Offset(x, y + 20), Paint()..color = const Color(0xFF00ACC1)..strokeWidth = 1);
-    canvas.drawLine(Offset(x - 14, y + 5), Offset(x + 14, y + 5), Paint()..color = const Color(0xFF00ACC1)..strokeWidth = 1);
-
-    // Bright highlight (top-left reflection)
-    canvas.drawLine(
-      Offset(x - 6, y - 4),
-      Offset(x - 2, y - 10),
-      Paint()..color = Colors.white.withOpacity(0.8)..strokeWidth = 2,
-    );
-
-    // Sparkle rays emanating outward
-    for (int i = 0; i < 6; i++) {
-      double angle = (i * 60) * (3.14159 / 180);
-      double rayLen = 22 + (i % 2) * 8;
-      canvas.drawLine(
-        Offset(x + 16 * cos(angle), y + 5 + 16 * sin(angle)),
-        Offset(x + rayLen * cos(angle), y + 5 + rayLen * sin(angle)),
-        Paint()
-          ..color = const Color(0xFF00E5FF).withOpacity(0.4)
-          ..strokeWidth = 1.5,
-      );
-    }
-
-    // Bright sparkle dots
-    canvas.drawCircle(Offset(x - 18, y - 5), 2, Paint()..color = Colors.white);
-    canvas.drawCircle(Offset(x + 16, y + 15), 1.5, Paint()..color = Colors.white.withOpacity(0.8));
-    canvas.drawCircle(Offset(x - 10, y + 22), 1.5, Paint()..color = const Color(0xFF00E5FF));
-    canvas.drawCircle(Offset(x + 20, y - 8), 1, Paint()..color = Colors.white);
-  }
-
-
-  void _drawEmoji(Canvas canvas, String emoji, double x, double y, double size) {
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: emoji,
-        style: TextStyle(fontSize: size),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
-    textPainter.paint(
-      canvas,
-      Offset(x - textPainter.width / 2, y - textPainter.height / 2),
-    );
-  }
-
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true; // ← ADD THIS HERE!
-
-}
-
-double cos(double radians) => math.cos(radians);
-double sin(double radians) => math.sin(radians);
-
-// ITEM PICKER SHEET
-class ItemPickerSheet extends StatelessWidget {
-  final Character character;
-  final CaveDecorations decorations;
-  final PlacementSpot spot;
-  final Function(String) onItemSelected;
-
-  const ItemPickerSheet({super.key, 
-    required this.character,
-    required this.decorations,
-    required this.spot,
-    required this.onItemSelected,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    List<DecorationItem> allItems = decorations.getItemsByCategory(spot.category);
-    List<DecorationItem> ownedItems = decorations.getOwnedItemsByCategory(spot.category);
-
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.7,
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                "Choose ${spot.category.toUpperCase()}",
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.close, color: Colors.white),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ],
-          ),
-          const Divider(color: Colors.white24),
-          const SizedBox(height: 10),
-          DefaultTabController(
-            length: 2,
-            child: Expanded(
-              child: Column(
-                children: [
-                  TabBar(
-                    indicatorColor: const Color(0xFF00d4ff),
-                    labelColor: const Color(0xFF00d4ff),
-                    unselectedLabelColor: Colors.white54,
-                    tabs: [
-                      Tab(text: "Owned (${ownedItems.length})"),
-                      Tab(text: "Shop (${allItems.length})"),
-                    ],
-                  ),
-                  Expanded(
-                    child: TabBarView(
+                  // Coins display
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
                       children: [
-                        _buildItemGrid(ownedItems, true, context),
-                        _buildItemGrid(allItems, false, context),
+                        const Text('🪙', style: TextStyle(fontSize: 20)),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${CurrencyService().coins}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ],
                     ),
                   ),
                 ],
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
 
-  // Method to open furniture dialog
-
-
-  Widget _buildItemGrid(List<DecorationItem> items, bool isOwned, BuildContext context) {
-    return GridView.builder(
-      padding: const EdgeInsets.only(top: 20),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 15,
-        mainAxisSpacing: 15,
-        childAspectRatio: 0.8,
-      ),
-      itemCount: items.length,
-      itemBuilder: (context, index) {
-        DecorationItem item = items[index];
-        bool canAfford = character.money >= item.cost;
-        bool alreadyOwned = item.isOwned;
-
-        return GestureDetector(
-          onTap: () {
-            if (isOwned) {
-              onItemSelected(item.id);
-            } else {
-              if (alreadyOwned) {
-                onItemSelected(item.id);
-              } else if (canAfford) {
-                bool success = decorations.purchaseItem(item.id, character.money);
-                if (success) {
-                  character.spendMoney(item.cost);
-                  onItemSelected(item.id);
-                }
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text("Not enough money! Need \$${item.cost}"),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-              }
-            }
-          },
-          child: Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFF0f3460),
-              borderRadius: BorderRadius.circular(15),
-              border: Border.all(
-                color: alreadyOwned
-                    ? Colors.green
-                    : (canAfford ? const Color(0xFF00d4ff) : Colors.red),
-                width: 2,
-              ),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  item.emoji,
-                  style: const TextStyle(fontSize: 40),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  item.name,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 5),
-                if (!isOwned)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: alreadyOwned
-                          ? Colors.green
-                          : (canAfford ? const Color(0xFF00d4ff) : Colors.red),
-                      borderRadius: BorderRadius.circular(10),
+            // Bottom shop button
+            Positioned(
+              bottom: 16,
+              left: 0,
+              right: 0,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Reset positions button (small)
+                  TextButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _initializeDefaultPositions();
+                      });
+                    },
+                    icon: const Icon(Icons.refresh, size: 16, color: Colors.white70),
+                    label: const Text(
+                      'Reset Positions',
+                      style: TextStyle(color: Colors.white70, fontSize: 12),
                     ),
-                    child: Text(
-                      alreadyOwned ? "Owned" : "\$${item.cost}",
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
+                    style: TextButton.styleFrom(
+                      backgroundColor: Colors.black38,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    ),
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  // Shop button
+                  Center(
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => CaveShopScreen(),
+                          ),
+                        );
+                        setState(() {}); // Refresh to show new furniture
+                      },
+                      icon: const Icon(Icons.shopping_bag),
+                      label: const Text('Furniture Shop'),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                        textStyle: const TextStyle(fontSize: 18),
                       ),
                     ),
                   ),
-              ],
+                ],
+              ),
             ),
-          ),
-        );
-      },
+          ],
+        ),
+      ),
     );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SIMPLE 2D ROOM PAINTER — Just Wall + Floor + Furniture
+// ═══════════════════════════════════════════════════════════════════════════
+
+class Simple2DRoomPainter extends CustomPainter {
+  final int stage;
+  final ui.Image? backgroundImage;
+  final Map<String, Offset> furniturePositions;
+  final String? draggingSpotId;
+  final Map<String, int> furnitureLevels;
+
+  Simple2DRoomPainter({
+    required this.stage,
+    this.backgroundImage,
+    required this.furniturePositions,
+    this.draggingSpotId,
+    required this.furnitureLevels,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Draw background image if available, otherwise draw simple background
+    if (backgroundImage != null) {
+      // Draw the cave background image to fill the canvas
+      paintImage(
+        canvas: canvas,
+        rect: Rect.fromLTWH(0, 0, size.width, size.height),
+        image: backgroundImage!,
+        fit: BoxFit.cover,
+      );
+    } else {
+      // Fallback: simple gradient background
+      final bgPaint = Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            const Color(0xFF1a1a1a),
+            const Color(0xFF2d2d1f),
+          ],
+        ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+      canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), bgPaint);
+    }
+
+    // Draw all placed furniture on top
+    _drawPlacedFurniture(canvas, size);
+  }
+
+  void _drawPlacedFurniture(Canvas canvas, Size size) {
+    final furnitureService = FurnitureService();
+
+    // Draw all furniture at their stored positions
+    for (var entry in furniturePositions.entries) {
+      final spotId = entry.key;
+      final position = entry.value;
+      final furnitureId = furnitureService.placedFurniture[spotId];
+
+      if (furnitureId == null) continue;
+
+      // Determine scale based on furniture type
+      double baseScale;
+      if (spotId.startsWith('decoration_spot_')) {
+        final decorNum = int.tryParse(spotId.replaceAll('decoration_spot_', '')) ?? 1;
+        baseScale = 0.65 + (decorNum % 3) * 0.1;
+      } else if (spotId == 'chair_spot') {
+        baseScale = 1.0;
+      } else if (spotId == 'kitchen_spot') {
+        baseScale = 1.5;
+      } else {
+        baseScale = 1.2;
+      }
+
+      // Level increases size slightly (up to +20% at level 10)
+      final level = furnitureLevels[furnitureId] ?? 1;
+      final levelScaleBonus = (level - 1) * 0.022;
+      final scale = baseScale + levelScaleBonus;
+
+      final fx = size.width * position.dx;
+      final fy = size.height * position.dy;
+
+      // Highlight if being dragged
+      final isDragging = spotId == draggingSpotId;
+
+      if (isDragging) {
+        final glowPaint = Paint()
+          ..color = const Color(0xFF00FFFF).withOpacity(0.3)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 15);
+        canvas.drawCircle(Offset(fx, fy), 40, glowPaint);
+      }
+
+      // Level aura (drawn BEHIND furniture)
+      if (level >= 3) {
+        _drawLevelAura(canvas, fx, fy, level, scale);
+      }
+
+      // Draw furniture
+      _drawFurnitureItem(
+        canvas,
+        size,
+        furnitureId,
+        position.dx,
+        position.dy,
+        scale: scale,
+      );
+
+      // Level overlay effects (drawn ON TOP of furniture)
+      if (level >= 5) {
+        _drawLevelOverlay(canvas, fx, fy, level, scale);
+      }
+
+      // Draw level badge
+      if (level > 1) {
+        _drawLevelBadge(canvas, fx, fy, level, scale);
+      }
+    }
+  }
+
+  void _drawLevelBadge(Canvas canvas, double x, double y, int level, double furnitureScale) {
+    // Position badge at top-right of furniture
+    final badgeX = x + 35 * furnitureScale;
+    final badgeY = y - 35 * furnitureScale;
+    final badgeSize = 18.0;
+
+    // Badge background (color based on level)
+    Color badgeColor;
+    if (level >= 10) {
+      badgeColor = const Color(0xFFFFD700); // Gold
+    } else if (level >= 7) {
+      badgeColor = const Color(0xFF9C27B0); // Purple
+    } else if (level >= 4) {
+      badgeColor = const Color(0xFF2196F3); // Blue
+    } else {
+      badgeColor = const Color(0xFF4CAF50); // Green
+    }
+
+    // Badge glow
+    final glowPaint = Paint()
+      ..color = badgeColor.withOpacity(0.4)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+    canvas.drawCircle(Offset(badgeX, badgeY), badgeSize + 3, glowPaint);
+
+    // Badge circle
+    final badgePaint = Paint()
+      ..color = badgeColor
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(badgeX, badgeY), badgeSize, badgePaint);
+
+    // Badge border
+    final borderPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5;
+    canvas.drawCircle(Offset(badgeX, badgeY), badgeSize, borderPaint);
+
+    // Level text
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: '$level',
+        style: TextStyle(
+          color: level >= 10 ? Colors.black : Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+
+    textPainter.layout();
+    textPainter.paint(
+      canvas,
+      Offset(
+        badgeX - textPainter.width / 2,
+        badgeY - textPainter.height / 2,
+      ),
+    );
+
+    // Star icon for max level
+    if (level >= 10) {
+      _drawStar(canvas, badgeX, badgeY - badgeSize - 8, 6, Colors.amber);
+    }
+  }
+
+  void _drawStar(Canvas canvas, double x, double y, double size, Color color) {
+    final path = Path();
+    for (int i = 0; i < 5; i++) {
+      final angle = (i * 4 * math.pi / 5) - math.pi / 2;
+      final radius = i % 2 == 0 ? size : size / 2;
+      final pointX = x + math.cos(angle) * radius;
+      final pointY = y + math.sin(angle) * radius;
+
+      if (i == 0) {
+        path.moveTo(pointX, pointY);
+      } else {
+        path.lineTo(pointX, pointY);
+      }
+    }
+    path.close();
+
+    canvas.drawPath(path, Paint()..color = color);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  LEVEL VISUAL SYSTEM — Tier-based auras, overlays, and effects
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /// Drawn BEHIND furniture — ambient light and ground glow
+  void _drawLevelAura(Canvas canvas, double x, double y, int level, double scale) {
+    // Tier colors
+    Color auraColor;
+    double auraOpacity;
+    double auraRadius;
+
+    if (level >= 9) {
+      // 👑 LEGENDARY (9-10) — Golden divine aura
+      auraColor = const Color(0xFFFFD700);
+      auraOpacity = 0.55;
+      auraRadius = 65 * scale;
+    } else if (level >= 7) {
+      // ✨ ENCHANTED (7-8) — Purple magical aura
+      auraColor = const Color(0xFFAA44FF);
+      auraOpacity = 0.45;
+      auraRadius = 55 * scale;
+    } else if (level >= 5) {
+      // ⚒️ CRAFTED (5-6) — Blue cool aura
+      auraColor = const Color(0xFF44AAFF);
+      auraOpacity = 0.35;
+      auraRadius = 45 * scale;
+    } else {
+      // 🔨 REPAIRED (3-4) — Warm amber glow
+      auraColor = const Color(0xFFFF9944);
+      auraOpacity = 0.25;
+      auraRadius = 38 * scale;
+    }
+
+    // Soft outer glow on ground
+    canvas.drawCircle(
+      Offset(x, y + 10),
+      auraRadius,
+      Paint()
+        ..color = auraColor.withOpacity(auraOpacity * 0.4)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, auraRadius * 0.5),
+    );
+
+    // Ground circle light pool
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x, y + 20), width: auraRadius * 1.4, height: auraRadius * 0.4),
+      Paint()
+        ..color = auraColor.withOpacity(auraOpacity * 0.3)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14),
+    );
+
+    // Legendary: rotating ring effect (static ring since no animation)
+    if (level >= 9) {
+      final ringPaint = Paint()
+        ..color = const Color(0xFFFFD700).withOpacity(0.4)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5;
+      canvas.drawOval(
+        Rect.fromCenter(center: Offset(x, y + 15), width: 80 * scale, height: 22 * scale),
+        ringPaint,
+      );
+      // Outer ring
+      canvas.drawOval(
+        Rect.fromCenter(center: Offset(x, y + 15), width: 96 * scale, height: 28 * scale),
+        Paint()
+          ..color = const Color(0xFFFFD700).withOpacity(0.15)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 4,
+      );
+    }
+
+    // Enchanted: swirling ring
+    if (level >= 7 && level < 9) {
+      canvas.drawOval(
+        Rect.fromCenter(center: Offset(x, y + 15), width: 72 * scale, height: 18 * scale),
+        Paint()
+          ..color = const Color(0xFFAA44FF).withOpacity(0.3)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2,
+      );
+    }
+  }
+
+  /// Drawn ON TOP of furniture — trim, runes, sparkles
+  void _drawLevelOverlay(Canvas canvas, double x, double y, int level, double scale) {
+    final random = math.Random(level * 7 + x.toInt());
+
+    if (level >= 9) {
+      // 👑 LEGENDARY — Gold trim shimmer + floating stars + rune circle
+
+      // Gold shimmer overlay on furniture body
+      canvas.drawCircle(
+        Offset(x, y - 5),
+        42 * scale,
+        Paint()
+          ..color = const Color(0xFFFFD700).withOpacity(0.08)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20),
+      );
+
+      // Floating gold sparkles above furniture
+      for (int i = 0; i < 8; i++) {
+        final sparkX = x + (random.nextDouble() - 0.5) * 70 * scale;
+        final sparkY = y - 30 - random.nextDouble() * 45 * scale;
+        final sparkSize = (1.5 + random.nextDouble() * 2.5) * scale;
+
+        // Sparkle glow
+        canvas.drawCircle(
+          Offset(sparkX, sparkY),
+          sparkSize + 3,
+          Paint()
+            ..color = const Color(0xFFFFD700).withOpacity(0.5)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+        );
+        // Sparkle core
+        canvas.drawCircle(
+          Offset(sparkX, sparkY),
+          sparkSize,
+          Paint()..color = const Color(0xFFFFF9C4),
+        );
+
+        // Cross-sparkle lines
+        final crossPaint = Paint()
+          ..color = const Color(0xFFFFD700).withOpacity(0.8)
+          ..strokeWidth = 1.5;
+        canvas.drawLine(
+          Offset(sparkX - sparkSize * 2.5, sparkY),
+          Offset(sparkX + sparkSize * 2.5, sparkY),
+          crossPaint,
+        );
+        canvas.drawLine(
+          Offset(sparkX, sparkY - sparkSize * 2.5),
+          Offset(sparkX, sparkY + sparkSize * 2.5),
+          crossPaint,
+        );
+      }
+
+      // Crown symbol above furniture
+      _drawCrown(canvas, x, y - 55 * scale, scale);
+
+    } else if (level >= 7) {
+      // ✨ ENCHANTED — Purple runes + floating motes
+
+      // Purple shimmer
+      canvas.drawCircle(
+        Offset(x, y - 5),
+        38 * scale,
+        Paint()
+          ..color = const Color(0xFFAA44FF).withOpacity(0.07)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18),
+      );
+
+      // Floating purple motes
+      for (int i = 0; i < 5; i++) {
+        final moteX = x + (random.nextDouble() - 0.5) * 55 * scale;
+        final moteY = y - 20 - random.nextDouble() * 40 * scale;
+        final moteSize = (1.5 + random.nextDouble() * 2) * scale;
+
+        canvas.drawCircle(
+          Offset(moteX, moteY),
+          moteSize + 3,
+          Paint()
+            ..color = const Color(0xFFAA44FF).withOpacity(0.5)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+        );
+        canvas.drawCircle(
+          Offset(moteX, moteY),
+          moteSize,
+          Paint()..color = const Color(0xFFDD88FF),
+        );
+      }
+
+      // Rune symbols floating around furniture
+      _drawRuneSymbols(canvas, x, y, scale, const Color(0xFFAA44FF));
+
+    } else if (level >= 5) {
+      // ⚒️ CRAFTED — Blue shimmer + light rays
+
+      // Cool blue shimmer
+      canvas.drawCircle(
+        Offset(x, y - 5),
+        34 * scale,
+        Paint()
+          ..color = const Color(0xFF44AAFF).withOpacity(0.06)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16),
+      );
+
+      // Floating blue motes (fewer)
+      for (int i = 0; i < 3; i++) {
+        final moteX = x + (random.nextDouble() - 0.5) * 45 * scale;
+        final moteY = y - 15 - random.nextDouble() * 30 * scale;
+
+        canvas.drawCircle(
+          Offset(moteX, moteY),
+          (1.5 + random.nextDouble() * 1.5) * scale + 2,
+          Paint()
+            ..color = const Color(0xFF44AAFF).withOpacity(0.5)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+        );
+        canvas.drawCircle(
+          Offset(moteX, moteY),
+          (1.5 + random.nextDouble() * 1.5) * scale,
+          Paint()..color = const Color(0xFFAACCFF),
+        );
+      }
+    }
+  }
+
+  void _drawCrown(Canvas canvas, double x, double y, double scale) {
+    final s = scale * 0.7;
+    final crownColor = const Color(0xFFFFD700);
+
+    final path = Path()
+      ..moveTo(x - 14 * s, y + 8 * s)
+      ..lineTo(x - 14 * s, y)
+      ..lineTo(x - 8 * s, y + 4 * s)
+      ..lineTo(x, y - 8 * s)
+      ..lineTo(x + 8 * s, y + 4 * s)
+      ..lineTo(x + 14 * s, y)
+      ..lineTo(x + 14 * s, y + 8 * s)
+      ..close();
+
+    // Crown glow
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = crownColor.withOpacity(0.4)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+    );
+    // Crown body
+    canvas.drawPath(path, Paint()..color = crownColor);
+    // Crown gems
+    for (int i = 0; i < 3; i++) {
+      canvas.drawCircle(
+        Offset(x + (i - 1) * 7 * s, y + 5 * s),
+        2 * s,
+        Paint()..color = [
+          const Color(0xFFFF4444),
+          const Color(0xFF44FF44),
+          const Color(0xFF4444FF),
+        ][i],
+      );
+    }
+  }
+
+  void _drawRuneSymbols(Canvas canvas, double x, double y, double scale, Color color) {
+    final random = math.Random(x.toInt() + 99);
+    final runePaint = Paint()
+      ..color = color.withOpacity(0.55)
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+
+    // 3 floating rune symbols around furniture
+    final positions = [
+      Offset(x - 40 * scale, y - 25 * scale),
+      Offset(x + 38 * scale, y - 20 * scale),
+      Offset(x - 5 * scale, y - 50 * scale),
+    ];
+
+    for (int i = 0; i < positions.length; i++) {
+      final rx = positions[i].dx;
+      final ry = positions[i].dy;
+      final s = (0.7 + random.nextDouble() * 0.3) * scale;
+
+      // Glow behind rune
+      canvas.drawCircle(
+        Offset(rx, ry), 7 * s,
+        Paint()
+          ..color = color.withOpacity(0.2)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+      );
+
+      // Simple rune shapes (angular lines)
+      switch (i % 3) {
+        case 0: // X shape
+          canvas.drawLine(Offset(rx - 5 * s, ry - 5 * s), Offset(rx + 5 * s, ry + 5 * s), runePaint);
+          canvas.drawLine(Offset(rx + 5 * s, ry - 5 * s), Offset(rx - 5 * s, ry + 5 * s), runePaint);
+          canvas.drawLine(Offset(rx - 5 * s, ry), Offset(rx + 5 * s, ry), runePaint);
+          break;
+        case 1: // Triangle
+          canvas.drawLine(Offset(rx, ry - 6 * s), Offset(rx + 5 * s, ry + 5 * s), runePaint);
+          canvas.drawLine(Offset(rx + 5 * s, ry + 5 * s), Offset(rx - 5 * s, ry + 5 * s), runePaint);
+          canvas.drawLine(Offset(rx - 5 * s, ry + 5 * s), Offset(rx, ry - 6 * s), runePaint);
+          canvas.drawLine(Offset(rx - 3 * s, ry + 2 * s), Offset(rx + 3 * s, ry + 2 * s), runePaint);
+          break;
+        case 2: // Angular character
+          canvas.drawLine(Offset(rx - 4 * s, ry - 6 * s), Offset(rx - 4 * s, ry + 6 * s), runePaint);
+          canvas.drawLine(Offset(rx - 4 * s, ry - 6 * s), Offset(rx + 4 * s, ry - 2 * s), runePaint);
+          canvas.drawLine(Offset(rx - 4 * s, ry), Offset(rx + 4 * s, ry + 4 * s), runePaint);
+          break;
+      }
+    }
+  }
+
+  void _drawFurnitureItem(
+      Canvas canvas,
+      Size size,
+      String furnitureId,
+      double xPercent,
+      double yPercent,
+      {double scale = 1.0}
+      ) {
+    final x = size.width * xPercent;
+    final y = size.height * yPercent;
+
+    // Save canvas state
+    canvas.save();
+
+    // Apply scaling from center of furniture
+    canvas.translate(x, y);
+    canvas.scale(scale);
+    canvas.translate(-x, -y);
+
+    // Draw based on furniture ID
+    switch (furnitureId) {
+    // ═══ BEDS ═══
+      case 'hay_pile':
+        _drawHayPile(canvas, x, y);
+        break;
+      case 'simple_cot':
+        _drawSimpleCot(canvas, x, y);
+        break;
+      case 'wood_bed':
+        _drawWoodBed(canvas, x, y);
+        break;
+
+    // ═══ DESKS ═══
+      case 'rock_desk':
+        _drawRockDesk(canvas, x, y);
+        break;
+      case 'wooden_desk':
+        _drawWoodenDesk(canvas, x, y);
+        break;
+      case 'sturdy_desk':
+        _drawSturdyDesk(canvas, x, y);
+        break;
+
+    // ═══ CHAIRS ═══
+      case 'tree_stump':
+        _drawTreeStump(canvas, x, y);
+        break;
+      case 'wooden_chair':
+        _drawWoodenChair(canvas, x, y);
+        break;
+      case 'comfy_chair':
+        _drawComfyChair(canvas, x, y);
+        break;
+
+    // ═══ KITCHEN ═══
+      case 'small_fire':
+        _drawSmallFire(canvas, x, y);
+        break;
+      case 'campfire':
+        _drawCampfire(canvas, x, y);
+        break;
+      case 'stone_oven':
+        _drawStoneOven(canvas, x, y);
+        break;
+
+    // ═══ DECORATIONS ═══
+      case 'small_rock':
+        _drawSmallRock(canvas, x, y);
+        break;
+      case 'moss_patch':
+        _drawMossPatch(canvas, x, y);
+        break;
+      case 'wall_torch':
+        _drawWallTorch(canvas, x, y);
+        break;
+      case 'cave_painting':
+        _drawCavePainting(canvas, x, y);
+        break;
+      case 'glowing_mushroom':
+        _drawGlowingMushroom(canvas, x, y);
+        break;
+      case 'crystal_cluster':
+        _drawCrystalCluster(canvas, x, y);
+        break;
+      case 'ancient_artifact':
+        _drawAncientArtifact(canvas, x, y);
+        break;
+      case 'enchanted_crystal':
+        _drawEnchantedCrystal(canvas, x, y);
+        break;
+    }
+
+    // Restore canvas state (undo scaling)
+    canvas.restore();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  FURNITURE DRAWING METHODS — Upgraded with shading, highlights, textures
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // ─────────────── BEDS ───────────────
+
+  void _drawHayPile(Canvas canvas, double x, double y) {
+    // REALISTIC HAY PILE - Natural straw bedding with individual strands
+
+    final hayGold = const Color(0xFFd4af37);
+    final hayBrown = const Color(0xFFb8860b);
+    final hayDark = const Color(0xFF8B6914);
+    final strawYellow = const Color(0xFFEEDD82);
+
+    // Shadow
+    final shadowPaint = Paint()
+      ..color = Colors.black.withOpacity(0.4)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x, y + 28), width: 95, height: 18),
+      shadowPaint,
+    );
+
+    // BASE PILE SHAPE - Irregular natural mound
+    final random = math.Random(42);
+
+    // Main pile body (organic shape)
+    final pilePath = Path()
+      ..moveTo(x - 45, y + 20)
+      ..quadraticBezierTo(x - 42, y + 10, x - 35, y + 5)
+      ..quadraticBezierTo(x - 25, y - 8, x - 10, y - 15)
+      ..quadraticBezierTo(x, y - 18, x + 10, y - 15)
+      ..quadraticBezierTo(x + 25, y - 8, x + 35, y + 5)
+      ..quadraticBezierTo(x + 42, y + 10, x + 45, y + 20)
+      ..close();
+
+    canvas.drawPath(
+      pilePath,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [strawYellow, hayGold, hayBrown, hayDark],
+      ).createShader(Rect.fromCenter(center: Offset(x, y + 2), width: 90, height: 38)),
+    );
+
+    // INDIVIDUAL HAY STRANDS - Realistic scattered straw
+    final strandPaint = Paint()
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+
+    // Layer 1: Dark strands (bottom/shadow)
+    for (int i = 0; i < 80; i++) {
+      final strandX = x - 40 + random.nextDouble() * 80;
+      final strandY = y - 12 + random.nextDouble() * 30;
+      final length = 8 + random.nextDouble() * 18;
+      final angle = random.nextDouble() * math.pi - math.pi / 2;
+
+      strandPaint.color = hayDark.withOpacity(0.6 + random.nextDouble() * 0.3);
+
+      canvas.drawLine(
+        Offset(strandX, strandY),
+        Offset(
+          strandX + math.cos(angle) * length,
+          strandY + math.sin(angle) * length,
+        ),
+        strandPaint,
+      );
+    }
+
+    // Layer 2: Mid-tone strands
+    for (int i = 0; i < 60; i++) {
+      final strandX = x - 38 + random.nextDouble() * 76;
+      final strandY = y - 15 + random.nextDouble() * 28;
+      final length = 10 + random.nextDouble() * 16;
+      final angle = random.nextDouble() * math.pi - math.pi / 2;
+
+      strandPaint.color = hayBrown.withOpacity(0.7 + random.nextDouble() * 0.2);
+
+      canvas.drawLine(
+        Offset(strandX, strandY),
+        Offset(
+          strandX + math.cos(angle) * length,
+          strandY + math.sin(angle) * length,
+        ),
+        strandPaint,
+      );
+    }
+
+    // Layer 3: Light strands (top/highlights)
+    for (int i = 0; i < 40; i++) {
+      final strandX = x - 35 + random.nextDouble() * 70;
+      final strandY = y - 18 + random.nextDouble() * 25;
+      final length = 6 + random.nextDouble() * 14;
+      final angle = random.nextDouble() * math.pi - math.pi / 2;
+
+      strandPaint.color = random.nextBool() ? hayGold : strawYellow;
+
+      canvas.drawLine(
+        Offset(strandX, strandY),
+        Offset(
+          strandX + math.cos(angle) * length,
+          strandY + math.sin(angle) * length,
+        ),
+        strandPaint,
+      );
+    }
+
+    // TEXTURE CLUMPS - Natural bundles of straw
+    final clumpPaint = Paint()..strokeWidth = 3..strokeCap = StrokeCap.round;
+
+    for (int i = 0; i < 15; i++) {
+      final clumpX = x - 30 + random.nextDouble() * 60;
+      final clumpY = y - 10 + random.nextDouble() * 25;
+      final clumpAngle = random.nextDouble() * math.pi - math.pi / 2;
+      final clumpLength = 12 + random.nextDouble() * 8;
+
+      clumpPaint.color = hayBrown.withOpacity(0.5);
+
+      canvas.drawLine(
+        Offset(clumpX, clumpY),
+        Offset(
+          clumpX + math.cos(clumpAngle) * clumpLength,
+          clumpY + math.sin(clumpAngle) * clumpLength,
+        ),
+        clumpPaint,
+      );
+    }
+
+    // DEPTH SHADOWS - Inside crevices
+    final crevicePaint = Paint()
+      ..color = hayDark.withOpacity(0.4)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x - 15, y + 5), width: 25, height: 12),
+      crevicePaint,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x + 20, y + 8), width: 20, height: 10),
+      crevicePaint,
+    );
+
+    // LOOSE STRANDS - Scattered around pile
+    final loosePaint = Paint()
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round;
+
+    for (int i = 0; i < 20; i++) {
+      final looseX = x - 50 + random.nextDouble() * 100;
+      final looseY = y + 15 + random.nextDouble() * 12;
+      final looseLength = 5 + random.nextDouble() * 10;
+      final looseAngle = random.nextDouble() * math.pi / 2;
+
+      loosePaint.color = hayGold.withOpacity(0.6);
+
+      canvas.drawLine(
+        Offset(looseX, looseY),
+        Offset(
+          looseX + math.cos(looseAngle) * looseLength,
+          looseY + math.sin(looseAngle) * looseLength,
+        ),
+        loosePaint,
+      );
+    }
+
+    // HIGHLIGHTS - Natural sheen on straw
+    final highlightPaint = Paint()
+      ..color = Colors.white.withOpacity(0.15)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x - 10, y - 12), width: 35, height: 15),
+      highlightPaint,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x + 15, y - 8), width: 25, height: 12),
+      highlightPaint,
+    );
+  }
+
+  void _drawSimpleCot(Canvas canvas, double x, double y) {
+    // REALISTIC COT - Simple camping bed with wooden frame and canvas
+
+    final woodBrown = const Color(0xFF8B4513);
+    final woodDark = const Color(0xFF654321);
+    final woodLight = const Color(0xFFa06535);
+    final canvasTan = const Color(0xFF9A8A7A);
+    final canvasDark = const Color(0xFF7A6A5A);
+    final ropeBrown = const Color(0xFF6B5A4A);
+
+    // Shadow
+    final shadowPaint = Paint()
+      ..color = Colors.black.withOpacity(0.35)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x, y + 38), width: 88, height: 15),
+      shadowPaint,
+    );
+
+    // WOODEN FRAME - Isometric construction
+
+    // Back legs (visible in 3/4 view)
+    void drawCotLeg(double legX, double legY, bool isBack) {
+      final legPath = Path()
+        ..moveTo(legX, legY)
+        ..lineTo(legX - 2, legY - 4)
+        ..lineTo(legX - 2, legY + 24)
+        ..lineTo(legX, legY + 28)
+        ..lineTo(legX + 4, legY + 26)
+        ..lineTo(legX + 4, legY - 2)
+        ..close();
+
+      canvas.drawPath(
+        legPath,
+        Paint()..shader = LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [woodDark, woodBrown, woodLight],
+        ).createShader(Rect.fromLTWH(legX - 2, legY - 4, 6, 32)),
+      );
+
+      // Wood grain on leg
+      final grainPaint = Paint()
+        ..color = woodDark.withOpacity(0.4)
+        ..strokeWidth = 1;
+      canvas.drawLine(
+        Offset(legX + 1, legY + 5),
+        Offset(legX + 1, legY + 23),
+        grainPaint,
+      );
+    }
+
+    // Draw all 4 legs
+    drawCotLeg(x - 40, y + 8, true);   // Back left
+    drawCotLeg(x + 32, y + 6, true);   // Back right
+    drawCotLeg(x - 42, y + 14, false); // Front left
+    drawCotLeg(x + 30, y + 12, false); // Front right
+
+    // SIDE RAILS - Wooden frame bars
+
+    // Left rail
+    final leftRail = Path()
+      ..moveTo(x - 40, y + 8)
+      ..lineTo(x - 42, y + 14)
+      ..lineTo(x - 39, y + 16)
+      ..lineTo(x - 37, y + 10)
+      ..close();
+
+    canvas.drawPath(leftRail, Paint()..color = woodBrown);
+
+    // Right rail
+    final rightRail = Path()
+      ..moveTo(x + 32, y + 6)
+      ..lineTo(x + 30, y + 12)
+      ..lineTo(x + 33, y + 14)
+      ..lineTo(x + 35, y + 8)
+      ..close();
+
+    canvas.drawPath(rightRail, Paint()..color = woodLight);
+
+    // CANVAS/FABRIC BED SURFACE - Stretched material
+
+    // Canvas top surface (slightly sagging in middle)
+    final canvasPath = Path()
+      ..moveTo(x - 38, y + 2)
+      ..lineTo(x - 40, y - 2)
+      ..lineTo(x + 32, y - 4)
+      ..lineTo(x + 34, y)
+      ..close();
+
+    canvas.drawPath(
+      canvasPath,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [canvasTan, canvasDark, canvasTan],
+      ).createShader(Rect.fromLTWH(x - 40, y - 4, 74, 6)),
+    );
+
+    // Canvas front face (sagging)
+    final canvasFront = Path()
+      ..moveTo(x - 38, y + 2)
+      ..quadraticBezierTo(x - 5, y + 8, x + 34, y)
+      ..lineTo(x + 34, y + 28)
+      ..quadraticBezierTo(x - 5, y + 32, x - 38, y + 28)
+      ..close();
+
+    canvas.drawPath(
+      canvasFront,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [canvasTan, canvasDark],
+      ).createShader(Rect.fromLTWH(x - 38, y, 72, 32)),
+    );
+
+    // Canvas weave texture
+    final weavePaint = Paint()
+      ..color = canvasDark.withOpacity(0.3)
+      ..strokeWidth = 1;
+
+    // Horizontal weave lines
+    for (int i = 0; i < 12; i++) {
+      canvas.drawLine(
+        Offset(x - 36, y + 4 + i * 2.5),
+        Offset(x + 32, y + 3 + i * 2.5),
+        weavePaint,
+      );
+    }
+
+    // Vertical weave lines
+    for (int i = 0; i < 15; i++) {
+      canvas.drawLine(
+        Offset(x - 35 + i * 5, y + 5),
+        Offset(x - 35 + i * 5, y + 27),
+        weavePaint,
+      );
+    }
+
+    // ROPE BINDINGS - Securing canvas to frame
+    final ropePaint = Paint()
+      ..color = ropeBrown
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+
+    // Rope wraps on sides
+    for (int i = 0; i < 6; i++) {
+      final ropeY = y + 6 + i * 4;
+
+      // Left side ropes
+      canvas.drawLine(
+        Offset(x - 38, ropeY),
+        Offset(x - 41, ropeY + 2),
+        ropePaint,
+      );
+
+      // Right side ropes
+      canvas.drawLine(
+        Offset(x + 34, ropeY - 1),
+        Offset(x + 31, ropeY + 1),
+        ropePaint,
+      );
+    }
+
+    // WEAR AND TEAR - Realistic used appearance
+
+    // Wrinkles in canvas
+    final wrinklePaint = Paint()
+      ..color = canvasDark.withOpacity(0.4)
+      ..strokeWidth = 1.5;
+
+    canvas.drawLine(Offset(x - 20, y + 10), Offset(x - 10, y + 18), wrinklePaint);
+    canvas.drawLine(Offset(x + 5, y + 12), Offset(x + 15, y + 20), wrinklePaint);
+
+    // Stains/dirt patches
+    final stainPaint = Paint()..color = const Color(0xFF5a4a3a).withOpacity(0.3);
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x - 8, y + 15), width: 15, height: 10),
+      stainPaint,
+    );
+
+    // Fabric highlights (worn shiny spots)
+    final shinePaint = Paint()
+      ..color = Colors.white.withOpacity(0.08)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x - 10, y + 10), width: 25, height: 12),
+      shinePaint,
+    );
+  }
+
+  void _drawWoodBed(Canvas canvas, double x, double y) {
+    // REALISTIC ISOMETRIC BED - 3/4 view perspective
+
+    final woodBrown = const Color(0xFF6B4423);
+    final woodDark = const Color(0xFF4a2f1a);
+    final woodLight = const Color(0xFF8B5A3C);
+    final fabricBeige = const Color(0xFF8B7B6B);
+    final fabricDark = const Color(0xFF6B5B4B);
+    final fabricLight = const Color(0xFFAB9B8B);
+
+    // Realistic shadow
+    final shadowPaint = Paint()
+      ..color = Colors.black.withOpacity(0.4)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x + 5, y + 55), width: 95, height: 22),
+      shadowPaint,
+    );
+
+    // BED FRAME - Isometric view from front-right angle
+
+    // Back legs (visible in 3/4 view)
+    void drawLeg(double legX, double legY, bool isBack) {
+      final legPath = Path()
+        ..moveTo(legX, legY)              // Top front
+        ..lineTo(legX - 3, legY - 6)      // Top back (isometric)
+        ..lineTo(legX - 3, legY + 22)     // Bottom back
+        ..lineTo(legX, legY + 28)         // Bottom front
+        ..lineTo(legX + 5, legY + 26)     // Bottom right
+        ..lineTo(legX + 5, legY)          // Top right
+        ..close();
+
+      // Leg gradient for 3D depth
+      canvas.drawPath(
+        legPath,
+        Paint()..shader = LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [woodDark, woodBrown, woodLight],
+        ).createShader(Rect.fromLTWH(legX - 3, legY, 8, 28)),
+      );
+
+      // Wood grain on leg
+      final grainPaint = Paint()
+        ..color = woodDark.withOpacity(0.3)
+        ..strokeWidth = 1;
+      for (int i = 0; i < 3; i++) {
+        canvas.drawLine(
+          Offset(legX + 1, legY + 5 + i * 8),
+          Offset(legX + 4, legY + 5 + i * 8),
+          grainPaint,
+        );
+      }
+    }
+
+    // Draw all 4 legs in isometric view
+    drawLeg(x - 35, y + 30, true);   // Back left
+    drawLeg(x + 28, y + 28, true);   // Back right
+    drawLeg(x - 38, y + 38, false);  // Front left
+    drawLeg(x + 25, y + 36, false);  // Front right
+
+    // HEADBOARD - Tall wooden panel with realistic thickness
+    final headboardPath = Path()
+      ..moveTo(x - 40, y - 20)          // Front top left
+      ..lineTo(x - 43, y - 26)          // Back top left (isometric)
+      ..lineTo(x + 35, y - 28)          // Back top right
+      ..lineTo(x + 38, y - 22)          // Front top right
+      ..lineTo(x + 38, y + 25)          // Front bottom right
+      ..lineTo(x + 35, y + 23)          // Back bottom right
+      ..lineTo(x - 43, y + 21)          // Back bottom left
+      ..lineTo(x - 40, y + 23)          // Front bottom left
+      ..close();
+
+    // Headboard front face
+    canvas.drawPath(
+      headboardPath,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+        colors: [woodDark, woodBrown, woodLight, woodBrown],
+      ).createShader(Rect.fromLTWH(x - 43, y - 26, 81, 51)),
+    );
+
+    // Headboard top edge (visible thickness)
+    final headboardTop = Path()
+      ..moveTo(x - 40, y - 20)
+      ..lineTo(x - 43, y - 26)
+      ..lineTo(x + 35, y - 28)
+      ..lineTo(x + 38, y - 22)
+      ..close();
+    canvas.drawPath(headboardTop, Paint()..color = woodLight);
+
+    // Headboard side edge
+    final headboardSide = Path()
+      ..moveTo(x + 38, y - 22)
+      ..lineTo(x + 35, y - 28)
+      ..lineTo(x + 35, y + 23)
+      ..lineTo(x + 38, y + 25)
+      ..close();
+    canvas.drawPath(headboardSide, Paint()..color = woodBrown);
+
+    // Wood grain on headboard
+    final headboardGrain = Paint()
+      ..color = woodDark.withOpacity(0.25)
+      ..strokeWidth = 1.5;
+    for (int i = 0; i < 8; i++) {
+      canvas.drawLine(
+        Offset(x - 38, y - 18 + i * 6),
+        Offset(x + 32, y - 16 + i * 6),
+        headboardGrain,
+      );
+    }
+
+    // MATTRESS - Realistic fabric with folds and seams
+
+    // Mattress top surface (isometric)
+    final mattressTop = Path()
+      ..moveTo(x - 35, y + 5)           // Front left
+      ..lineTo(x - 38, y + 1)           // Back left
+      ..lineTo(x + 30, y - 1)           // Back right
+      ..lineTo(x + 33, y + 3)           // Front right
+      ..close();
+
+    canvas.drawPath(
+      mattressTop,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [fabricLight, fabricBeige, fabricBeige],
+      ).createShader(Rect.fromLTWH(x - 38, y - 1, 71, 6)),
+    );
+
+    // Mattress front face
+    final mattressFront = Path()
+      ..moveTo(x - 35, y + 5)
+      ..lineTo(x + 33, y + 3)
+      ..lineTo(x + 33, y + 30)
+      ..lineTo(x - 35, y + 32)
+      ..close();
+
+    canvas.drawPath(
+      mattressFront,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [fabricBeige, fabricDark],
+      ).createShader(Rect.fromLTWH(x - 35, y + 3, 68, 29)),
+    );
+
+    // Mattress side face
+    final mattressSide = Path()
+      ..moveTo(x + 33, y + 3)
+      ..lineTo(x + 30, y - 1)
+      ..lineTo(x + 30, y + 26)
+      ..lineTo(x + 33, y + 30)
+      ..close();
+
+    canvas.drawPath(
+      mattressSide,
+      Paint()..color = fabricDark,
+    );
+
+    // Realistic quilted stitching pattern
+    final stitchPaint = Paint()
+      ..color = fabricDark.withOpacity(0.5)
+      ..strokeWidth = 1
+      ..style = PaintingStyle.stroke;
+
+    // Horizontal stitching lines
+    for (int i = 0; i < 4; i++) {
+      final stitchY = y + 10 + i * 7;
+      canvas.drawLine(
+        Offset(x - 32, stitchY),
+        Offset(x + 30, stitchY - 1),
+        stitchPaint,
+      );
+    }
+
+    // Vertical stitching lines
+    for (int i = 0; i < 5; i++) {
+      final stitchX = x - 28 + i * 14;
+      canvas.drawLine(
+        Offset(stitchX, y + 8),
+        Offset(stitchX + 2, y + 28),
+        stitchPaint,
+      );
+    }
+
+    // Fabric seam along edge
+    final seamPaint = Paint()
+      ..color = fabricDark
+      ..strokeWidth = 2;
+    canvas.drawLine(Offset(x - 35, y + 5), Offset(x + 33, y + 3), seamPaint);
+
+    // PILLOW - Realistic with fabric folds
+    final pillowPath = Path()
+      ..moveTo(x - 25, y + 8)
+      ..quadraticBezierTo(x - 22, y + 2, x - 10, y + 3)
+      ..quadraticBezierTo(x + 2, y + 2, x + 5, y + 8)
+      ..quadraticBezierTo(x + 3, y + 15, x - 8, y + 16)
+      ..quadraticBezierTo(x - 20, y + 15, x - 25, y + 8)
+      ..close();
+
+    canvas.drawPath(
+      pillowPath,
+      Paint()..shader = RadialGradient(
+        center: Alignment.topCenter,
+        radius: 0.9,
+        colors: [const Color(0xFFCBBBAB), const Color(0xFFAB9B8B)],
+      ).createShader(Rect.fromLTWH(x - 25, y + 2, 30, 14)),
+    );
+
+    // Pillow fold detail
+    final foldPaint = Paint()
+      ..color = const Color(0xFF8B7B6B).withOpacity(0.4)
+      ..strokeWidth = 1.5;
+    canvas.drawLine(Offset(x - 20, y + 10), Offset(x, y + 11), foldPaint);
+
+    // Subtle fabric highlights
+    final highlightPaint = Paint()
+      ..color = Colors.white.withOpacity(0.08)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x - 8, y + 12), width: 35, height: 12),
+      highlightPaint,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x - 12, y + 6), width: 18, height: 8),
+      highlightPaint,
+    );
+  }
+
+  // ─────────────── DESKS ───────────────
+
+  void _drawRockDesk(Canvas canvas, double x, double y) {
+    // REALISTIC STONE DESK - Primitive stone slab on rock pillars
+
+    final rockLight = const Color(0xFF909090);
+    final rockMid = const Color(0xFF707070);
+    final rockDark = const Color(0xFF484848);
+    final rockBlack = const Color(0xFF2a2a2a);
+
+    // Shadow
+    final shadowPaint = Paint()
+      ..color = Colors.black.withOpacity(0.5)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x, y + 54), width: 105, height: 18),
+      shadowPaint,
+    );
+
+    // STONE SUPPORT PILLARS - Irregular natural rocks
+
+    void drawStonePillar(double pillarX, bool isLeft) {
+      final random = math.Random(isLeft ? 100 : 200);
+
+      // Pillar body (irregular shape)
+      final pillarPath = Path()
+        ..moveTo(pillarX - 8, y + 12)
+        ..lineTo(pillarX - 10 + random.nextDouble() * 2, y + 8)
+        ..lineTo(pillarX - 7 + random.nextDouble() * 2, y - 2)
+        ..lineTo(pillarX + 8, y)
+        ..lineTo(pillarX + 10 - random.nextDouble() * 2, y + 10)
+        ..lineTo(pillarX + 7, y + 50)
+        ..lineTo(pillarX - 6, y + 50)
+        ..close();
+
+      canvas.drawPath(
+        pillarPath,
+        Paint()..shader = LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [rockBlack, rockDark, rockMid, rockLight],
+        ).createShader(Rect.fromLTWH(pillarX - 10, y, 20, 50)),
+      );
+
+      // Rock cracks and fissures
+      final crackPaint = Paint()
+        ..color = rockBlack
+        ..strokeWidth = 1.5 + random.nextDouble()
+        ..style = PaintingStyle.stroke;
+
+      for (int i = 0; i < 5; i++) {
+        final crackStart = Offset(
+          pillarX - 6 + random.nextDouble() * 12,
+          y + 5 + random.nextDouble() * 35,
+        );
+        final crackPath = Path()..moveTo(crackStart.dx, crackStart.dy);
+
+        for (int j = 0; j < 3; j++) {
+          crackPath.lineTo(
+            crackStart.dx + (random.nextDouble() - 0.5) * 8,
+            crackStart.dy + 5 + random.nextDouble() * 8,
+          );
+        }
+
+        canvas.drawPath(crackPath, crackPaint);
+      }
+
+      // Stone texture (small dots and chips)
+      final texturePaint = Paint()..color = rockDark;
+      for (int i = 0; i < 15; i++) {
+        canvas.drawCircle(
+          Offset(
+            pillarX - 6 + random.nextDouble() * 12,
+            y + 5 + random.nextDouble() * 42,
+          ),
+          random.nextDouble() * 1.5,
+          texturePaint,
+        );
+      }
+
+      // Highlights on rock surface
+      final highlightPaint = Paint()
+        ..color = rockLight.withOpacity(0.4);
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(pillarX + 4, y + 15 + random.nextDouble() * 10),
+          width: 6,
+          height: 10,
+        ),
+        highlightPaint,
+      );
+    }
+
+    // Draw both support pillars
+    drawStonePillar(x - 42, true);
+    drawStonePillar(x + 38, false);
+
+    // STONE DESKTOP SLAB - Heavy flat rock
+
+    final random = math.Random(300);
+
+    // Slab top surface (irregular shape)
+    final slabTop = Path()
+      ..moveTo(x - 52, y - 4)
+      ..lineTo(x - 50 + random.nextDouble() * 2, y - 10)
+      ..lineTo(x - 20 + random.nextDouble() * 3, y - 12)
+      ..lineTo(x + 10, y - 13)
+      ..lineTo(x + 40 - random.nextDouble() * 2, y - 11)
+      ..lineTo(x + 50, y - 6)
+      ..lineTo(x + 48, y - 2)
+      ..lineTo(x - 50, y)
+      ..close();
+
+    canvas.drawPath(
+      slabTop,
+      Paint()..shader = RadialGradient(
+        center: Alignment.topLeft,
+        radius: 1.3,
+        colors: [rockLight, rockMid, rockDark],
+      ).createShader(Rect.fromLTWH(x - 52, y - 13, 102, 13)),
+    );
+
+    // Slab front edge (thick stone)
+    final slabFront = Path()
+      ..moveTo(x - 52, y - 4)
+      ..lineTo(x + 50, y - 6)
+      ..lineTo(x + 48, y + 8)
+      ..lineTo(x - 50, y + 10)
+      ..close();
+
+    canvas.drawPath(
+      slabFront,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [rockMid, rockDark, rockBlack],
+      ).createShader(Rect.fromLTWH(x - 52, y - 6, 102, 16)),
+    );
+
+    // Slab right edge
+    final slabSide = Path()
+      ..moveTo(x + 50, y - 6)
+      ..lineTo(x + 48, y - 10)
+      ..lineTo(x + 46, y + 4)
+      ..lineTo(x + 48, y + 8)
+      ..close();
+
+    canvas.drawPath(slabSide, Paint()..color = rockDark);
+
+    // NATURAL STONE DETAILS
+
+    // Deep cracks in desktop slab
+    final slabCrackPaint = Paint()
+      ..color = rockBlack
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+
+    for (int i = 0; i < 8; i++) {
+      final crackStart = Offset(
+        x - 45 + random.nextDouble() * 90,
+        y - 10 + random.nextDouble() * 5,
+      );
+      final crackPath = Path()..moveTo(crackStart.dx, crackStart.dy);
+
+      for (int j = 0; j < 2; j++) {
+        crackPath.lineTo(
+          crackStart.dx + (random.nextDouble() - 0.5) * 15,
+          crackStart.dy + random.nextDouble() * 8,
+        );
+      }
+
+      canvas.drawPath(crackPath, slabCrackPaint);
+    }
+
+    // Chipped edges
+    final chipPaint = Paint()..color = rockDark;
+    for (int i = 0; i < 6; i++) {
+      final chipX = x - 48 + random.nextDouble() * 96;
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(chipX, y - 3),
+          width: 3 + random.nextDouble() * 4,
+          height: 2 + random.nextDouble() * 2,
+        ),
+        chipPaint,
+      );
+    }
+
+    // Stone grain and sediment layers
+    final layerPaint = Paint()
+      ..color = rockMid.withOpacity(0.3)
+      ..strokeWidth = 1;
+
+    for (int i = 0; i < 5; i++) {
+      canvas.drawLine(
+        Offset(x - 48, y - 8 + i * 3),
+        Offset(x + 46, y - 9 + i * 3),
+        layerPaint,
+      );
+    }
+
+    // Pitting and weathering on surface
+    final pitPaint = Paint()..color = rockBlack.withOpacity(0.5);
+    for (int i = 0; i < 20; i++) {
+      canvas.drawCircle(
+        Offset(
+          x - 45 + random.nextDouble() * 90,
+          y - 10 + random.nextDouble() * 8,
+        ),
+        random.nextDouble() * 2,
+        pitPaint,
+      );
+    }
+
+    // Moss/lichen growth in crevices
+    final mossPaint = Paint()..color = const Color(0xFF2a3a2a).withOpacity(0.6);
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x - 30, y - 2), width: 8, height: 5),
+      mossPaint,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x + 25, y), width: 6, height: 4),
+      mossPaint,
+    );
+
+    // Natural highlights on stone
+    final stoneShinePaint = Paint()
+      ..color = Colors.white.withOpacity(0.1)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
+
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x - 15, y - 9), width: 40, height: 12),
+      stoneShinePaint,
+    );
+  }
+
+  void _drawWoodenDesk(Canvas canvas, double x, double y) {
+    // REALISTIC WOODEN DESK - Simple carpentry with visible construction
+
+    final woodBrown = const Color(0xFF8B4513);
+    final woodMid = const Color(0xFF6B4513);
+    final woodDark = const Color(0xFF4a2f1a);
+    final woodLight = const Color(0xFFa06535);
+
+    // Shadow
+    final shadowPaint = Paint()
+      ..color = Colors.black.withOpacity(0.4)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x, y + 50), width: 100, height: 16),
+      shadowPaint,
+    );
+
+    // DESK LEGS - Simple square legs with isometric view
+
+    void drawSimpleLeg(double legX, double legY) {
+      // Leg front face
+      final legFront = Path()
+        ..moveTo(legX, legY)
+        ..lineTo(legX, legY + 40)
+        ..lineTo(legX + 8, legY + 38)
+        ..lineTo(legX + 8, legY - 2)
+        ..close();
+
+      canvas.drawPath(
+        legFront,
+        Paint()..shader = LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [woodDark, woodMid, woodBrown],
+        ).createShader(Rect.fromLTWH(legX, legY, 8, 40)),
+      );
+
+      // Leg side face
+      final legSide = Path()
+        ..moveTo(legX + 8, legY - 2)
+        ..lineTo(legX + 5, legY - 6)
+        ..lineTo(legX + 5, legY + 34)
+        ..lineTo(legX + 8, legY + 38)
+        ..close();
+
+      canvas.drawPath(legSide, Paint()..color = woodLight);
+
+      // Wood grain on leg (vertical)
+      final grainPaint = Paint()
+        ..color = woodDark.withOpacity(0.35)
+        ..strokeWidth = 1.2;
+
+      for (int i = 0; i < 6; i++) {
+        canvas.drawLine(
+          Offset(legX + 2, legY + 2 + i * 6),
+          Offset(legX + 2, legY + 8 + i * 6),
+          grainPaint,
+        );
+      }
+
+      // Wood knot on leg
+      if (legX < x) {
+        canvas.drawCircle(
+          Offset(legX + 4, legY + 18),
+          2,
+          Paint()..color = woodDark.withOpacity(0.7),
+        );
+      }
+    }
+
+    // Draw all 4 legs
+    drawSimpleLeg(x - 45, y + 8);  // Back left
+    drawSimpleLeg(x + 35, y + 6);  // Back right
+    drawSimpleLeg(x - 47, y + 14); // Front left
+    drawSimpleLeg(x + 33, y + 12); // Front right
+
+    // DESKTOP - Wooden planks joined together
+
+    // Desktop top surface
+    final desktopTop = Path()
+      ..moveTo(x - 50, y - 6)
+      ..lineTo(x + 48, y - 8)
+      ..lineTo(x + 45, y - 13)
+      ..lineTo(x - 53, y - 11)
+      ..close();
+
+    canvas.drawPath(
+      desktopTop,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [woodLight, woodBrown, woodMid],
+      ).createShader(Rect.fromLTWH(x - 53, y - 13, 101, 7)),
+    );
+
+    // Desktop front edge
+    final desktopFront = Path()
+      ..moveTo(x - 50, y - 6)
+      ..lineTo(x + 48, y - 8)
+      ..lineTo(x + 48, y + 6)
+      ..lineTo(x - 50, y + 8)
+      ..close();
+
+    canvas.drawPath(
+      desktopFront,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [woodBrown, woodDark],
+      ).createShader(Rect.fromLTWH(x - 50, y - 8, 98, 16)),
+    );
+
+    // Desktop side edge
+    final desktopSide = Path()
+      ..moveTo(x + 48, y - 8)
+      ..lineTo(x + 45, y - 13)
+      ..lineTo(x + 45, y + 1)
+      ..lineTo(x + 48, y + 6)
+      ..close();
+
+    canvas.drawPath(desktopSide, Paint()..color = woodLight);
+
+    // WOOD GRAIN DETAILS - Natural wood texture
+
+    final topGrainPaint = Paint()
+      ..color = woodDark.withOpacity(0.25)
+      ..strokeWidth = 1.5;
+
+    final random = math.Random(400);
+
+    // Long grain lines (direction of wood growth)
+    for (int i = 0; i < 15; i++) {
+      final startX = x - 48 + i * 7;
+      final variation = random.nextDouble() * 3 - 1.5;
+
+      canvas.drawLine(
+        Offset(startX, y - 10 + variation),
+        Offset(startX + 2, y - 4 + variation),
+        topGrainPaint,
+      );
+    }
+
+    // Plank seams (where boards join)
+    final seamPaint = Paint()
+      ..color = woodDark.withOpacity(0.4)
+      ..strokeWidth = 1.5;
+
+    canvas.drawLine(Offset(x - 15, y - 11), Offset(x - 15, y + 6), seamPaint);
+    canvas.drawLine(Offset(x + 18, y - 12), Offset(x + 18, y + 5), seamPaint);
+
+    // Wood knots and imperfections
+    final knotPaint = Paint()..color = woodDark.withOpacity(0.7);
+
+    // Large knot
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x - 28, y - 8), width: 6, height: 4),
+      knotPaint,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x - 28, y - 8), width: 3, height: 2),
+      Paint()..color = woodDark,
+    );
+
+    // Small knots
+    canvas.drawCircle(Offset(x + 25, y - 9), 2, knotPaint);
+    canvas.drawCircle(Offset(x + 5, y - 7), 1.5, knotPaint);
+
+    // Scratches and wear marks
+    final scratchPaint = Paint()
+      ..color = woodLight.withOpacity(0.4)
+      ..strokeWidth = 1;
+
+    canvas.drawLine(Offset(x - 20, y - 9), Offset(x - 8, y - 10), scratchPaint);
+    canvas.drawLine(Offset(x + 10, y - 10), Offset(x + 25, y - 11), scratchPaint);
+
+    // Edge beveling (rounded corner detail)
+    final bevelPaint = Paint()
+      ..color = woodLight
+      ..strokeWidth = 1.5;
+
+    canvas.drawLine(Offset(x - 50, y - 6), Offset(x + 48, y - 8), bevelPaint);
+
+    // Natural wood highlights
+    final highlightPaint = Paint()
+      ..color = Colors.white.withOpacity(0.12)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
+
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x - 15, y - 10), width: 50, height: 10),
+      highlightPaint,
+    );
+
+    // Dust/grime in corners
+    final grimePaint = Paint()
+      ..color = const Color(0xFF3a2a1a).withOpacity(0.3);
+
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x - 46, y + 4), width: 8, height: 5),
+      grimePaint,
+    );
+  }
+
+  void _drawSturdyDesk(Canvas canvas, double x, double y) {
+    // REALISTIC ISOMETRIC DESK - Professional construction
+
+    final woodBrown = const Color(0xFF6B4423);
+    final woodDark = const Color(0xFF4a2f1a);
+    final woodLight = const Color(0xFF8B5A3C);
+    final metalGray = const Color(0xFF5a5a5a);
+    final metalDark = const Color(0xFF3a3a3a);
+
+    // Realistic shadow
+    final shadowPaint = Paint()
+      ..color = Colors.black.withOpacity(0.45)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14);
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x + 3, y + 58), width: 110, height: 20),
+      shadowPaint,
+    );
+
+    // DESK LEGS - Isometric view with realistic construction
+
+    void drawRealisticLeg(double legX, double legY, bool isBack) {
+      // Leg has 3 visible faces in isometric view
+
+      // Front face
+      final frontFace = Path()
+        ..moveTo(legX, legY)
+        ..lineTo(legX, legY + 42)
+        ..lineTo(legX + 10, legY + 40)
+        ..lineTo(legX + 10, legY - 2)
+        ..close();
+
+      canvas.drawPath(
+        frontFace,
+        Paint()..shader = LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [woodDark, woodBrown],
+        ).createShader(Rect.fromLTWH(legX, legY, 10, 42)),
+      );
+
+      // Side face (isometric)
+      final sideFace = Path()
+        ..moveTo(legX + 10, legY - 2)
+        ..lineTo(legX + 7, legY - 7)
+        ..lineTo(legX + 7, legY + 35)
+        ..lineTo(legX + 10, legY + 40)
+        ..close();
+
+      canvas.drawPath(sideFace, Paint()..color = woodLight);
+
+      // Top face
+      final topFace = Path()
+        ..moveTo(legX, legY)
+        ..lineTo(legX + 10, legY - 2)
+        ..lineTo(legX + 7, legY - 7)
+        ..lineTo(legX - 3, legY - 5)
+        ..close();
+
+      canvas.drawPath(topFace, Paint()..color = woodLight);
+
+      // Wood grain detail
+      final grainPaint = Paint()
+        ..color = woodDark.withOpacity(0.3)
+        ..strokeWidth = 1;
+
+      for (int i = 0; i < 5; i++) {
+        canvas.drawLine(
+          Offset(legX + 2, legY + 5 + i * 8),
+          Offset(legX + 8, legY + 4 + i * 8),
+          grainPaint,
+        );
+      }
+    }
+
+    // Draw all 4 legs
+    drawRealisticLeg(x - 48, y + 16, true);   // Back left
+    drawRealisticLeg(x + 30, y + 14, true);   // Back right
+    drawRealisticLeg(x - 50, y + 22, false);  // Front left
+    drawRealisticLeg(x + 28, y + 20, false);  // Front right
+
+    // DESK TOP - Thick wooden surface with beveled edges
+
+    // Desktop top surface (isometric view)
+    final desktopTop = Path()
+      ..moveTo(x - 52, y - 6)           // Front left
+      ..lineTo(x + 50, y - 8)           // Front right
+      ..lineTo(x + 47, y - 14)          // Back right
+      ..lineTo(x - 55, y - 12)          // Back left
+      ..close();
+
+    canvas.drawPath(
+      desktopTop,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [woodLight, woodBrown, woodBrown],
+      ).createShader(Rect.fromLTWH(x - 55, y - 14, 105, 8)),
+    );
+
+    // Wood grain on desktop
+    final topGrainPaint = Paint()
+      ..color = woodDark.withOpacity(0.2)
+      ..strokeWidth = 1.5;
+
+    for (int i = 0; i < 12; i++) {
+      canvas.drawLine(
+        Offset(x - 50 + i * 9, y - 11),
+        Offset(x - 48 + i * 9, y - 7),
+        topGrainPaint,
+      );
+    }
+
+    // Wood knots
+    canvas.drawCircle(Offset(x - 20, y - 9), 2.5, Paint()..color = woodDark.withOpacity(0.6));
+    canvas.drawCircle(Offset(x + 25, y - 10), 2, Paint()..color = woodDark.withOpacity(0.5));
+
+    // Desktop front edge (thick panel)
+    final desktopFront = Path()
+      ..moveTo(x - 52, y - 6)
+      ..lineTo(x + 50, y - 8)
+      ..lineTo(x + 50, y + 10)
+      ..lineTo(x - 52, y + 12)
+      ..close();
+
+    canvas.drawPath(
+      desktopFront,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [woodBrown, woodDark],
+      ).createShader(Rect.fromLTWH(x - 52, y - 8, 102, 20)),
+    );
+
+    // Desktop right edge
+    final desktopSide = Path()
+      ..moveTo(x + 50, y - 8)
+      ..lineTo(x + 47, y - 14)
+      ..lineTo(x + 47, y + 4)
+      ..lineTo(x + 50, y + 10)
+      ..close();
+
+    canvas.drawPath(desktopSide, Paint()..color = woodLight);
+
+    // Beveled edge detail
+    final bevelPaint = Paint()
+      ..color = woodLight
+      ..strokeWidth = 2;
+    canvas.drawLine(Offset(x - 52, y - 6), Offset(x + 50, y - 8), bevelPaint);
+
+    // DRAWER - Realistic drawer with handle
+    final drawerFront = Path()
+      ..moveTo(x - 15, y + 2)
+      ..lineTo(x + 25, y + 1)
+      ..lineTo(x + 25, y + 14)
+      ..lineTo(x - 15, y + 15)
+      ..close();
+
+    // Drawer inset (recessed panel)
+    canvas.drawPath(
+      drawerFront,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [woodBrown, woodDark, woodBrown],
+      ).createShader(Rect.fromLTWH(x - 15, y + 1, 40, 14)),
+    );
+
+    // Drawer panel border
+    final panelBorder = Paint()
+      ..color = woodDark
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+    canvas.drawRect(
+      Rect.fromLTWH(x - 13, y + 3, 36, 10),
+      panelBorder,
+    );
+
+    // Metal drawer handle
+    final handlePath = Path()
+      ..addRRect(RRect.fromRectAndRadius(
+        Rect.fromCenter(center: Offset(x + 5, y + 8), width: 14, height: 4),
+        const Radius.circular(2),
+      ));
+
+    canvas.drawPath(
+      handlePath,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [metalGray, metalDark],
+      ).createShader(Rect.fromCenter(center: Offset(x + 5, y + 8), width: 14, height: 4)),
+    );
+
+    // Handle shine
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: Offset(x + 5, y + 7), width: 10, height: 1.5),
+        const Radius.circular(0.5),
+      ),
+      Paint()..color = Colors.white.withOpacity(0.4),
+    );
+
+    // SUPPORT BEAM - Structural cross-brace
+    final beamPath = Path()
+      ..moveTo(x - 45, y + 32)
+      ..lineTo(x + 43, y + 31)
+      ..lineTo(x + 43, y + 38)
+      ..lineTo(x - 45, y + 39)
+      ..close();
+
+    canvas.drawPath(
+      beamPath,
+      Paint()..color = woodDark,
+    );
+
+    // Beam top edge
+    final beamTop = Path()
+      ..moveTo(x - 45, y + 32)
+      ..lineTo(x + 43, y + 31)
+      ..lineTo(x + 40, y + 28)
+      ..lineTo(x - 48, y + 29)
+      ..close();
+
+    canvas.drawPath(beamTop, Paint()..color = woodBrown);
+
+    // Wood screws in beam (visible construction)
+    final screwPaint = Paint()..color = metalDark;
+    canvas.drawCircle(Offset(x - 35, y + 35), 1.5, screwPaint);
+    canvas.drawCircle(Offset(x, y + 34), 1.5, screwPaint);
+    canvas.drawCircle(Offset(x + 33, y + 34), 1.5, screwPaint);
+
+    // Screw slots
+    final slotPaint = Paint()
+      ..color = Colors.black
+      ..strokeWidth = 0.8;
+    canvas.drawLine(Offset(x - 36, y + 35), Offset(x - 34, y + 35), slotPaint);
+    canvas.drawLine(Offset(x - 1, y + 34), Offset(x + 1, y + 34), slotPaint);
+
+    // Realistic wear marks on desktop
+    final wearPaint = Paint()
+      ..color = woodLight.withOpacity(0.3)
+      ..strokeWidth = 1;
+
+    canvas.drawLine(Offset(x - 20, y - 8), Offset(x - 5, y - 9), wearPaint);
+    canvas.drawLine(Offset(x + 10, y - 9), Offset(x + 30, y - 10), wearPaint);
+
+    // Subtle highlight on top edge
+    final highlightPaint = Paint()
+      ..color = Colors.white.withOpacity(0.15)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x - 10, y - 11), width: 60, height: 8),
+      highlightPaint,
+    );
+  }
+
+  // ─────────────── CHAIRS ───────────────
+
+  void _drawTreeStump(Canvas canvas, double x, double y) {
+    // REALISTIC TREE STUMP - Natural wood with bark and growth rings
+
+    final barkDark = const Color(0xFF3a2010);
+    final barkMid = const Color(0xFF4a3020);
+    final barkLight = const Color(0xFF5a4030);
+    final woodBrown = const Color(0xFF8B6F47);
+    final woodLight = const Color(0xFFA58A5C);
+    final woodDark = const Color(0xFF6B4F27);
+    final ringDark = const Color(0xFF4a3522);
+
+    // Shadow
+    final shadowPaint = Paint()
+      ..color = Colors.black.withOpacity(0.5)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x, y + 35), width: 58, height: 14),
+      shadowPaint,
+    );
+
+    // STUMP BODY - Isometric cylinder view
+
+    // Bottom ellipse (ground level)
+    final bottomEllipse = Path()
+      ..addOval(Rect.fromCenter(center: Offset(x, y + 30), width: 54, height: 16));
+
+    canvas.drawPath(
+      bottomEllipse,
+      Paint()..shader = RadialGradient(
+        center: Alignment.center,
+        radius: 0.9,
+        colors: [barkMid, barkDark],
+      ).createShader(Rect.fromCenter(center: Offset(x, y + 30), width: 54, height: 16)),
+    );
+
+    // Stump sides (curved surface with bark texture)
+    final stumpSides = Path()
+      ..moveTo(x - 27, y + 30)
+      ..lineTo(x - 25, y - 15)
+      ..quadraticBezierTo(x, y - 18, x + 25, y - 15)
+      ..lineTo(x + 27, y + 30)
+      ..close();
+
+    canvas.drawPath(
+      stumpSides,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+        colors: [barkDark, barkMid, barkLight, barkMid, barkDark],
+      ).createShader(Rect.fromCenter(center: Offset(x, y + 8), width: 54, height: 48)),
+    );
+
+    // Realistic bark texture (vertical grooves and cracks)
+    final barkPaint = Paint()
+      ..color = barkDark
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+
+    final random = math.Random(42);
+
+    // Deep vertical bark cracks
+    for (int i = 0; i < 8; i++) {
+      final crackX = x - 24 + i * 6;
+      final crackDepth = random.nextDouble() * 5 + 2;
+
+      final crackPath = Path()
+        ..moveTo(crackX, y - 12 + random.nextDouble() * 5)
+        ..lineTo(crackX + crackDepth * 0.5, y + random.nextDouble() * 10)
+        ..lineTo(crackX - crackDepth * 0.3, y + 15 + random.nextDouble() * 8)
+        ..lineTo(crackX + crackDepth * 0.2, y + 28);
+
+      canvas.drawPath(crackPath, barkPaint);
+    }
+
+    // Bark ridges and bumps
+    final ridgePaint = Paint()
+      ..color = barkLight.withOpacity(0.6)
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+
+    for (int i = 0; i < 6; i++) {
+      final ridgeX = x - 20 + i * 7;
+      canvas.drawLine(
+        Offset(ridgeX, y - 8 + random.nextDouble() * 4),
+        Offset(ridgeX + 2, y + 10 + random.nextDouble() * 15),
+        ridgePaint,
+      );
+    }
+
+    // Moss patches on bark
+    final mossPaint = Paint()..color = const Color(0xFF2a4a2a).withOpacity(0.7);
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x - 18, y + 10), width: 12, height: 8),
+      mossPaint,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x + 15, y + 5), width: 10, height: 7),
+      mossPaint,
+    );
+
+    // TOP CUT SURFACE - Realistic wood grain and growth rings
+
+    final topSurface = Path()
+      ..addOval(Rect.fromCenter(center: Offset(x, y - 15), width: 50, height: 15));
+
+    canvas.drawPath(
+      topSurface,
+      Paint()..shader = RadialGradient(
+        center: Alignment.topLeft,
+        radius: 1.2,
+        colors: [woodLight, woodBrown, woodDark],
+      ).createShader(Rect.fromCenter(center: Offset(x, y - 15), width: 50, height: 15)),
+    );
+
+    // Growth rings (concentric circles - tree's age)
+    final ringCenter = Offset(x - 2, y - 16); // Slightly off-center (natural)
+
+    final ringPaint = Paint()
+      ..color = ringDark.withOpacity(0.7)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+
+    // Multiple growth rings
+    final ringRadii = [22.0, 18.0, 14.0, 10.0, 6.0, 3.0];
+    for (var radius in ringRadii) {
+      canvas.drawOval(
+        Rect.fromCenter(center: ringCenter, width: radius * 2, height: radius * 0.6),
+        ringPaint,
+      );
+    }
+
+    // Darker inner rings (denser wood)
+    final darkRingPaint = Paint()
+      ..color = ringDark
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+
+    canvas.drawOval(
+      Rect.fromCenter(center: ringCenter, width: 12, height: 7),
+      darkRingPaint,
+    );
+
+    // Center heartwood
+    canvas.drawOval(
+      Rect.fromCenter(center: ringCenter, width: 4, height: 2.5),
+      Paint()..color = barkDark,
+    );
+
+    // Radial wood grain lines (from center outward)
+    final grainPaint = Paint()
+      ..color = woodDark.withOpacity(0.4)
+      ..strokeWidth = 1;
+
+    for (int i = 0; i < 12; i++) {
+      final angle = (i * math.pi * 2) / 12 + random.nextDouble() * 0.3;
+      final startDist = 4 + random.nextDouble() * 3;
+      final endDist = 20 + random.nextDouble() * 5;
+
+      canvas.drawLine(
+        Offset(
+          ringCenter.dx + math.cos(angle) * startDist,
+          ringCenter.dy + math.sin(angle) * startDist * 0.6,
+        ),
+        Offset(
+          ringCenter.dx + math.cos(angle) * endDist,
+          ringCenter.dy + math.sin(angle) * endDist * 0.6,
+        ),
+        grainPaint,
+      );
+    }
+
+    // Wood knots and imperfections
+    final knotPaint = Paint()..color = barkDark.withOpacity(0.8);
+
+    // Large knot
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x + 12, y - 14), width: 6, height: 4),
+      knotPaint,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x + 12, y - 14), width: 3, height: 2),
+      Paint()..color = barkDark,
+    );
+
+    // Small knot
+    canvas.drawCircle(Offset(x - 10, y - 17), 2, knotPaint);
+
+    // Saw cut marks (irregular surface)
+    final sawPaint = Paint()
+      ..color = woodDark.withOpacity(0.3)
+      ..strokeWidth = 0.8;
+
+    for (int i = 0; i < 8; i++) {
+      final sawY = y - 18 + random.nextDouble() * 2;
+      canvas.drawLine(
+        Offset(x - 22, sawY),
+        Offset(x + 20, sawY),
+        sawPaint,
+      );
+    }
+
+    // Highlight on top surface (natural wood sheen)
+    final highlightPaint = Paint()
+      ..color = Colors.white.withOpacity(0.12)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x - 8, y - 18), width: 20, height: 8),
+      highlightPaint,
+    );
+
+    // Woodchips at base
+    final chipPaint = Paint()..color = woodLight.withOpacity(0.6);
+    for (int i = 0; i < 5; i++) {
+      final chipX = x - 15 + random.nextDouble() * 30;
+      final chipY = y + 28 + random.nextDouble() * 4;
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(chipX, chipY),
+          width: 3 + random.nextDouble() * 2,
+          height: 2,
+        ),
+        chipPaint,
+      );
+    }
+  }
+
+  void _drawWoodenChair(Canvas canvas, double x, double y) {
+    // REALISTIC WOODEN CHAIR - Simple carpentry with backrest
+
+    final woodBrown = const Color(0xFF8B4513);
+    final woodDark = const Color(0xFF654321);
+    final woodLight = const Color(0xFFa06535);
+
+    // Shadow
+    final shadowPaint = Paint()
+      ..color = Colors.black.withOpacity(0.38)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7);
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x, y + 50), width: 52, height: 12),
+      shadowPaint,
+    );
+
+    // BACKREST - Wooden frame with vertical slats
+
+    // Back frame posts (isometric view)
+    void drawBackPost(double postX) {
+      final postPath = Path()
+        ..moveTo(postX, y - 38)
+        ..lineTo(postX - 2, y - 42)
+        ..lineTo(postX - 2, y - 2)
+        ..lineTo(postX, y)
+        ..lineTo(postX + 3, y - 2)
+        ..lineTo(postX + 3, y - 40)
+        ..close();
+
+      canvas.drawPath(
+        postPath,
+        Paint()..shader = LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [woodDark, woodBrown, woodLight],
+        ).createShader(Rect.fromLTWH(postX - 2, y - 42, 5, 42)),
+      );
+    }
+
+    drawBackPost(x - 20);
+    drawBackPost(x + 17);
+
+    // Top rail of backrest
+    final topRail = Path()
+      ..moveTo(x - 20, y - 38)
+      ..lineTo(x - 22, y - 42)
+      ..lineTo(x + 15, y - 44)
+      ..lineTo(x + 17, y - 40)
+      ..close();
+
+    canvas.drawPath(topRail, Paint()..color = woodLight);
+
+    // Vertical slats (3 slats in backrest)
+    for (int i = 0; i < 3; i++) {
+      final slatX = x - 14 + i * 14;
+
+      final slatPath = Path()
+        ..moveTo(slatX, y - 35)
+        ..lineTo(slatX - 1, y - 38)
+        ..lineTo(slatX - 1, y - 8)
+        ..lineTo(slatX, y - 6)
+        ..lineTo(slatX + 4, y - 7)
+        ..lineTo(slatX + 4, y - 36)
+        ..close();
+
+      canvas.drawPath(
+        slatPath,
+        Paint()..shader = LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [woodDark, woodBrown],
+        ).createShader(Rect.fromLTWH(slatX - 1, y - 38, 5, 32)),
+      );
+
+      // Wood grain on slat
+      final slatGrain = Paint()
+        ..color = woodDark.withOpacity(0.4)
+        ..strokeWidth = 0.8;
+
+      canvas.drawLine(
+        Offset(slatX + 2, y - 33),
+        Offset(slatX + 2, y - 10),
+        slatGrain,
+      );
+    }
+
+    // SEAT - Wooden plank seat
+
+    // Seat top surface
+    final seatTop = Path()
+      ..moveTo(x - 24, y + 2)
+      ..lineTo(x - 26, y - 2)
+      ..lineTo(x + 20, y - 4)
+      ..lineTo(x + 22, y)
+      ..close();
+
+    canvas.drawPath(
+      seatTop,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [woodLight, woodBrown],
+      ).createShader(Rect.fromLTWH(x - 26, y - 4, 48, 6)),
+    );
+
+    // Seat front face
+    final seatFront = Path()
+      ..moveTo(x - 24, y + 2)
+      ..lineTo(x + 22, y)
+      ..lineTo(x + 22, y + 8)
+      ..lineTo(x - 24, y + 10)
+      ..close();
+
+    canvas.drawPath(
+      seatFront,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [woodBrown, woodDark],
+      ).createShader(Rect.fromLTWH(x - 24, y, 46, 10)),
+    );
+
+    // Seat side edge
+    final seatSide = Path()
+      ..moveTo(x + 22, y)
+      ..lineTo(x + 20, y - 4)
+      ..lineTo(x + 20, y + 4)
+      ..lineTo(x + 22, y + 8)
+      ..close();
+
+    canvas.drawPath(seatSide, Paint()..color = woodDark);
+
+    // Seat wood grain
+    final seatGrainPaint = Paint()
+      ..color = woodDark.withOpacity(0.3)
+      ..strokeWidth = 1;
+
+    for (int i = 0; i < 8; i++) {
+      canvas.drawLine(
+        Offset(x - 22 + i * 6, y - 2),
+        Offset(x - 22 + i * 6, y + 6),
+        seatGrainPaint,
+      );
+    }
+
+    // LEGS - Four wooden legs in isometric view
+
+    void drawChairLeg(double legX, double legY, bool isBack) {
+      final legPath = Path()
+        ..moveTo(legX, legY)
+        ..lineTo(legX - 1.5, legY - 3)
+        ..lineTo(legX - 1.5, legY + 35)
+        ..lineTo(legX, legY + 38)
+        ..lineTo(legX + 3.5, legY + 36)
+        ..lineTo(legX + 3.5, legY - 1)
+        ..close();
+
+      canvas.drawPath(
+        legPath,
+        Paint()..shader = LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [woodDark, woodBrown, woodLight],
+        ).createShader(Rect.fromLTWH(legX - 1.5, legY - 3, 5, 41)),
+      );
+
+      // Wood grain on leg
+      final legGrain = Paint()
+        ..color = woodDark.withOpacity(0.35)
+        ..strokeWidth = 1;
+
+      for (int i = 0; i < 5; i++) {
+        canvas.drawLine(
+          Offset(legX + 1, legY + 5 + i * 7),
+          Offset(legX + 1, legY + 10 + i * 7),
+          legGrain,
+        );
+      }
+    }
+
+    // Draw all 4 legs
+    drawChairLeg(x - 22, y, true);      // Back left (connects to backrest)
+    drawChairLeg(x + 18, y - 2, true);  // Back right
+    drawChairLeg(x - 22, y + 8, false); // Front left
+    drawChairLeg(x + 18, y + 6, false); // Front right
+
+    // SUPPORT RUNGS - Cross braces between legs
+
+    final rungPath = Path()
+      ..moveTo(x - 20, y + 28)
+      ..lineTo(x - 22, y + 26)
+      ..lineTo(x + 16, y + 24)
+      ..lineTo(x + 18, y + 26)
+      ..close();
+
+    canvas.drawPath(rungPath, Paint()..color = woodDark);
+
+    // Wood wear on seat (shiny from use)
+    final wearPaint = Paint()
+      ..color = woodLight.withOpacity(0.3)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x - 2, y + 2), width: 30, height: 12),
+      wearPaint,
+    );
+  }
+
+  void _drawComfyChair(Canvas canvas, double x, double y) {
+    // REALISTIC COMFY ARMCHAIR - Upholstered with wooden frame
+
+    final fabricBrown = const Color(0xFF7B5A3C);
+    final fabricDark = const Color(0xFF5B3A1C);
+    final fabricLight = const Color(0xFF9B7A5C);
+    final woodBrown = const Color(0xFF8B4513);
+    final woodDark = const Color(0xFF654321);
+    final woodLight = const Color(0xFFa06535);
+    final buttonDark = const Color(0xFF3a2010);
+
+    // Shadow
+    final shadowPaint = Paint()
+      ..color = Colors.black.withOpacity(0.45)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x, y + 54), width: 68, height: 16),
+      shadowPaint,
+    );
+
+    // PADDED BACKREST - Upholstered with button tufting
+
+    // Backrest body (curved for comfort)
+    final backrestPath = Path()
+      ..moveTo(x - 28, y - 45)
+      ..quadraticBezierTo(x - 26, y - 50, x - 20, y - 52)
+      ..quadraticBezierTo(x, y - 54, x + 20, y - 52)
+      ..quadraticBezierTo(x + 26, y - 50, x + 28, y - 45)
+      ..lineTo(x + 28, y - 5)
+      ..quadraticBezierTo(x + 25, y, x + 20, y + 2)
+      ..lineTo(x - 20, y + 2)
+      ..quadraticBezierTo(x - 25, y, x - 28, y - 5)
+      ..close();
+
+    canvas.drawPath(
+      backrestPath,
+      Paint()..shader = RadialGradient(
+        center: Alignment.centerLeft,
+        radius: 1.2,
+        colors: [fabricLight, fabricBrown, fabricDark],
+      ).createShader(Rect.fromCenter(center: Offset(x, y - 25), width: 56, height: 56)),
+    );
+
+    // Button tufting pattern (diamond quilting)
+    final tuftPaint = Paint()
+      ..color = fabricDark.withOpacity(0.5)
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+
+    // Tufted diamond pattern
+    for (int row = 0; row < 3; row++) {
+      for (int col = 0; col < 2; col++) {
+        final tuftX = x - 12 + col * 24;
+        final tuftY = y - 42 + row * 14;
+
+        // Diamond shape
+        final diamond = Path()
+          ..moveTo(tuftX, tuftY - 6)
+          ..lineTo(tuftX + 8, tuftY)
+          ..lineTo(tuftX, tuftY + 6)
+          ..lineTo(tuftX - 8, tuftY)
+          ..close();
+
+        canvas.drawPath(diamond, tuftPaint);
+
+        // Button in center
+        canvas.drawCircle(Offset(tuftX, tuftY), 2.5, Paint()..color = buttonDark);
+        canvas.drawCircle(Offset(tuftX, tuftY), 1.5, Paint()..color = fabricDark);
+      }
+    }
+
+    // Fabric creases and folds
+    final creasePaint = Paint()
+      ..color = fabricDark.withOpacity(0.35)
+      ..strokeWidth = 2;
+
+    canvas.drawLine(Offset(x - 18, y - 30), Offset(x - 15, y - 15), creasePaint);
+    canvas.drawLine(Offset(x + 18, y - 30), Offset(x + 15, y - 15), creasePaint);
+
+    // PADDED SEAT CUSHION
+
+    // Seat top surface (plush and rounded)
+    final seatPath = Path()
+      ..moveTo(x - 30, y + 4)
+      ..quadraticBezierTo(x - 28, y, x - 22, y + 2)
+      ..lineTo(x + 22, y)
+      ..quadraticBezierTo(x + 28, y - 2, x + 30, y + 2)
+      ..lineTo(x + 30, y + 8)
+      ..lineTo(x - 30, y + 10)
+      ..close();
+
+    canvas.drawPath(
+      seatPath,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [fabricLight, fabricBrown, fabricDark],
+      ).createShader(Rect.fromLTWH(x - 30, y, 60, 10)),
+    );
+
+    // Seat front face (cushioned)
+    final seatFront = Path()
+      ..moveTo(x - 30, y + 4)
+      ..quadraticBezierTo(x, y + 10, x + 30, y + 2)
+      ..lineTo(x + 30, y + 30)
+      ..quadraticBezierTo(x, y + 34, x - 30, y + 32)
+      ..close();
+
+    canvas.drawPath(
+      seatFront,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [fabricBrown, fabricDark],
+      ).createShader(Rect.fromLTWH(x - 30, y + 2, 60, 32)),
+    );
+
+    // Seat cushion seam
+    final seamPaint = Paint()
+      ..color = fabricDark
+      ..strokeWidth = 2;
+
+    canvas.drawLine(Offset(x - 28, y + 8), Offset(x + 28, y + 6), seamPaint);
+
+    // Seat button tufts
+    canvas.drawCircle(Offset(x - 10, y + 16), 2.5, Paint()..color = buttonDark);
+    canvas.drawCircle(Offset(x + 10, y + 15), 2.5, Paint()..color = buttonDark);
+
+    // WOODEN ARMRESTS - Polished wood
+
+    void drawArmrest(double armX, bool isLeft) {
+      final armPath = Path()
+        ..moveTo(isLeft ? x - 34 : x + 26, y - 10)
+        ..quadraticBezierTo(
+          isLeft ? x - 36 : x + 28,
+          y - 14,
+          isLeft ? x - 32 : x + 30,
+          y - 8,
+        )
+        ..lineTo(isLeft ? x - 32 : x + 30, y + 22)
+        ..lineTo(isLeft ? x - 26 : x + 24, y + 24)
+        ..lineTo(isLeft ? x - 26 : x + 24, y - 6)
+        ..close();
+
+      canvas.drawPath(
+        armPath,
+        Paint()..shader = LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: isLeft
+              ? [woodDark, woodBrown, woodLight]
+              : [woodLight, woodBrown, woodDark],
+        ).createShader(Rect.fromLTWH(
+          isLeft ? x - 36 : x + 24,
+          y - 14,
+          10,
+          38,
+        )),
+      );
+
+      // Armrest top surface (visible in isometric)
+      final armTop = Path()
+        ..moveTo(isLeft ? x - 34 : x + 26, y - 10)
+        ..quadraticBezierTo(
+          isLeft ? x - 36 : x + 28,
+          y - 14,
+          isLeft ? x - 32 : x + 30,
+          y - 8,
+        )
+        ..lineTo(isLeft ? x - 29 : x + 27, y - 10)
+        ..lineTo(isLeft ? x - 31 : x + 25, y - 12)
+        ..close();
+
+      canvas.drawPath(armTop, Paint()..color = woodLight);
+
+      // Wood grain on armrest
+      final armGrain = Paint()
+        ..color = woodDark.withOpacity(0.35)
+        ..strokeWidth = 1;
+
+      for (int i = 0; i < 4; i++) {
+        canvas.drawLine(
+          Offset(isLeft ? x - 31 : x + 27, y - 4 + i * 7),
+          Offset(isLeft ? x - 31 : x + 27, y + 1 + i * 7),
+          armGrain,
+        );
+      }
+
+      // Polished shine on armrest
+      final shinePaint = Paint()
+        ..color = Colors.white.withOpacity(0.15)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(isLeft ? x - 30 : x + 28, y + 5),
+          width: 8,
+          height: 15,
+        ),
+        shinePaint,
+      );
+    }
+
+    drawArmrest(x - 32, true);
+    drawArmrest(x + 28, false);
+
+    // WOODEN LEGS - Turned legs with isometric view
+
+    void drawTurnedLeg(double legX, double legY) {
+      // Leg shaft (tapered)
+      final legPath = Path()
+        ..moveTo(legX, legY)
+        ..lineTo(legX - 2, legY - 4)
+        ..lineTo(legX - 1, legY + 32)
+        ..lineTo(legX, legY + 36)
+        ..lineTo(legX + 5, legY + 34)
+        ..lineTo(legX + 4, legY - 2)
+        ..close();
+
+      canvas.drawPath(
+        legPath,
+        Paint()..shader = LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [woodDark, woodBrown, woodLight],
+        ).createShader(Rect.fromLTWH(legX - 2, legY - 4, 7, 40)),
+      );
+
+      // Decorative turning (bulge in middle)
+      canvas.drawOval(
+        Rect.fromCenter(center: Offset(legX + 2, legY + 18), width: 8, height: 6),
+        Paint()..color = woodBrown,
+      );
+
+      // Leg foot
+      canvas.drawOval(
+        Rect.fromCenter(center: Offset(legX + 2, legY + 35), width: 9, height: 4),
+        Paint()..color = woodDark,
+      );
+    }
+
+    // Draw front legs
+    drawTurnedLeg(x - 28, y + 14);
+    drawTurnedLeg(x + 20, y + 12);
+
+    // FABRIC WEAR AND HIGHLIGHTS
+
+    // Worn shiny spots on seat (from use)
+    final wearPaint = Paint()
+      ..color = fabricLight.withOpacity(0.25)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x - 8, y + 12), width: 28, height: 15),
+      wearPaint,
+    );
+
+    // Backrest highlight
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x - 6, y - 32), width: 22, height: 18),
+      Paint()
+        ..color = Colors.white.withOpacity(0.08)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+    );
+  }
+
+  // ─────────────── KITCHEN ───────────────
+
+  void _drawSmallFire(Canvas canvas, double x, double y) {
+    // REALISTIC SMALL FIRE PIT - Primitive cooking fire with rock ring
+
+    final rockLight = const Color(0xFF808080);
+    final rockMid = const Color(0xFF606060);
+    final rockDark = const Color(0xFF404040);
+    final ashGray = const Color(0xFF3a3a3a);
+
+    // Shadow
+    final shadowPaint = Paint()
+      ..color = Colors.black.withOpacity(0.4)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x, y + 6), width: 55, height: 12),
+      shadowPaint,
+    );
+
+    // Ash bed on ground
+    final ashPaint = Paint()..color = ashGray.withOpacity(0.5);
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x, y + 2), width: 38, height: 10),
+      ashPaint,
+    );
+
+    // ROCK RING - Natural stones arranged in circle
+
+    final random = math.Random(42);
+    final rockPositions = [
+      [x - 20, y - 3],
+      [x - 10, y - 22],
+      [x + 10, y - 22],
+      [x + 20, y - 3],
+      [x + 14, y + 14],
+      [x - 14, y + 14],
+    ];
+
+    for (int i = 0; i < rockPositions.length; i++) {
+      final pos = rockPositions[i];
+      final rockSize = 9 + random.nextDouble() * 4;
+
+      // Rock body (irregular shape)
+      final rockPath = Path()
+        ..addOval(Rect.fromCenter(
+          center: Offset(pos[0], pos[1]),
+          width: rockSize,
+          height: rockSize - 2,
+        ));
+
+      canvas.drawPath(
+        rockPath,
+        Paint()..shader = RadialGradient(
+          center: Alignment.topLeft,
+          radius: 1.0,
+          colors: [rockLight, rockMid, rockDark],
+        ).createShader(Rect.fromCenter(
+          center: Offset(pos[0], pos[1]),
+          width: rockSize,
+          height: rockSize,
+        )),
+      );
+
+      // Rock texture (small cracks)
+      if (random.nextBool()) {
+        final crackPaint = Paint()
+          ..color = rockDark
+          ..strokeWidth = 1;
+        canvas.drawLine(
+          Offset(pos[0] - 2, pos[1] - 2),
+          Offset(pos[0] + 2, pos[1] + 2),
+          crackPaint,
+        );
+      }
+
+      // Firelight reflection on rocks
+      if (i < 4) { // Only top rocks get firelight
+        canvas.drawCircle(
+          Offset(pos[0] - 2, pos[1] - 2),
+          2,
+          Paint()..color = const Color(0xFFFF6600).withOpacity(0.25),
+        );
+      }
+
+      // Rock highlight
+      canvas.drawCircle(
+        Offset(pos[0] - 2.5, pos[1] - 2.5),
+        1.5,
+        Paint()..color = Colors.white.withOpacity(0.15),
+      );
+    }
+
+    // BURNING EMBERS IN CENTER - Glowing coals
+
+    final emberGlow = const Color(0xFFFF4500);
+    final emberYellow = const Color(0xFFFFAA00);
+
+    for (int i = 0; i < 8; i++) {
+      final emberX = x + (random.nextDouble() - 0.5) * 16;
+      final emberY = y + (random.nextDouble() - 0.5) * 12;
+      final emberSize = 1.5 + random.nextDouble() * 2;
+
+      // Ember glow
+      canvas.drawCircle(
+        Offset(emberX, emberY),
+        emberSize + 2,
+        Paint()
+          ..color = emberGlow.withOpacity(0.6)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+      );
+
+      // Ember core
+      canvas.drawCircle(
+        Offset(emberX, emberY),
+        emberSize,
+        Paint()..color = random.nextBool() ? emberYellow : emberGlow,
+      );
+    }
+
+    // FLAMES - Layered realistic fire
+
+    final flameCenter = Offset(x, y - 8);
+
+    // Red base flame layer
+    final redFlame = Path()
+      ..moveTo(flameCenter.dx - 16, flameCenter.dy + 2)
+      ..quadraticBezierTo(
+        flameCenter.dx - 12, flameCenter.dy - 12,
+        flameCenter.dx - 6, flameCenter.dy - 22,
+      )
+      ..quadraticBezierTo(
+        flameCenter.dx - 2, flameCenter.dy - 28,
+        flameCenter.dx, flameCenter.dy - 32,
+      )
+      ..quadraticBezierTo(
+        flameCenter.dx + 2, flameCenter.dy - 28,
+        flameCenter.dx + 6, flameCenter.dy - 22,
+      )
+      ..quadraticBezierTo(
+        flameCenter.dx + 12, flameCenter.dy - 12,
+        flameCenter.dx + 16, flameCenter.dy + 2,
+      )
+      ..close();
+
+    canvas.drawPath(
+      redFlame,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.bottomCenter,
+        end: Alignment.topCenter,
+        colors: [
+          const Color(0xFFAA0000),
+          const Color(0xFFDD3300),
+          const Color(0xFFFF4500),
+        ],
+      ).createShader(Rect.fromCenter(center: flameCenter, width: 32, height: 36)),
+    );
+
+    // Orange middle flame layer
+    final orangeFlame = Path()
+      ..moveTo(flameCenter.dx - 12, flameCenter.dy)
+      ..quadraticBezierTo(
+        flameCenter.dx - 8, flameCenter.dy - 16,
+        flameCenter.dx - 3, flameCenter.dy - 26,
+      )
+      ..quadraticBezierTo(
+        flameCenter.dx, flameCenter.dy - 35,
+        flameCenter.dx + 3, flameCenter.dy - 26,
+      )
+      ..quadraticBezierTo(
+        flameCenter.dx + 8, flameCenter.dy - 16,
+        flameCenter.dx + 12, flameCenter.dy,
+      )
+      ..close();
+
+    canvas.drawPath(
+      orangeFlame,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.bottomCenter,
+        end: Alignment.topCenter,
+        colors: [
+          const Color(0xFFFF5500),
+          const Color(0xFFFF7700),
+          const Color(0xFFFF9900),
+        ],
+      ).createShader(Rect.fromCenter(center: flameCenter, width: 24, height: 37)),
+    );
+
+    // Yellow-white core flame
+    final yellowFlame = Path()
+      ..moveTo(flameCenter.dx - 7, flameCenter.dy - 8)
+      ..quadraticBezierTo(
+        flameCenter.dx - 3, flameCenter.dy - 22,
+        flameCenter.dx, flameCenter.dy - 38,
+      )
+      ..quadraticBezierTo(
+        flameCenter.dx + 3, flameCenter.dy - 22,
+        flameCenter.dx + 7, flameCenter.dy - 8,
+      )
+      ..close();
+
+    canvas.drawPath(
+      yellowFlame,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.bottomCenter,
+        end: Alignment.topCenter,
+        colors: [
+          const Color(0xFFFFAA00),
+          const Color(0xFFFFDD00),
+          const Color(0xFFFFFF99),
+        ],
+      ).createShader(Rect.fromCenter(
+        center: Offset(flameCenter.dx, flameCenter.dy - 18),
+        width: 14,
+        height: 32,
+      )),
+    );
+
+    // Flame tips (dancing points)
+    for (int i = 0; i < 2; i++) {
+      final tipX = flameCenter.dx + (i - 0.5) * 6;
+      final tipPath = Path()
+        ..moveTo(tipX - 3, flameCenter.dy - 32 - i * 2)
+        ..quadraticBezierTo(
+          tipX, flameCenter.dy - 40 - i * 3,
+          tipX + 3, flameCenter.dy - 32 - i * 2,
+        )
+        ..close();
+
+      canvas.drawPath(
+        tipPath,
+        Paint()..color = const Color(0xFFFFFFCC).withOpacity(0.9),
+      );
+    }
+
+    // FLOATING SPARKS - Rising embers
+
+    final sparkPaint = Paint();
+    for (int i = 0; i < 6; i++) {
+      final sparkX = flameCenter.dx + (random.nextDouble() - 0.5) * 20;
+      final sparkY = flameCenter.dy - 20 - random.nextDouble() * 25;
+      final sparkSize = 0.8 + random.nextDouble() * 1.5;
+
+      // Spark glow
+      canvas.drawCircle(
+        Offset(sparkX, sparkY),
+        sparkSize + 1.5,
+        Paint()
+          ..color = const Color(0xFFFF8800).withOpacity(0.4)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
+      );
+
+      // Spark core
+      canvas.drawCircle(
+        Offset(sparkX, sparkY),
+        sparkSize,
+        Paint()..color = const Color(0xFFFFDD00),
+      );
+    }
+
+    // HEAT GLOW - Multiple layers of warm light
+
+    final glowLayers = [
+      [30.0, 0.35, const Color(0xFFFF4500)],
+      [22.0, 0.45, const Color(0xFFFF6600)],
+      [15.0, 0.5, const Color(0xFFFF8800)],
+    ];
+
+    for (var layer in glowLayers) {
+      canvas.drawCircle(
+        flameCenter,
+        layer[0] as double,
+        Paint()
+          ..color = (layer[2] as Color).withOpacity(layer[1] as double)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
+      );
+    }
+
+    // Subtle smoke wisp
+    final smokePaint = Paint()
+      ..color = const Color(0xFF4a4a4a).withOpacity(0.12)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(flameCenter.dx + 2, flameCenter.dy - 45),
+        width: 15,
+        height: 10,
+      ),
+      smokePaint,
+    );
+  }
+
+  void _drawCampfire(Canvas canvas, double x, double y) {
+    // Shadow (larger, softer)
+    final shadowPaint = Paint()
+      ..color = Colors.black.withOpacity(0.45)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x, y + 18), width: 85, height: 18),
+      shadowPaint,
+    );
+
+    // Ash/charcoal base on ground
+    final ashPaint = Paint()..color = const Color(0xFF1a1a1a).withOpacity(0.6);
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x, y + 8), width: 50, height: 15),
+      ashPaint,
+    );
+
+    // Realistic rock ring with varied sizes and shading
+    final rockLight = const Color(0xFF909090);
+    final rockMid = const Color(0xFF707070);
+    final rockDark = const Color(0xFF484848);
+
+    final random = math.Random(200);
+    for (int i = 0; i < 8; i++) {
+      final angle = (i * math.pi * 2) / 8 + random.nextDouble() * 0.3;
+      final distance = 30 + random.nextDouble() * 4;
+      final rockX = x + math.cos(angle) * distance;
+      final rockY = y + math.sin(angle) * distance;
+      final rockSize = 12 + random.nextDouble() * 6;
+
+      // Rock body (irregular shape)
+      final rockPath = Path()
+        ..addOval(Rect.fromCenter(
+          center: Offset(rockX, rockY),
+          width: rockSize + 2,
+          height: rockSize - 1,
+        ));
+
+      canvas.drawPath(
+        rockPath,
+        Paint()..shader = RadialGradient(
+          center: Alignment.topLeft,
+          radius: 1.0,
+          colors: [rockLight, rockMid, rockDark],
+        ).createShader(Rect.fromCenter(
+          center: Offset(rockX, rockY),
+          width: rockSize,
+          height: rockSize,
+        )),
+      );
+
+      // Rock cracks
+      if (random.nextBool()) {
+        final crackPaint = Paint()
+          ..color = rockDark
+          ..strokeWidth = 1;
+        canvas.drawLine(
+          Offset(rockX - 3, rockY - 2),
+          Offset(rockX + 2, rockY + 3),
+          crackPaint,
+        );
+      }
+
+      // Firelight reflection on rocks
+      if (i % 2 == 0) {
+        canvas.drawCircle(
+          Offset(rockX - 2, rockY - 2),
+          2.5,
+          Paint()..color = const Color(0xFFFF8800).withOpacity(0.3),
+        );
+      }
+    }
+
+    // Charred burning logs with realistic detail
+    final logBurnt = const Color(0xFF1a0a00);
+    final logCharred = const Color(0xFF2d1510);
+    final logWood = const Color(0xFF4a2f1a);
+    final logLight = const Color(0xFF6b4423);
+    final emberGlow = const Color(0xFFFF4500);
+
+    void drawBurningLog(double startX, double startY, double endX, double endY, double width, bool isBurning) {
+      // Log body (charred at center, wood at ends)
+      final logPath = Path()
+        ..moveTo(startX, startY - width/2)
+        ..lineTo(endX, endY - width/2)
+        ..lineTo(endX, endY + width/2)
+        ..lineTo(startX, startY + width/2)
+        ..close();
+
+      canvas.drawPath(
+        logPath,
+        Paint()..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: isBurning
+              ? [logCharred, logBurnt, logCharred]
+              : [logWood, logCharred, logLight],
+        ).createShader(Rect.fromPoints(
+          Offset(startX, startY - width/2),
+          Offset(endX, endY + width/2),
+        )),
+      );
+
+      // Bark texture with cracks
+      final barkPaint = Paint()
+        ..color = logBurnt
+        ..strokeWidth = 1.5;
+
+      for (int i = 0; i < 5; i++) {
+        final t = i / 5;
+        final midX = startX + (endX - startX) * t;
+        final midY = startY + (endY - startY) * t;
+        canvas.drawLine(
+          Offset(midX, midY - width/2),
+          Offset(midX, midY + width/2),
+          barkPaint,
+        );
+      }
+
+      // Glowing embers on log surface
+      if (isBurning) {
+        for (int i = 0; i < 8; i++) {
+          final t = random.nextDouble();
+          final emberX = startX + (endX - startX) * t + (random.nextDouble() - 0.5) * width;
+          final emberY = startY + (endY - startY) * t + (random.nextDouble() - 0.5) * width/2;
+
+          // Ember glow
+          canvas.drawCircle(
+            Offset(emberX, emberY),
+            2 + random.nextDouble() * 1.5,
+            Paint()
+              ..color = emberGlow.withOpacity(0.8)
+              ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+          );
+
+          // Ember core
+          canvas.drawCircle(
+            Offset(emberX, emberY),
+            1 + random.nextDouble(),
+            Paint()..color = const Color(0xFFFFFF00),
+          );
+        }
+      }
+
+      // Charred edge highlight
+      final charredEdge = Paint()
+        ..color = emberGlow.withOpacity(0.4)
+        ..strokeWidth = 2;
+      canvas.drawLine(
+        Offset(startX, startY),
+        Offset(endX, endY),
+        charredEdge,
+      );
+    }
+
+    // Draw 3 logs at different angles
+    drawBurningLog(x - 30, y - 10, x + 30, y + 10, 13, true);  // Bottom log (burning)
+    drawBurningLog(x - 10, y - 30, x + 10, y + 30, 13, true);  // Vertical log (burning)
+    drawBurningLog(x - 24, y + 4, x + 22, y - 4, 11, false);   // Top log (less burnt)
+
+    // ENHANCED REALISTIC FLAMES
+    final flameCenter = Offset(x, y - 12);
+
+    // Base flame layer (wide, red-orange)
+    final baseFlame = Path()
+      ..moveTo(flameCenter.dx - 24, flameCenter.dy + 5)
+      ..quadraticBezierTo(
+        flameCenter.dx - 18, flameCenter.dy - 15,
+        flameCenter.dx - 10, flameCenter.dy - 28,
+      )
+      ..quadraticBezierTo(
+        flameCenter.dx - 6, flameCenter.dy - 38,
+        flameCenter.dx, flameCenter.dy - 48,
+      )
+      ..quadraticBezierTo(
+        flameCenter.dx + 6, flameCenter.dy - 38,
+        flameCenter.dx + 10, flameCenter.dy - 28,
+      )
+      ..quadraticBezierTo(
+        flameCenter.dx + 18, flameCenter.dy - 15,
+        flameCenter.dx + 24, flameCenter.dy + 5,
+      )
+      ..close();
+
+    canvas.drawPath(
+      baseFlame,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.bottomCenter,
+        end: Alignment.topCenter,
+        colors: [
+          const Color(0xFFAA0000),
+          const Color(0xFFDD3300),
+          const Color(0xFFFF5500),
+        ],
+      ).createShader(Rect.fromCenter(center: flameCenter, width: 48, height: 55)),
+    );
+
+    // Middle flame (orange-yellow)
+    final midFlame = Path()
+      ..moveTo(flameCenter.dx - 18, flameCenter.dy + 2)
+      ..quadraticBezierTo(
+        flameCenter.dx - 12, flameCenter.dy - 20,
+        flameCenter.dx - 4, flameCenter.dy - 38,
+      )
+      ..quadraticBezierTo(
+        flameCenter.dx, flameCenter.dy - 52,
+        flameCenter.dx + 4, flameCenter.dy - 38,
+      )
+      ..quadraticBezierTo(
+        flameCenter.dx + 12, flameCenter.dy - 20,
+        flameCenter.dx + 18, flameCenter.dy + 2,
+      )
+      ..close();
+
+    canvas.drawPath(
+      midFlame,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.bottomCenter,
+        end: Alignment.topCenter,
+        colors: [
+          const Color(0xFFFF6600),
+          const Color(0xFFFF8800),
+          const Color(0xFFFFAA00),
+        ],
+      ).createShader(Rect.fromCenter(center: flameCenter, width: 36, height: 56)),
+    );
+
+    // Inner flame (bright yellow-white)
+    final innerFlame = Path()
+      ..moveTo(flameCenter.dx - 12, flameCenter.dy - 8)
+      ..quadraticBezierTo(
+        flameCenter.dx - 6, flameCenter.dy - 28,
+        flameCenter.dx, flameCenter.dy - 56,
+      )
+      ..quadraticBezierTo(
+        flameCenter.dx + 6, flameCenter.dy - 28,
+        flameCenter.dx + 12, flameCenter.dy - 8,
+      )
+      ..close();
+
+    canvas.drawPath(
+      innerFlame,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.bottomCenter,
+        end: Alignment.topCenter,
+        colors: [
+          const Color(0xFFFFCC00),
+          const Color(0xFFFFFF66),
+          const Color(0xFFFFFFCC),
+        ],
+      ).createShader(Rect.fromCenter(
+        center: Offset(flameCenter.dx, flameCenter.dy - 25),
+        width: 24,
+        height: 50,
+      )),
+    );
+
+    // Dancing flame tips (irregular points)
+    for (int i = 0; i < 3; i++) {
+      final tipX = flameCenter.dx + (i - 1) * 8;
+      final tipPath = Path()
+        ..moveTo(tipX - 4, flameCenter.dy - 45 - i * 3)
+        ..quadraticBezierTo(
+          tipX, flameCenter.dy - 58 - i * 4,
+          tipX + 4, flameCenter.dy - 45 - i * 3,
+        )
+        ..close();
+
+      canvas.drawPath(
+        tipPath,
+        Paint()..color = const Color(0xFFFFFF99).withOpacity(0.9),
+      );
+    }
+
+    // Floating embers above fire
+    for (int i = 0; i < 12; i++) {
+      final emberX = flameCenter.dx + (random.nextDouble() - 0.5) * 40;
+      final emberY = flameCenter.dy - 30 - random.nextDouble() * 50;
+      final emberSize = 1 + random.nextDouble() * 2;
+
+      // Ember glow
+      canvas.drawCircle(
+        Offset(emberX, emberY),
+        emberSize + 2,
+        Paint()
+          ..color = const Color(0xFFFF6600).withOpacity(0.5)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+      );
+
+      // Ember particle
+      canvas.drawCircle(
+        Offset(emberX, emberY),
+        emberSize,
+        Paint()..color = const Color(0xFFFFCC00),
+      );
+    }
+
+    // Heat distortion shimmer effect (subtle)
+    final shimmerPaint = Paint()
+      ..color = const Color(0xFFFFAA00).withOpacity(0.08)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 25);
+    canvas.drawOval(
+      Rect.fromCenter(center: flameCenter, width: 70, height: 100),
+      shimmerPaint,
+    );
+
+    // Multi-layered fire glow (warm light spreading)
+    final glowLayers = [
+      [45.0, 0.4, const Color(0xFFFF4500)],
+      [35.0, 0.5, const Color(0xFFFF6600)],
+      [25.0, 0.6, const Color(0xFFFF8800)],
+    ];
+
+    for (var layer in glowLayers) {
+      canvas.drawCircle(
+        flameCenter,
+        layer[0] as double,
+        Paint()
+          ..color = (layer[2] as Color).withOpacity(layer[1] as double)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18),
+      );
+    }
+
+    // Smoke wisps (very subtle, rising)
+    final smokePaint = Paint()
+      ..color = const Color(0xFF404040).withOpacity(0.15)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+
+    for (int i = 0; i < 3; i++) {
+      final smokeX = flameCenter.dx + (random.nextDouble() - 0.5) * 20;
+      final smokeY = flameCenter.dy - 60 - i * 15;
+      canvas.drawOval(
+        Rect.fromCenter(center: Offset(smokeX, smokeY), width: 20 + i * 5, height: 15 + i * 3),
+        smokePaint,
+      );
+    }
+  }
+
+  void _drawStoneOven(Canvas canvas, double x, double y) {
+    // REALISTIC STONE OVEN - Brick dome oven with fire
+
+    final stoneLight = const Color(0xFF8a8a7a);
+    final stoneMid = const Color(0xFF6a6a5a);
+    final stoneDark = const Color(0xFF4a4a3a);
+    final brickRed = const Color(0xFF9B5A3C);
+    final brickOrange = const Color(0xFFa06535);
+    final brickDark = const Color(0xFF6b3a1a);
+    final mortarGray = const Color(0xFF7a7a6a);
+    final sootBlack = const Color(0xFF2a1a0a);
+
+    // Shadow
+    final shadowPaint = Paint()
+      ..color = Colors.black.withOpacity(0.5)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14);
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x, y + 60), width: 105, height: 20),
+      shadowPaint,
+    );
+
+    // STONE BASE PLATFORM - Rough-hewn stone blocks
+
+    final random = math.Random(500);
+
+    // Base body with isometric perspective
+    final basePath = Path()
+      ..moveTo(x - 50, y + 28)
+      ..lineTo(x - 52, y + 24)
+      ..lineTo(x + 48, y + 22)
+      ..lineTo(x + 50, y + 26)
+      ..lineTo(x + 48, y + 58)
+      ..lineTo(x - 48, y + 58)
+      ..close();
+
+    canvas.drawPath(
+      basePath,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [stoneMid, stoneDark],
+      ).createShader(Rect.fromCenter(center: Offset(x, y + 42), width: 100, height: 36)),
+    );
+
+    // Stone block seams (irregular)
+    final seamPaint = Paint()
+      ..color = stoneDark
+      ..strokeWidth = 2;
+
+    for (int i = 0; i < 4; i++) {
+      final seamX = x - 42 + i * 24 + random.nextDouble() * 4;
+      canvas.drawLine(
+        Offset(seamX, y + 30),
+        Offset(seamX - 1, y + 54),
+        seamPaint,
+      );
+    }
+
+    // Horizontal stone courses
+    for (int row = 0; row < 2; row++) {
+      canvas.drawLine(
+        Offset(x - 48, y + 38 + row * 12),
+        Offset(x + 48, y + 37 + row * 12),
+        seamPaint,
+      );
+    }
+
+    // Stone texture (cracks and chips)
+    final crackPaint = Paint()
+      ..color = stoneDark.withOpacity(0.6)
+      ..strokeWidth = 1;
+
+    for (int i = 0; i < 8; i++) {
+      final crackX = x - 40 + random.nextDouble() * 80;
+      final crackY = y + 32 + random.nextDouble() * 22;
+      canvas.drawLine(
+        Offset(crackX, crackY),
+        Offset(crackX + random.nextDouble() * 6 - 3, crackY + random.nextDouble() * 6),
+        crackPaint,
+      );
+    }
+
+    // BRICK OVEN DOME - Realistic brickwork with masonry
+
+    // Dome body (rounded brick construction)
+    final domePath = Path()
+      ..moveTo(x - 44, y + 28)
+      ..lineTo(x + 44, y + 26)
+      ..quadraticBezierTo(x + 42, y + 12, x + 34, y - 2)
+      ..quadraticBezierTo(x + 18, y - 14, x, y - 18)
+      ..quadraticBezierTo(x - 18, y - 14, x - 34, y - 2)
+      ..quadraticBezierTo(x - 42, y + 12, x - 44, y + 28)
+      ..close();
+
+    canvas.drawPath(
+      domePath,
+      Paint()..shader = RadialGradient(
+        center: Alignment.topLeft,
+        radius: 1.3,
+        colors: [brickOrange, brickRed, brickDark],
+      ).createShader(Rect.fromCenter(center: Offset(x, y + 10), width: 88, height: 48)),
+    );
+
+    // REALISTIC BRICK PATTERN - Individual bricks with mortar
+
+    final mortarPaint = Paint()
+      ..color = mortarGray
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+
+    // Brick courses (horizontal rows)
+    for (int row = 0; row < 5; row++) {
+      final rowY = y + 24 - row * 9;
+      final rowRadius = 42 - row * 9;
+
+      if (rowRadius > 0) {
+        // Draw mortar line
+        canvas.drawLine(
+          Offset(x - rowRadius, rowY),
+          Offset(x + rowRadius, rowY),
+          mortarPaint,
+        );
+
+        // Individual bricks in this row
+        final brickCount = 4 + (4 - row);
+        final brickWidth = (rowRadius * 2) / brickCount;
+
+        for (int b = 0; b < brickCount; b++) {
+          final brickX = x - rowRadius + b * brickWidth;
+
+          // Vertical mortar between bricks
+          if (b > 0) {
+            canvas.drawLine(
+              Offset(brickX, rowY),
+              Offset(brickX, rowY - 9),
+              mortarPaint,
+            );
+          }
+
+          // Individual brick color variation
+          if (random.nextDouble() > 0.3) {
+            final brickColor = random.nextBool() ? brickRed : brickOrange;
+            canvas.drawRect(
+              Rect.fromLTWH(brickX + 1, rowY - 8, brickWidth - 2, 7),
+              Paint()..color = brickColor.withOpacity(0.3),
+            );
+          }
+        }
+      }
+    }
+
+    // OVEN OPENING - Arched entrance with depth
+
+    final archPath = Path()
+      ..moveTo(x - 26, y + 22)
+      ..lineTo(x + 26, y + 21)
+      ..quadraticBezierTo(x + 22, y + 12, x + 18, y + 4)
+      ..quadraticBezierTo(x + 10, y - 4, x, y - 8)
+      ..quadraticBezierTo(x - 10, y - 4, x - 18, y + 4)
+      ..quadraticBezierTo(x - 22, y + 12, x - 26, y + 22)
+      ..close();
+
+    // Dark interior
+    canvas.drawPath(
+      archPath,
+      Paint()..color = sootBlack,
+    );
+
+    // Arch inner lip (shows thickness)
+    final archInner = Path()
+      ..moveTo(x - 24, y + 21)
+      ..lineTo(x + 24, y + 20)
+      ..quadraticBezierTo(x + 20, y + 11, x + 16, y + 5)
+      ..quadraticBezierTo(x + 9, y - 2, x, y - 6)
+      ..quadraticBezierTo(x - 9, y - 2, x - 16, y + 5)
+      ..quadraticBezierTo(x - 20, y + 11, x - 24, y + 21)
+      ..close();
+
+    canvas.drawPath(
+      archInner,
+      Paint()..color = const Color(0xFF1a0a00),
+    );
+
+    // FIRE INSIDE - Realistic flames and glow
+
+    // Fire glow (radial gradient from inside)
+    final glowPaint = Paint()
+      ..shader = RadialGradient(
+        center: Alignment.center,
+        radius: 0.9,
+        colors: [
+          const Color(0xFFFFAA00).withOpacity(0.9),
+          const Color(0xFFFF6600).withOpacity(0.6),
+          const Color(0xFFCC3300).withOpacity(0.3),
+          Colors.transparent,
+        ],
+      ).createShader(Rect.fromCenter(center: Offset(x, y + 12), width: 52, height: 44));
+
+    canvas.drawPath(archPath, glowPaint);
+
+    // Dancing flames visible inside
+    final flamePath = Path()
+      ..moveTo(x - 14, y + 18)
+      ..quadraticBezierTo(x - 8, y + 10, x - 4, y + 2)
+      ..quadraticBezierTo(x, y - 4, x + 4, y + 2)
+      ..quadraticBezierTo(x + 8, y + 10, x + 14, y + 18)
+      ..close();
+
+    canvas.drawPath(
+      flamePath,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.bottomCenter,
+        end: Alignment.topCenter,
+        colors: [
+          const Color(0xFFFF5500),
+          const Color(0xFFFF8800),
+          const Color(0xFFFFCC00),
+        ],
+      ).createShader(Rect.fromCenter(center: Offset(x, y + 8), width: 28, height: 22)),
+    );
+
+    // WEATHERING AND SOOT STAINS
+
+    // Soot marks above opening (from smoke)
+    final sootPaint = Paint()
+      ..color = sootBlack.withOpacity(0.4)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x, y - 10), width: 35, height: 20),
+      sootPaint,
+    );
+
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x - 6, y), width: 25, height: 15),
+      sootPaint,
+    );
+
+    // Cracks in brickwork
+    final brickCrack = Paint()
+      ..color = brickDark
+      ..strokeWidth = 1.5;
+
+    canvas.drawLine(Offset(x + 20, y + 8), Offset(x + 28, y + 18), brickCrack);
+    canvas.drawLine(Offset(x - 25, y + 15), Offset(x - 18, y + 22), brickCrack);
+
+    // SMOKE - Rising from chimney opening
+
+    final smokePaint = Paint()
+      ..color = const Color(0xFF5a5a5a).withOpacity(0.25)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
+
+    // Multiple smoke wisps
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x - 3, y - 22), width: 20, height: 12),
+      smokePaint,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x + 5, y - 32), width: 28, height: 16),
+      smokePaint,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x - 8, y - 42), width: 35, height: 20),
+      smokePaint,
+    );
+
+    // HEAT SHIMMER - From oven opening
+
+    final shimmerPaint = Paint()
+      ..color = const Color(0xFFFFAA00).withOpacity(0.08)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 15);
+
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x, y + 8), width: 55, height: 40),
+      shimmerPaint,
+    );
+
+    // Dome highlight (shows curve)
+    final domeHighlight = Paint()
+      ..color = Colors.white.withOpacity(0.1)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x - 18, y - 6), width: 32, height: 18),
+      domeHighlight,
+    );
+  }
+
+  // ─────────────── DECORATIONS ───────────────
+
+  void _drawSmallRock(Canvas canvas, double x, double y) {
+    final rockLight = const Color(0xFF909090);
+    final rockMid = const Color(0xFF707070);
+    final rockDark = const Color(0xFF505050);
+
+    // Shadow
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x + 2, y + 6), width: 28, height: 8),
+      Paint()..color = Colors.black.withOpacity(0.3)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+    );
+
+    // Rock body (irregular)
+    final rockPath = Path()
+      ..moveTo(x - 14, y + 2)
+      ..quadraticBezierTo(x - 12, y - 8, x - 4, y - 10)
+      ..quadraticBezierTo(x + 4, y - 12, x + 12, y - 8)
+      ..quadraticBezierTo(x + 14, y, x + 10, y + 6)
+      ..quadraticBezierTo(x, y + 8, x - 10, y + 6)
+      ..close();
+
+    canvas.drawPath(
+      rockPath,
+      Paint()..shader = RadialGradient(
+        center: Alignment.topLeft,
+        radius: 1.2,
+        colors: [rockLight, rockMid, rockDark],
+      ).createShader(Rect.fromCenter(center: Offset(x, y), width: 28, height: 20)),
+    );
+
+    // Rock texture (cracks)
+    final crackPaint = Paint()
+      ..color = rockDark.withOpacity(0.6)
+      ..strokeWidth = 1
+      ..style = PaintingStyle.stroke;
+
+    canvas.drawLine(Offset(x - 6, y - 4), Offset(x + 2, y - 2), crackPaint);
+    canvas.drawLine(Offset(x + 4, y + 1), Offset(x + 8, y + 4), crackPaint);
+
+    // Highlight
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x - 6, y - 6), width: 10, height: 6),
+      Paint()..color = Colors.white.withOpacity(0.25),
+    );
+  }
+
+  void _drawMossPatch(Canvas canvas, double x, double y) {
+    final mossLight = const Color(0xFF3a7a3a);
+    final mossMid = const Color(0xFF2a5a2a);
+    final mossDark = const Color(0xFF1a3a1a);
+
+    // Irregular moss blob
+    final mossPath = Path()
+      ..moveTo(x - 24, y + 2)
+      ..quadraticBezierTo(x - 20, y - 12, x - 8, y - 14)
+      ..quadraticBezierTo(x + 4, y - 12, x + 18, y - 8)
+      ..quadraticBezierTo(x + 24, y + 2, x + 20, y + 12)
+      ..quadraticBezierTo(x + 8, y + 16, x - 6, y + 14)
+      ..quadraticBezierTo(x - 18, y + 10, x - 24, y + 2)
+      ..close();
+
+    canvas.drawPath(
+      mossPath,
+      Paint()..shader = RadialGradient(
+        center: Alignment.topLeft,
+        radius: 1.0,
+        colors: [mossLight, mossMid, mossDark],
+      ).createShader(Rect.fromCenter(center: Offset(x, y), width: 48, height: 30)),
+    );
+
+    // Moss texture (tiny leaf clumps)
+    final random = math.Random(300);
+    final clumpPaint = Paint()..color = mossDark.withOpacity(0.6);
+
+    for (int i = 0; i < 12; i++) {
+      final clumpX = x + (random.nextDouble() - 0.5) * 35;
+      final clumpY = y + (random.nextDouble() - 0.5) * 20;
+      canvas.drawCircle(
+        Offset(clumpX, clumpY),
+        2 + random.nextDouble() * 2,
+        clumpPaint,
+      );
+    }
+
+    // Highlight
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x - 8, y - 6), width: 18, height: 10),
+      Paint()..color = mossLight.withOpacity(0.4),
+    );
+  }
+
+  void _drawWallTorch(Canvas canvas, double x, double y) {
+    final woodDark = const Color(0xFF4a2f1a);
+    final woodLight = const Color(0xFF8B4513);
+    final metalDark = const Color(0xFF3a3a3a);
+
+    // Wall mount (metal bracket)
+    final bracketPath = Path()
+      ..moveTo(x - 3, y)
+      ..lineTo(x - 3, y + 18)
+      ..lineTo(x + 3, y + 18)
+      ..lineTo(x + 3, y)
+      ..close();
+
+    canvas.drawPath(
+      bracketPath,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+        colors: [metalDark, const Color(0xFF5a5a5a)],
+      ).createShader(Rect.fromLTWH(x - 3, y, 6, 18)),
+    );
+
+    // Torch stick
+    final torchPath = Path()
+      ..addRRect(RRect.fromRectAndRadius(
+        Rect.fromLTWH(x - 4, y + 12, 8, 35),
+        const Radius.circular(3),
+      ));
+
+    canvas.drawPath(
+      torchPath,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+        colors: [woodDark, woodLight],
+      ).createShader(Rect.fromLTWH(x - 4, y + 12, 8, 35)),
+    );
+
+    // Wood texture
+    final grainPaint = Paint()
+      ..color = woodDark.withOpacity(0.4)
+      ..strokeWidth = 1;
+    for (int i = 0; i < 4; i++) {
+      canvas.drawLine(
+        Offset(x - 2, y + 15 + i * 8),
+        Offset(x + 2, y + 15 + i * 8),
+        grainPaint,
+      );
+    }
+
+    // Wrapped cloth at top
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x, y + 45), width: 12, height: 8),
+      Paint()..color = const Color(0xFF5a4a3a),
+    );
+
+    // Flame (detailed)
+    final flameCenter = Offset(x, y + 42);
+
+    // Red base
+    final redFlame = Path()
+      ..moveTo(flameCenter.dx - 10, flameCenter.dy)
+      ..quadraticBezierTo(
+        flameCenter.dx - 6, flameCenter.dy - 12,
+        flameCenter.dx, flameCenter.dy - 24,
+      )
+      ..quadraticBezierTo(
+        flameCenter.dx + 6, flameCenter.dy - 12,
+        flameCenter.dx + 10, flameCenter.dy,
+      )
+      ..close();
+
+    canvas.drawPath(
+      redFlame,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.bottomCenter,
+        end: Alignment.topCenter,
+        colors: [const Color(0xFFCC0000), const Color(0xFFFF4500)],
+      ).createShader(Rect.fromCenter(center: flameCenter, width: 20, height: 26)),
+    );
+
+    // Orange middle
+    final orangeFlame = Path()
+      ..moveTo(flameCenter.dx - 7, flameCenter.dy - 4)
+      ..quadraticBezierTo(
+        flameCenter.dx, flameCenter.dy - 28,
+        flameCenter.dx + 7, flameCenter.dy - 4,
+      )
+      ..close();
+
+    canvas.drawPath(
+      orangeFlame,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.bottomCenter,
+        end: Alignment.topCenter,
+        colors: [const Color(0xFFFF6600), const Color(0xFFFF8C00)],
+      ).createShader(Rect.fromCenter(
+        center: Offset(flameCenter.dx, flameCenter.dy - 12),
+        width: 14,
+        height: 26,
+      )),
+    );
+
+    // Yellow tip
+    final yellowFlame = Path()
+      ..moveTo(flameCenter.dx - 4, flameCenter.dy - 10)
+      ..quadraticBezierTo(
+        flameCenter.dx, flameCenter.dy - 32,
+        flameCenter.dx + 4, flameCenter.dy - 10,
+      )
+      ..close();
+
+    canvas.drawPath(
+      yellowFlame,
+      Paint()..color = const Color(0xFFFFFF99),
+    );
+
+    // Glow
+    final glowPaint = Paint()
+      ..color = const Color(0xFFFF8800).withOpacity(0.5)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
+    canvas.drawCircle(flameCenter, 18, glowPaint);
+  }
+
+  void _drawCavePainting(Canvas canvas, double x, double y) {
+    final rockBg = const Color(0xFF5a5a48);
+    final paintBrown = const Color(0xFF6b4423);
+    final paintRed = const Color(0xFF8B3a1a);
+
+    // Background rock surface
+    final bgPath = Path()
+      ..addRRect(RRect.fromRectAndRadius(
+        Rect.fromCenter(center: Offset(x, y), width: 56, height: 56),
+        const Radius.circular(4),
+      ));
+
+    canvas.drawPath(
+      bgPath,
+      Paint()..shader = RadialGradient(
+        center: Alignment.topLeft,
+        radius: 1.0,
+        colors: [rockBg, rockBg.withOpacity(0.7)],
+      ).createShader(Rect.fromCenter(center: Offset(x, y), width: 56, height: 56)),
+    );
+
+    // Rock texture
+    final crackPaint = Paint()
+      ..color = const Color(0xFF3a3a28).withOpacity(0.5)
+      ..strokeWidth = 1
+      ..style = PaintingStyle.stroke;
+
+    final random = math.Random(400);
+    for (int i = 0; i < 4; i++) {
+      canvas.drawLine(
+        Offset(x - 20 + random.nextDouble() * 40, y - 20),
+        Offset(x - 20 + random.nextDouble() * 40, y + 20),
+        crackPaint,
+      );
+    }
+
+    // Primitive painting style
+    final artPaint = Paint()
+      ..color = paintBrown
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+
+    // Stick figure human
+    final figureX = x - 12;
+
+    // Head
+    canvas.drawCircle(Offset(figureX, y - 12), 6, artPaint);
+
+    // Body
+    canvas.drawLine(
+      Offset(figureX, y - 6),
+      Offset(figureX, y + 10),
+      artPaint,
+    );
+
+    // Arms raised
+    canvas.drawLine(
+      Offset(figureX - 10, y - 2),
+      Offset(figureX, y + 2),
+      artPaint,
+    );
+    canvas.drawLine(
+      Offset(figureX, y + 2),
+      Offset(figureX + 10, y - 2),
+      artPaint,
+    );
+
+    // Legs
+    canvas.drawLine(
+      Offset(figureX, y + 10),
+      Offset(figureX - 6, y + 20),
+      artPaint,
+    );
+    canvas.drawLine(
+      Offset(figureX, y + 10),
+      Offset(figureX + 6, y + 20),
+      artPaint,
+    );
+
+    // Animal (deer-like)
+    final animalPaint = Paint()
+      ..color = paintRed
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+
+    final animalX = x + 14;
+
+    // Body
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(animalX, y + 8), width: 20, height: 12),
+      animalPaint,
+    );
+
+    // Legs
+    for (int i = 0; i < 4; i++) {
+      final legX = animalX - 8 + i * 5;
+      canvas.drawLine(
+        Offset(legX, y + 14),
+        Offset(legX, y + 22),
+        animalPaint,
+      );
+    }
+
+    // Head and neck
+    canvas.drawLine(
+      Offset(animalX + 10, y + 6),
+      Offset(animalX + 14, y - 2),
+      animalPaint,
+    );
+    canvas.drawCircle(Offset(animalX + 15, y - 4), 4, animalPaint);
+
+    // Antlers
+    canvas.drawLine(
+      Offset(animalX + 15, y - 8),
+      Offset(animalX + 18, y - 14),
+      animalPaint,
+    );
+    canvas.drawLine(
+      Offset(animalX + 15, y - 8),
+      Offset(animalX + 12, y - 13),
+      animalPaint,
+    );
+
+    // Handprints (red ochre)
+    final handPaint = Paint()..color = paintRed.withOpacity(0.6);
+    canvas.drawCircle(Offset(x - 18, y - 18), 4, handPaint);
+    canvas.drawCircle(Offset(x + 20, y + 18), 3, handPaint);
+  }
+
+  void _drawGlowingMushroom(Canvas canvas, double x, double y) {
+    final stemLight = const Color(0xFFE6E6FA);
+    final stemDark = const Color(0xFFc6c6da);
+    final capLight = const Color(0xFF40E0D0);
+    final capDark = const Color(0xFF20a0a0);
+    final glowColor = const Color(0xFF00FFFF);
+
+    // Shadow
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x, y + 28), width: 20, height: 6),
+      Paint()..color = Colors.black.withOpacity(0.3)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+    );
+
+    // Stem
+    final stemPath = Path()
+      ..moveTo(x - 5, y + 20)
+      ..lineTo(x - 4, y - 5)
+      ..lineTo(x + 4, y - 5)
+      ..lineTo(x + 5, y + 20)
+      ..close();
+
+    canvas.drawPath(
+      stemPath,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+        colors: [stemDark, stemLight],
+      ).createShader(Rect.fromCenter(center: Offset(x, y + 8), width: 10, height: 25)),
+    );
+
+    // Stem texture
+    final texturePaint = Paint()
+      ..color = stemDark.withOpacity(0.4)
+      ..strokeWidth = 1;
+    for (int i = 0; i < 4; i++) {
+      canvas.drawLine(
+        Offset(x - 3, y + 2 + i * 5),
+        Offset(x + 3, y + 2 + i * 5),
+        texturePaint,
+      );
+    }
+
+    // Mushroom cap
+    final capPath = Path()
+      ..moveTo(x - 18, y - 2)
+      ..quadraticBezierTo(x - 14, y - 18, x, y - 22)
+      ..quadraticBezierTo(x + 14, y - 18, x + 18, y - 2)
+      ..lineTo(x + 16, y)
+      ..quadraticBezierTo(x, y - 4, x - 16, y)
+      ..close();
+
+    canvas.drawPath(
+      capPath,
+      Paint()..shader = RadialGradient(
+        center: Alignment.topCenter,
+        radius: 0.9,
+        colors: [capLight, capDark],
+      ).createShader(Rect.fromCenter(center: Offset(x, y - 10), width: 36, height: 22)),
+    );
+
+    // Cap spots (bioluminescent)
+    final spotPaint = Paint()..color = stemLight.withOpacity(0.7);
+    canvas.drawCircle(Offset(x - 8, y - 12), 3, spotPaint);
+    canvas.drawCircle(Offset(x + 6, y - 14), 2, spotPaint);
+    canvas.drawCircle(Offset(x, y - 8), 2, spotPaint);
+    canvas.drawCircle(Offset(x + 10, y - 8), 2, spotPaint);
+
+    // Gills underneath
+    final gillPaint = Paint()
+      ..color = capDark.withOpacity(0.6)
+      ..strokeWidth = 1
+      ..style = PaintingStyle.stroke;
+
+    for (int i = 0; i < 8; i++) {
+      final gillX = x - 14 + i * 4;
+      canvas.drawLine(
+        Offset(gillX, y - 2),
+        Offset(gillX, y + 1),
+        gillPaint,
+      );
+    }
+
+    // Bioluminescent glow
+    final glowPaint = Paint()
+      ..color = glowColor.withOpacity(0.4)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18);
+    canvas.drawCircle(Offset(x, y - 10), 25, glowPaint);
+
+    // Bright glow center
+    final brightGlow = Paint()
+      ..color = glowColor.withOpacity(0.6)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+    canvas.drawCircle(Offset(x, y - 12), 12, brightGlow);
+  }
+
+  void _drawCrystalCluster(Canvas canvas, double x, double y) {
+    final crystalLight = const Color(0xFFB8A0FF);
+    final crystalMid = const Color(0xFF9370DB);
+    final crystalDark = const Color(0xFF6A5ACD);
+    final glowColor = const Color(0xFFDDA0DD);
+
+    // Shadow
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x, y + 32), width: 45, height: 10),
+      Paint()..color = Colors.black.withOpacity(0.35)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+    );
+
+    // Crystal shards (5 different sizes/angles)
+    final shards = [
+      [0.0, -30.0, 18.0],    // Center tallest
+      [-10.0, -22.0, 14.0],  // Left
+      [12.0, -24.0, 15.0],   // Right
+      [-18.0, -16.0, 12.0],  // Far left
+      [20.0, -18.0, 13.0],   // Far right
+    ];
+
+    for (var shard in shards) {
+      final shardX = x + shard[0];
+      final tipY = y + shard[1];
+      final width = shard[2];
+
+      // Crystal body
+      final shardPath = Path()
+        ..moveTo(shardX - width/2, y + 25)
+        ..lineTo(shardX - width/3, tipY + 8)
+        ..lineTo(shardX, tipY)
+        ..lineTo(shardX + width/3, tipY + 8)
+        ..lineTo(shardX + width/2, y + 25)
+        ..close();
+
+      canvas.drawPath(
+        shardPath,
+        Paint()..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [crystalLight, crystalMid, crystalDark],
+        ).createShader(Rect.fromPoints(
+          Offset(shardX, tipY),
+          Offset(shardX, y + 25),
+        )),
+      );
+
+      // Darker facet (right side)
+      final facetPath = Path()
+        ..moveTo(shardX, tipY)
+        ..lineTo(shardX + width/3, tipY + 8)
+        ..lineTo(shardX + width/2, y + 25)
+        ..lineTo(shardX, y + 25)
+        ..close();
+
+      canvas.drawPath(
+        facetPath,
+        Paint()..color = crystalDark.withOpacity(0.6),
+      );
+
+      // Light reflection
+      final reflectionPath = Path()
+        ..moveTo(shardX - width/4, tipY + 5)
+        ..lineTo(shardX - width/6, tipY + 2)
+        ..lineTo(shardX - width/8, y + 15)
+        ..lineTo(shardX - width/5, y + 18)
+        ..close();
+
+      canvas.drawPath(
+        reflectionPath,
+        Paint()..color = Colors.white.withOpacity(0.5),
+      );
+    }
+
+    // Base cluster connection
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x, y + 25), width: 45, height: 12),
+      Paint()..color = crystalDark,
+    );
+
+    // Magical glow
+    final glowPaint = Paint()
+      ..color = glowColor.withOpacity(0.35)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 15);
+    canvas.drawCircle(Offset(x, y), 30, glowPaint);
+  }
+
+  void _drawAncientArtifact(Canvas canvas, double x, double y) {
+    final stoneLight = const Color(0xFF808080);
+    final stoneMid = const Color(0xFF606060);
+    final stoneDark = const Color(0xFF404040);
+    final goldColor = const Color(0xFFFFD700);
+    final goldDark = const Color(0xFFb8860b);
+
+    // Shadow
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x, y + 35), width: 40, height: 10),
+      Paint()..color = Colors.black.withOpacity(0.4)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+    );
+
+    // Stone base platform
+    final basePath = Path()
+      ..addOval(Rect.fromCenter(center: Offset(x, y + 28), width: 38, height: 12));
+
+    canvas.drawPath(
+      basePath,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [stoneMid, stoneDark],
+      ).createShader(Rect.fromCenter(center: Offset(x, y + 28), width: 38, height: 12)),
+    );
+
+    // Totem body (tapered column)
+    final totemPath = Path()
+      ..moveTo(x - 16, y + 24)
+      ..lineTo(x - 12, y - 25)
+      ..lineTo(x + 12, y - 25)
+      ..lineTo(x + 16, y + 24)
+      ..close();
+
+    canvas.drawPath(
+      totemPath,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+        colors: [stoneDark, stoneMid, stoneLight, stoneMid],
+      ).createShader(Rect.fromCenter(center: Offset(x, y), width: 28, height: 50)),
+    );
+
+    // Stone texture (vertical grooves)
+    final groovePaint = Paint()
+      ..color = stoneDark.withOpacity(0.5)
+      ..strokeWidth = 2;
+
+    for (int i = 0; i < 3; i++) {
+      final grooveX = x - 8 + i * 8;
+      canvas.drawLine(
+        Offset(grooveX, y - 22),
+        Offset(grooveX + 2, y + 20),
+        groovePaint,
+      );
+    }
+
+    // Ancient eye symbol (mystical)
+    final eyePath = Path()
+      ..addOval(Rect.fromCenter(center: Offset(x, y - 2), width: 22, height: 14));
+
+    // Eye outline
+    canvas.drawPath(
+      eyePath,
+      Paint()
+        ..color = goldColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5,
+    );
+
+    // Pupil
+    canvas.drawCircle(
+      Offset(x, y - 2),
+      5,
+      Paint()..shader = RadialGradient(
+        center: Alignment.center,
+        radius: 0.8,
+        colors: [goldColor, goldDark],
+      ).createShader(Rect.fromCircle(center: Offset(x, y - 2), radius: 5)),
+    );
+
+    // Iris detail
+    final irisPaint = Paint()
+      ..color = goldDark
+      ..strokeWidth = 1
+      ..style = PaintingStyle.stroke;
+
+    for (int i = 0; i < 8; i++) {
+      final angle = (i * math.pi * 2) / 8;
+      canvas.drawLine(
+        Offset(x + math.cos(angle) * 3, y - 2 + math.sin(angle) * 3),
+        Offset(x + math.cos(angle) * 5, y - 2 + math.sin(angle) * 5),
+        irisPaint,
+      );
+    }
+
+    // Runic markings
+    final runePaint = Paint()
+      ..color = goldColor.withOpacity(0.8)
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+
+    // Top rune
+    canvas.drawLine(Offset(x - 6, y - 18), Offset(x + 6, y - 18), runePaint);
+    canvas.drawLine(Offset(x, y - 18), Offset(x, y - 14), runePaint);
+
+    // Bottom rune
+    canvas.drawLine(Offset(x - 8, y + 12), Offset(x + 8, y + 12), runePaint);
+    canvas.drawLine(Offset(x - 8, y + 16), Offset(x + 8, y + 16), runePaint);
+
+    // Mystical glow
+    final glowPaint = Paint()
+      ..color = goldColor.withOpacity(0.25)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
+    canvas.drawCircle(Offset(x, y - 2), 20, glowPaint);
+  }
+
+  void _drawEnchantedCrystal(Canvas canvas, double x, double y) {
+    final crystalLight = const Color(0xFF80FFFF);
+    final crystalMid = const Color(0xFF00FFFF);
+    final crystalDark = const Color(0xFF00CED1);
+    final magicPink = const Color(0xFFFF00FF);
+    final magicPurple = const Color(0xFF9370DB);
+
+    // Shadow
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(x, y + 52), width: 55, height: 12),
+      Paint()..color = Colors.black.withOpacity(0.45)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+    );
+
+    // Base platform (dark stone)
+    final basePath = Path()
+      ..addOval(Rect.fromCenter(center: Offset(x, y + 45), width: 48, height: 14));
+
+    canvas.drawPath(
+      basePath,
+      Paint()..color = const Color(0xFF2a2a2a),
+    );
+
+    // Large crystal structure
+    final mainCrystal = Path()
+      ..moveTo(x - 22, y + 40)
+      ..lineTo(x - 16, y + 10)
+      ..lineTo(x - 8, y - 10)
+      ..lineTo(x, y - 38)
+      ..lineTo(x + 8, y - 10)
+      ..lineTo(x + 16, y + 10)
+      ..lineTo(x + 22, y + 40)
+      ..close();
+
+    canvas.drawPath(
+      mainCrystal,
+      Paint()..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [crystalLight, crystalMid, crystalDark],
+      ).createShader(Rect.fromCenter(center: Offset(x, y + 2), width: 44, height: 80)),
+    );
+
+    // Darker facets
+    final leftFacet = Path()
+      ..moveTo(x, y - 38)
+      ..lineTo(x - 8, y - 10)
+      ..lineTo(x - 16, y + 10)
+      ..lineTo(x - 22, y + 40)
+      ..lineTo(x, y + 40)
+      ..close();
+
+    canvas.drawPath(
+      leftFacet,
+      Paint()..color = crystalDark.withOpacity(0.5),
+    );
+
+    // Light reflections
+    final reflection1 = Path()
+      ..moveTo(x - 6, y - 20)
+      ..lineTo(x - 4, y - 25)
+      ..lineTo(x - 2, y + 5)
+      ..lineTo(x - 4, y + 10)
+      ..close();
+
+    canvas.drawPath(
+      reflection1,
+      Paint()..color = Colors.white.withOpacity(0.6),
+    );
+
+    final reflection2 = Path()
+      ..moveTo(x + 8, y - 5)
+      ..lineTo(x + 10, y - 8)
+      ..lineTo(x + 11, y + 15)
+      ..lineTo(x + 9, y + 18)
+      ..close();
+
+    canvas.drawPath(
+      reflection2,
+      Paint()..color = crystalLight.withOpacity(0.5),
+    );
+
+    // Magical energy particles
+    final particles = [
+      [x - 28, y - 18, magicPink, 3.5],
+      [x + 26, y - 22, magicPurple, 3.0],
+      [x - 20, y - 35, crystalLight, 2.5],
+      [x + 22, y - 30, magicPink, 4.0],
+      [x - 15, y - 45, magicPurple, 2.0],
+      [x + 18, y - 12, crystalMid, 3.0],
+    ];
+
+    for (var particle in particles) {
+      // Particle glow
+      canvas.drawCircle(
+        Offset(particle[0] as double, particle[1] as double),
+        (particle[3] as double) + 3,
+        Paint()
+          ..color = (particle[2] as Color).withOpacity(0.3)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+      );
+
+      // Particle core
+      canvas.drawCircle(
+        Offset(particle[0] as double, particle[1] as double),
+        particle[3] as double,
+        Paint()..color = particle[2] as Color,
+      );
+    }
+
+    // Orbiting sparkles
+    final random = math.Random(500);
+    for (int i = 0; i < 8; i++) {
+      final angle = (i * math.pi * 2) / 8;
+      final radius = 32 + random.nextDouble() * 8;
+      final sparkleX = x + math.cos(angle) * radius;
+      final sparkleY = y - 5 + math.sin(angle) * radius;
+
+      canvas.drawCircle(
+        Offset(sparkleX, sparkleY),
+        1.5,
+        Paint()..color = Colors.white.withOpacity(0.8),
+      );
+    }
+
+    // Multi-layered magical aura
+    final aura1 = Paint()
+      ..color = crystalMid.withOpacity(0.35)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 22);
+    canvas.drawCircle(Offset(x, y), 42, aura1);
+
+    final aura2 = Paint()
+      ..color = magicPink.withOpacity(0.25)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18);
+    canvas.drawCircle(Offset(x, y - 5), 35, aura2);
+
+    final aura3 = Paint()
+      ..color = magicPurple.withOpacity(0.2)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14);
+    canvas.drawCircle(Offset(x, y - 10), 28, aura3);
+  }
+
+  @override
+  bool shouldRepaint(covariant Simple2DRoomPainter oldDelegate) {
+    return oldDelegate.stage != stage ||
+        oldDelegate.backgroundImage != backgroundImage ||
+        oldDelegate.furniturePositions != furniturePositions ||
+        oldDelegate.draggingSpotId != draggingSpotId ||
+        oldDelegate.furnitureLevels != furnitureLevels;
   }
 }

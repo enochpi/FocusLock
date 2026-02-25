@@ -1,5 +1,7 @@
+import 'package:focus_life/services/achievements_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'package:focus_life/services/upgrade_service.dart';
 
 enum FurnitureCategory {
   bed,
@@ -19,6 +21,8 @@ class Furniture {
   final FurnitureCategory category;
   final int stageRequired; // 0=cave, 1=shack, 2=house, 3=mansion
 
+  final int upgradesRequired; // how many upgrades needed to unlock
+
   Furniture({
     required this.id,
     required this.name,
@@ -28,18 +32,23 @@ class Furniture {
     required this.boost,
     required this.category,
     this.stageRequired = 0,
+    this.upgradesRequired = 0,
   });
 }
 
 class FurnitureService {
+  final AchievementService _achievementService = AchievementService();
   static final FurnitureService _instance = FurnitureService._internal();
   factory FurnitureService() => _instance;
   FurnitureService._internal();
+
+
   /// Get the Furniture object placed in a specific spot
   Furniture? getPlacedFurniture(String spotId) {
     final furnitureId = placedFurniture[spotId];
     if (furnitureId == null) return null;
     return getFurnitureById(furnitureId);
+
   }
 
   // Placed furniture (spot_id -> furniture_id)
@@ -401,6 +410,44 @@ class FurnitureService {
 
   bool isFurniturePlaced(String id) => placedFurniture.containsValue(id);
 
+  /// Check if furniture is unlocked (has enough upgrades purchased)
+  bool isFurnitureUnlocked(String furnitureId) {
+    final furniture = getFurnitureById(furnitureId);
+    if (furniture == null) return false;
+
+    final totalUpgrades = UpgradeService().getTotalUpgradesPurchased();
+    return totalUpgrades >= furniture.upgradesRequired;
+  }
+
+  /// Get list of furniture that just unlocked (for notifications)
+  List<Furniture> getNewlyUnlockedFurniture(int oldUpgradeCount, int newUpgradeCount) {
+    List<Furniture> newlyUnlocked = [];
+
+    for (var furniture in allFurniture) {
+      // Was locked before, now unlocked
+      if (furniture.upgradesRequired > oldUpgradeCount &&
+          furniture.upgradesRequired <= newUpgradeCount) {
+        newlyUnlocked.add(furniture);
+      }
+    }
+
+    return newlyUnlocked;
+  }
+
+  /// Get furniture filtered by stage AND unlock status
+  List<Furniture> getAvailableFurnitureForStage(int stage) {
+    return allFurniture
+        .where((f) => f.stageRequired == stage && isFurnitureUnlocked(f.id))
+        .toList();
+  }
+
+  /// Get locked furniture for stage (to show in shop with lock icon)
+  List<Furniture> getLockedFurnitureForStage(int stage) {
+    return allFurniture
+        .where((f) => f.stageRequired == stage && !isFurnitureUnlocked(f.id))
+        .toList();
+  }
+
   /// Get the spot a placed furniture is in
   String? getPlacedSpot(String furnitureId) {
     for (var entry in placedFurniture.entries) {
@@ -459,10 +506,12 @@ class FurnitureService {
   }
 
   /// Buy furniture
-  bool buyFurniture(String furnitureId) {
+  /// Buy furniture
+  Future<bool> buyFurniture(String furnitureId) async {  // ✅ ADD async
     if (!ownedFurniture.contains(furnitureId)) {
       ownedFurniture.add(furnitureId);
-      saveFurniture();
+      await saveFurniture();  // ✅ ADD await
+      await _achievementService.onFurniturePurchased();
       return true;
     }
     return false;

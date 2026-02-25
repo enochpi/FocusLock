@@ -1,27 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:focus_life/painters/outdoor_sky_painter.dart';
+import 'package:focus_life/screens/achievements_screen.dart';
+import 'package:focus_life/services/achievements_service.dart';
+import 'package:focus_life/services/daily_reward_service.dart';
 import 'package:focus_life/services/stage_theme.dart';
 import 'package:focus_life/services/streak_service.dart';
+import 'package:focus_life/widgets/dialy_reward_dialog.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:math' show Random;
 import 'package:rive/rive.dart' hide LinearGradient, RadialGradient;
-import '../models/character.dart';
-import '../models/farm.dart';
-import '../models/cave_decorations.dart';
-import '../services/storage_service.dart';
-import 'garden_focus_screen.dart';
-import 'cave_interior_screen.dart';
-import '../services/currency_service.dart';
-import '../widgets/converter_dialog.dart';
-import '../services/upgrade_service.dart';
-import '../services/furniture_service.dart';
-import '../services/facts_service.dart';
-import '../utils/number_formatter.dart';
-import '../painters/house_painters.dart';
-import '../painters/garden_painters.dart';
-import '../services/focus_session_service.dart';
-
+import 'package:focus_life/models/character.dart';
+import 'package:focus_life/models/farm.dart';
+import 'package:focus_life/models/cave_decorations.dart';
+import 'package:focus_life/services/storage_service.dart';
+import 'package:focus_life/screens/garden_focus_screen.dart';
+import 'package:focus_life/screens/cave_interior_screen.dart';
+import 'package:focus_life/services/currency_service.dart';
+import 'package:focus_life/widgets/converter_dialog.dart';
+import 'package:focus_life/services/upgrade_service.dart';
+import 'package:focus_life/services/furniture_service.dart';
+import 'package:focus_life/services/facts_service.dart';
+import 'package:focus_life/utils/number_formatter.dart';
+import 'package:focus_life/painters/house_painters.dart';
+import 'package:focus_life/painters/garden_painters.dart';
+import 'package:focus_life/services/focus_session_service.dart';
+import 'package:focus_life/widgets/achievement_notification.dart';
 
 
 
@@ -55,6 +59,36 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
 
   void refreshCurrencyUI() {
     setState(() {});
+  }
+  void _grantAchievementRewards(Achievement achievement) async {
+    final currency = CurrencyService();
+
+    for (var reward in achievement.rewards) {
+      switch (reward.type) {
+        case RewardType.coins:
+          await currency.addCoins(reward.value as int);
+          break;
+
+        case RewardType.peas:
+          await currency.addPeas(reward.value as int);
+          break;
+
+        case RewardType.furniture:
+        // Unlock special furniture
+          final furnitureId = reward.value as String;
+          FurnitureService().ownedFurniture.add(furnitureId);  // ✅ RIGHT
+          await FurnitureService().saveFurniture();
+          break;
+
+        case RewardType.cosmetic:
+        // Unlock cosmetic item
+          break;
+
+        case RewardType.multiplier:
+        // Apply permanent multiplier boost
+          break;
+      }
+    }
   }
 
   double alexX = 150;
@@ -94,6 +128,17 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
 
     // ✅ CHECK FOR RECOVERED SESSION
     _checkForRecoveredSession();
+    AchievementService().onAchievementUnlocked = (achievement) {
+      _grantAchievementRewards(achievement);
+      if (mounted) {
+        showAchievementUnlocked(context, achievement);  // ✅ ADD THIS
+      }
+    };
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted && DailyRewardService().canClaimReward()) {
+        showDailyRewardDialog(context);
+      }
+    });
   }
 
   void _startButterflyLoop() {
@@ -245,8 +290,20 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                       color: Colors.red,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Text("+100000000000000000", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                    child: const Text("+100", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
                   ),
+                ),
+                // Add this button to your top bar or menu
+                IconButton(
+                  icon: const Icon(Icons.emoji_events, color: Color(0xFFFFD700)),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const AchievementsScreen(),
+                      ),
+                    );
+                  },
                 ),
 
 
