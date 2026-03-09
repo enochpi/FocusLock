@@ -1,6 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
-import '../services/focus_session_service.dart';
 
 class FocusSessionService {
   static final FocusSessionService _instance = FocusSessionService._internal();

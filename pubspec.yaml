@@ -13,6 +13,8 @@ dependencies:
 
 
 
+
+
   # App monitoring
   app_usage: ^4.0.1
 
@@ -47,3 +49,15 @@ flutter:
     - assets/animations/garden.riv
     - assets/animations/bob_idle.riv
     - assets/images/cave_background.png
+    - assets/images/house.png
+    - assets/images/shack.png
+    - assets/images/cave.png
+    - assets/images/cave_background.png
+    - assets/images/shack_background.png
+    - assets/images/house_background.png
+    - assets/images/door1.png
+    - assets/images/door2.png
+    - assets/images/house_bedroom_background.png
+    - assets/animations/cave_window.riv
+
+

@@ -128,8 +128,8 @@ class _ShopScreenState extends State<ShopScreen> {
   
 
   Widget _buildShopTabs() {
-    List<String> shopNames = ['Cave', 'Shack', 'House', 'Mansion'];
-    List<String> shopEmojis = ['🏔️', '🏚️', '🏠', '🏰'];
+    List<String> shopNames = ['Cave', 'Shack', 'House',];
+    List<String> shopEmojis = ['🏔️', '🏚️', '🏠'];
 
     return SizedBox(
       height: 70,

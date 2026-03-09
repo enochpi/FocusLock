@@ -15,14 +15,12 @@ class CurrencyService {
     {'name': 'Peas', 'emoji': '🌱', 'rate': 100},
     {'name': 'Carrots', 'emoji': '🥕', 'rate': 70},
     {'name': 'Corn', 'emoji': '🌽', 'rate': 50},
-    {'name': 'Strawberries', 'emoji': '🍓', 'rate': 30},
-    {'name': 'Golden Wheat', 'emoji': '🌾', 'rate': 15},
   ];
 
   int get currentStage => _currentStage;
-  String get cropName => cropStages[_currentStage]['name'];
-  String get cropEmoji => cropStages[_currentStage]['emoji'];
-  int get cropRate => cropStages[_currentStage]['rate'];
+  String get cropName  => cropStages[_currentStage.clamp(0, cropStages.length - 1)]['name'];
+  String get cropEmoji => cropStages[_currentStage.clamp(0, cropStages.length - 1)]['emoji'];
+  int    get cropRate  => cropStages[_currentStage.clamp(0, cropStages.length - 1)]['rate'];
 
   // Currency amounts
   int _peas = 0;

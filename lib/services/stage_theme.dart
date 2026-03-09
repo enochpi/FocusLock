@@ -149,7 +149,6 @@ class StageTheme {
       case 0: return cave;
       case 1: return shack;
       case 2: return house;
-      case 3: return mansion;
       default: return cave;
     }
   }

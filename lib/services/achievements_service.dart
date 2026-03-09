@@ -561,26 +561,6 @@ class AchievementService {
           ),
         ],
       ),
-      Achievement(
-        id: 'unlock_mansion',
-        name: 'Living Large',
-        description: 'Unlock the Mansion',
-        emoji: '🏰',
-        category: AchievementCategory.property,
-        targetValue: 1,
-        rewards: [
-          AchievementReward(
-            type: RewardType.coins,
-            value: 50000,
-            displayText: '50,000 coins',
-          ),
-          AchievementReward(
-            type: RewardType.peas,
-            value: 100000000,
-            displayText: '100M peas',
-          ),
-        ],
-      ),
 
       // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
       // ⚡ POWER ACHIEVEMENTS

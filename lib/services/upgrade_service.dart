@@ -144,40 +144,6 @@ class UpgradeService {
     Upgrade(id: 'house_quantum_entangle', name: 'Quantum Entanglement', emoji: '🔗', description: '1.04x per focus', cost: 16800000000000000, multiplier: 0.04, stageRequired: 2),
     Upgrade(id: 'house_multiverse', name: 'Multiverse Harvesting', emoji: '🎭', description: '1.03x per focus', cost: 37000000000000000, multiplier: 0.03, stageRequired: 2),
     Upgrade(id: 'house_legendary_mastery', name: 'Legendary Mastery', emoji: '⚡', description: '1.02x per focus', cost: 79800000000000000, multiplier: 0.02, stageRequired: 2),
-
-    // ========================================
-    // STAGE 3: MANSION — 50% mult cut, costs compressed to cap at ~4e18
-    // ========================================
-    Upgrade(id: 'mansion_divine_hoe', name: 'Divine Hoe', emoji: '🙏', description: '1.40x per focus', cost: 6.5e14, multiplier: 0.40, stageRequired: 3),
-    Upgrade(id: 'mansion_god_seeds', name: 'Seeds of the Gods', emoji: '✨', description: '1.30x per focus', cost: 8.8e14, multiplier: 0.30, stageRequired: 3),
-    Upgrade(id: 'mansion_reality_water', name: 'Reality-Bending Water', emoji: '🌊', description: '1.24x per focus', cost: 1.19e15, multiplier: 0.24, stageRequired: 3),
-    Upgrade(id: 'mansion_infinity_tools', name: 'Infinity Tools', emoji: '♾️', description: '1.21x per focus', cost: 1.60e15, multiplier: 0.21, stageRequired: 3),
-    Upgrade(id: 'mansion_omnipotent_fertilizer', name: 'Omnipotent Fertilizer', emoji: '👑', description: '1.18x per focus', cost: 2.16e15, multiplier: 0.18, stageRequired: 3),
-    Upgrade(id: 'mansion_eternal_irrigation', name: 'Eternal Irrigation', emoji: '💎', description: '1.15x per focus', cost: 2.92e15, multiplier: 0.15, stageRequired: 3),
-    Upgrade(id: 'mansion_transcendent_soil', name: 'Transcendent Soil', emoji: '🔱', description: '1.14x per focus', cost: 3.94e15, multiplier: 0.14, stageRequired: 3),
-    Upgrade(id: 'mansion_perfect_growth', name: 'Perfect Growth Matrix', emoji: '🌈', description: '1.12x per focus', cost: 5.32e15, multiplier: 0.12, stageRequired: 3),
-    Upgrade(id: 'mansion_ultimate_climate', name: 'Ultimate Climate', emoji: '🏆', description: '1.11x per focus', cost: 7.18e15, multiplier: 0.11, stageRequired: 3),
-    Upgrade(id: 'mansion_absolute_mastery', name: 'Absolute Mastery', emoji: '⭐', description: '1.09x per focus', cost: 9.69e15, multiplier: 0.09, stageRequired: 3),
-    Upgrade(id: 'mansion_celestial_power', name: 'Celestial Power', emoji: '🌠', description: '1.08x per focus', cost: 1.31e16, multiplier: 0.08, stageRequired: 3),
-    Upgrade(id: 'mansion_primordial_force', name: 'Primordial Force', emoji: '💠', description: '1.07x per focus', cost: 1.77e16, multiplier: 0.07, stageRequired: 3),
-    Upgrade(id: 'mansion_cosmic_throne', name: 'Cosmic Throne', emoji: '👸', description: '1.06x per focus', cost: 2.39e16, multiplier: 0.06, stageRequired: 3),
-    Upgrade(id: 'mansion_universal_law', name: 'Universal Law Rewrite', emoji: '📜', description: '1.06x per focus', cost: 3.22e16, multiplier: 0.06, stageRequired: 3),
-    Upgrade(id: 'mansion_time_lord', name: 'Time Lord Powers', emoji: '⏳', description: '1.05x per focus', cost: 4.35e16, multiplier: 0.05, stageRequired: 3),
-    Upgrade(id: 'mansion_space_bender', name: 'Space Bending', emoji: '🌌', description: '1.05x per focus', cost: 5.87e16, multiplier: 0.05, stageRequired: 3),
-    Upgrade(id: 'mansion_soul_harvest', name: 'Soul Harvesting', emoji: '👻', description: '1.04x per focus', cost: 7.93e16, multiplier: 0.04, stageRequired: 3),
-    Upgrade(id: 'mansion_elder_god', name: 'Elder God Blessing', emoji: '🦑', description: '1.04x per focus', cost: 1.07e17, multiplier: 0.04, stageRequired: 3),
-    Upgrade(id: 'mansion_void_essence', name: 'Void Essence', emoji: '🕳️', description: '1.04x per focus', cost: 1.44e17, multiplier: 0.04, stageRequired: 3),
-    Upgrade(id: 'mansion_chaos_energy', name: 'Chaos Energy', emoji: '⚡', description: '1.04x per focus', cost: 1.95e17, multiplier: 0.04, stageRequired: 3),
-    Upgrade(id: 'mansion_order_matrix', name: 'Order Matrix', emoji: '🔶', description: '1.03x per focus', cost: 2.63e17, multiplier: 0.03, stageRequired: 3),
-    Upgrade(id: 'mansion_balance_keeper', name: 'Balance Keeper', emoji: '⚖️', description: '1.03x per focus', cost: 3.55e17, multiplier: 0.03, stageRequired: 3),
-    Upgrade(id: 'mansion_dream_weaver', name: 'Dream Weaver', emoji: '💭', description: '1.03x per focus', cost: 4.79e17, multiplier: 0.03, stageRequired: 3),
-    Upgrade(id: 'mansion_reality_architect', name: 'Reality Architect', emoji: '🏗️', description: '1.03x per focus', cost: 6.47e17, multiplier: 0.03, stageRequired: 3),
-    Upgrade(id: 'mansion_existence_itself', name: 'Existence Itself', emoji: '🌍', description: '1.02x per focus', cost: 8.73e17, multiplier: 0.02, stageRequired: 3),
-    Upgrade(id: 'mansion_creation_spark', name: 'Creation Spark', emoji: '🔥', description: '1.02x per focus', cost: 1.18e18, multiplier: 0.02, stageRequired: 3),
-    Upgrade(id: 'mansion_destruction_wave', name: 'Destruction Wave', emoji: '💥', description: '1.02x per focus', cost: 1.59e18, multiplier: 0.02, stageRequired: 3),
-    Upgrade(id: 'mansion_rebirth_cycle', name: 'Rebirth Cycle', emoji: '🔄', description: '1.02x per focus', cost: 2.15e18, multiplier: 0.02, stageRequired: 3),
-    Upgrade(id: 'mansion_alpha_omega', name: 'Alpha & Omega', emoji: '🅰️', description: '1.01x per focus', cost: 2.90e18, multiplier: 0.01, stageRequired: 3),
-    Upgrade(id: 'mansion_supreme_being', name: 'Supreme Being', emoji: '🔯', description: '1.01x per focus', cost: 3.91e18, multiplier: 0.01, stageRequired: 3),
   ];
 
   final List<HouseUnlock> _houseUnlocks = [
@@ -198,15 +164,6 @@ class UpgradeService {
       cost: 2240000000,     // 44% cost cut
       unlocksStage: 2,
       houseMultiplier: 18.5, // 50% mult cut
-    ),
-    HouseUnlock(
-      id: 'unlock_mansion',
-      name: 'House Upgrade',
-      emoji: '🏰',
-      description: 'Unlock Mansion & Mansion Shop (83.5x bonus!)',
-      cost: 1.8e16,         // 40% cost cut
-      unlocksStage: 3,
-      houseMultiplier: 83.5, // 50% mult cut
     ),
   ];
 
@@ -415,7 +372,7 @@ class UpgradeService {
   int getTotalUpgradesPurchased() {
     int total = 0;
 
-    for (int stage = 0; stage < 4; stage++) {
+    for (int stage = 0; stage < 3; stage++) {
       for (var upgrade in getUpgradesForStage(stage)) {
         if (isPurchased(upgrade.id)) {
           total++;

@@ -198,7 +198,7 @@ class _CaveShopScreenState extends State<CaveShopScreen> {
 
   // ── Stage selector tabs ──
   Widget _buildStageTabs() {
-    final stageNames = ['🏔️ Cave', '🏚️ Shack', '🏠 House', '🏰 Mansion'];
+    final stageNames = ['🏔️ Cave', '🏚️ Shack', '🏠 House'];
     final maxStage = UpgradeService().currentStage;
 
     return Container(

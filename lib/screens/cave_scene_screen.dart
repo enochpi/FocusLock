@@ -1,3 +1,4 @@
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:focus_life/painters/outdoor_sky_painter.dart';
 import 'package:focus_life/screens/achievements_screen.dart';
@@ -9,7 +10,7 @@ import 'package:focus_life/widgets/dialy_reward_dialog.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:math' show Random;
-import 'package:rive/rive.dart' hide LinearGradient, RadialGradient;
+import 'package:rive/rive.dart' hide LinearGradient, RadialGradient, Image;
 import 'package:focus_life/models/character.dart';
 import 'package:focus_life/models/farm.dart';
 import 'package:focus_life/models/cave_decorations.dart';
@@ -22,13 +23,9 @@ import 'package:focus_life/services/upgrade_service.dart';
 import 'package:focus_life/services/furniture_service.dart';
 import 'package:focus_life/services/facts_service.dart';
 import 'package:focus_life/utils/number_formatter.dart';
-import 'package:focus_life/painters/house_painters.dart';
 import 'package:focus_life/painters/garden_painters.dart';
 import 'package:focus_life/services/focus_session_service.dart';
 import 'package:focus_life/widgets/achievement_notification.dart';
-
-
-
 
 class CaveSceneScreen extends StatefulWidget {
   final Character character;
@@ -36,7 +33,8 @@ class CaveSceneScreen extends StatefulWidget {
   final CaveDecorations decorations;
   final VoidCallback onUpdate;
 
-  const CaveSceneScreen({super.key, 
+  const CaveSceneScreen({
+    super.key,
     required this.character,
     required this.farm,
     required this.decorations,
@@ -47,50 +45,44 @@ class CaveSceneScreen extends StatefulWidget {
   _CaveSceneScreenState createState() => _CaveSceneScreenState();
 }
 
+String _getHouseImage(int stage) {
+  switch (stage) {
+    case 0: return 'assets/images/cave.png';
+    case 1: return 'assets/images/shack.png';
+    case 2: return 'assets/images/house.png';
+    default: return 'assets/images/cave.png';
+  }
+}
+
 class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderStateMixin {
   StorageService storage = StorageService();
   final CurrencyService currency = CurrencyService();
 
   int _viewingStage = -1;
 
-  int get displayStage => _viewingStage == -1
-      ? UpgradeService().currentStage
-      : _viewingStage;
+  // ── Static flags (accessible from TimerPickerDialog) ─────────────────
+  static bool torchesOwned  = false;
+  static bool chimesOwned   = false;
+  static bool fountainOwned = false;
 
-  void refreshCurrencyUI() {
-    setState(() {});
-  }
-  void _grantAchievementRewards(Achievement achievement) async {
-    final currency = CurrencyService();
+  // ── Torch system (cave only) ──────────────────────────────────────────
+  bool _torchPurchased = false;
+  static const int    _torchCost  = 50;
+  static const double _torchBoost = 0.15;
 
-    for (var reward in achievement.rewards) {
-      switch (reward.type) {
-        case RewardType.coins:
-          await currency.addCoins(reward.value as int);
-          break;
+  // ── Wind chimes system (shack only) ──────────────────────────────────
+  bool _windChimesPurchased = false;
+  AnimationController? _chimesController;
+  static const int    _windChimesCost  = 80;
+  static const double _windChimesBoost = 0.10;
 
-        case RewardType.peas:
-          await currency.addPeas(reward.value as int);
-          break;
+  // ── Fountain system (house only) ──────────────────────────────────────
+  bool _fountainPurchased = false;
+  AnimationController? _fountainController;
+  static const int    _fountainCost  = 120;
+  static const double _fountainBoost = 0.12;
 
-        case RewardType.furniture:
-        // Unlock special furniture
-          final furnitureId = reward.value as String;
-          FurnitureService().ownedFurniture.add(furnitureId);  // ✅ RIGHT
-          await FurnitureService().saveFurniture();
-          break;
-
-        case RewardType.cosmetic:
-        // Unlock cosmetic item
-          break;
-
-        case RewardType.multiplier:
-        // Apply permanent multiplier boost
-          break;
-      }
-    }
-  }
-
+  // ── Other state ───────────────────────────────────────────────────────
   double alexX = 150;
   double alexY = 300;
   bool facingRight = true;
@@ -98,66 +90,60 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
   AnimationController? _butterflyController;
   bool isWalking = false;
 
-  // Butterfly animation
   double butterflyX = -50;
   double butterflyY = 0;
   bool showButterfly = false;
 
-  // Cave click animation
-  double _caveScale = 1.0;
-
-  // Garden click animation
+  double _caveScale   = 1.0;
   double _gardenScale = 1.0;
 
+  // ── displayStage ─────────────────────────────────────────────────────
+  int get displayStage {
+    int stage = _viewingStage == -1
+        ? UpgradeService().currentStage
+        : _viewingStage;
+    return stage.clamp(0, 2);
+  }
+
+  // ── initState ────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
+
     _walkController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 300),
     )..repeat(reverse: true);
 
-    // Butterfly controller
     _butterflyController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 4),
     );
 
-    // Start butterfly animation periodically
-    _startButterflyLoop();
+    _chimesController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2500),
+    )..repeat(reverse: true);
 
-    // ✅ CHECK FOR RECOVERED SESSION
+    _fountainController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
+
+    _startButterflyLoop();
     _checkForRecoveredSession();
+    _loadTorchState();
+    _loadChimesState();
+    _loadFountainState();
+
     AchievementService().onAchievementUnlocked = (achievement) {
       _grantAchievementRewards(achievement);
-      if (mounted) {
-        showAchievementUnlocked(context, achievement);  // ✅ ADD THIS
-      }
+      if (mounted) showAchievementUnlocked(context, achievement);
     };
+
     Future.delayed(const Duration(milliseconds: 500), () {
       if (mounted && DailyRewardService().canClaimReward()) {
         showDailyRewardDialog(context);
-      }
-    });
-  }
-
-  void _startButterflyLoop() {
-    Future.delayed(const Duration(seconds: 5), () {
-      if (mounted) {
-        setState(() {
-          showButterfly = true;
-          butterflyX = -50;
-          butterflyY = MediaQuery.of(context).size.height * 0.5;
-        });
-
-        _butterflyController?.forward(from: 0).then((_) {
-          if (mounted) {
-            setState(() {
-              showButterfly = false;
-            });
-            _startButterflyLoop(); // Loop again
-          }
-        });
       }
     });
   }
@@ -166,31 +152,349 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
   void dispose() {
     _walkController?.dispose();
     _butterflyController?.dispose();
+    _chimesController?.dispose();
+    _fountainController?.dispose();
     super.dispose();
   }
 
-  void moveAlexTo(double x, double y) {
-    setState(() {
-      if (x > alexX) {
-        facingRight = true;
-      } else if (x < alexX) {
-        facingRight = false;
-      }
-
-      alexX = x - 30;
-      alexY = y - 60;
-      isWalking = true;
-    });
-
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted) {
-        setState(() {
-          isWalking = false;
-        });
-      }
-    });
+  // ── Torch persistence ─────────────────────────────────────────────────
+  Future<void> _loadTorchState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final bought = prefs.getBool('torches_purchased') ?? false;
+    if (bought && mounted) {
+      setState(() {
+        _torchPurchased = true;
+        _CaveSceneScreenState.torchesOwned = true;
+      });
+    }
   }
 
+  Future<void> _saveTorchState() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('torches_purchased', true);
+  }
+
+  // ── Chimes persistence ────────────────────────────────────────────────
+  Future<void> _loadChimesState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final bought = prefs.getBool('wind_chimes_purchased') ?? false;
+    if (bought && mounted) {
+      setState(() {
+        _windChimesPurchased = true;
+        _CaveSceneScreenState.chimesOwned = true;
+      });
+    }
+  }
+
+  Future<void> _saveChimesState() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('wind_chimes_purchased', true);
+  }
+
+  // ── Fountain persistence ──────────────────────────────────────────────
+  Future<void> _loadFountainState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final bought = prefs.getBool('fountain_purchased') ?? false;
+    if (bought && mounted) {
+      setState(() {
+        _fountainPurchased = true;
+        _CaveSceneScreenState.fountainOwned = true;
+      });
+    }
+  }
+
+  Future<void> _saveFountainState() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('fountain_purchased', true);
+  }
+
+  // ── Torch purchase dialog ─────────────────────────────────────────────
+  void _onTorchSpotTapped() {
+    if (_torchPurchased) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF16213e),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Buy Torches',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(width: 50, height: 110, child: CustomPaint(painter: _TorchPainter())),
+                const SizedBox(width: 20),
+                SizedBox(width: 50, height: 110, child: CustomPaint(painter: _TorchPainter())),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Place a pair of torches outside your cave entrance.',
+              style: TextStyle(color: Colors.white70),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.orange, width: 1.5),
+              ),
+              child: const Text('+15% 🌱 Pea Boost',
+                  style: TextStyle(
+                      color: Colors.orange, fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFD700).withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFFD700), width: 1.5),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('🪙', style: TextStyle(fontSize: 22)),
+                  const SizedBox(width: 8),
+                  Text('$_torchCost coins',
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (currency.coins >= _torchCost) {
+                Navigator.pop(ctx);
+                await currency.removeCoins(_torchCost);
+                await _saveTorchState();
+                if (!mounted) return;
+                setState(() {
+                  _torchPurchased = true;
+                  _CaveSceneScreenState.torchesOwned = true;
+                });
+              } else {
+                Navigator.pop(ctx);
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Not enough coins!')),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFD700),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Buy',
+                style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Wind chimes purchase dialog ───────────────────────────────────────
+  void _onWindChimesTapped() {
+    if (_windChimesPurchased) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF16213e),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Buy Wind Chimes',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 80, height: 120,
+              child: CustomPaint(painter: _WindChimesPainter(swing: 0.0)),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Hang wind chimes outside your shack entrance.',
+              style: TextStyle(color: Colors.white70),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.tealAccent.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.tealAccent, width: 1.5),
+              ),
+              child: const Text('+10% 🥕 Carrot Boost',
+                  style: TextStyle(
+                      color: Colors.tealAccent,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold)),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFD700).withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFFD700), width: 1.5),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('🪙', style: TextStyle(fontSize: 22)),
+                  const SizedBox(width: 8),
+                  Text('$_windChimesCost coins',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (currency.coins >= _windChimesCost) {
+                Navigator.pop(ctx);
+                await currency.removeCoins(_windChimesCost);
+                await _saveChimesState();
+                if (!mounted) return;
+                setState(() {
+                  _windChimesPurchased = true;
+                  _CaveSceneScreenState.chimesOwned = true;
+                });
+              } else {
+                Navigator.pop(ctx);
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Not enough coins!')),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFD700),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Buy',
+                style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Fountain purchase dialog ──────────────────────────────────────────
+  void _onFountainTapped() {
+    if (_fountainPurchased) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF16213e),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Buy Garden Fountain',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 100, height: 100,
+              child: CustomPaint(painter: _FountainPainter(ripple: 0.5)),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'A stone fountain for your front garden.',
+              style: TextStyle(color: Colors.white70),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.blueAccent.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.blueAccent, width: 1.5),
+              ),
+              child: const Text('+12% 🌽 Corn Boost',
+                  style: TextStyle(
+                      color: Colors.blueAccent,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold)),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFD700).withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFFD700), width: 1.5),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('🪙', style: TextStyle(fontSize: 22)),
+                  const SizedBox(width: 8),
+                  Text('$_fountainCost coins',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (currency.coins >= _fountainCost) {
+                Navigator.pop(ctx);
+                await currency.removeCoins(_fountainCost);
+                await _saveFountainState();
+                if (!mounted) return;
+                setState(() {
+                  _fountainPurchased = true;
+                  _CaveSceneScreenState.fountainOwned = true;
+                });
+              } else {
+                Navigator.pop(ctx);
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Not enough coins!')),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFD700),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Buy',
+                style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
   void openCave() {
     Navigator.push(
       context,
@@ -198,7 +502,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
         builder: (context) => CaveInteriorScreen(
           character: widget.character,
           decorations: widget.decorations,
-          stage: displayStage,  // ← ADD THIS
+          stage: displayStage,
         ),
       ),
     ).then((_) {
@@ -206,15 +510,13 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
       widget.onUpdate();
     });
   }
-  // ✅ UPDATED - Goes to garden instead of FocusActiveScreen
+
   void startFocus() async {
     int? minutes = await showDialog<int>(
       context: context,
       builder: (context) => const TimerPickerDialog(),
     );
-
     if (minutes != null && minutes > 0) {
-      // ✅ Navigate to GARDEN instead!
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -224,7 +526,6 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
           ),
         ),
       ).then((_) {
-        // Save and update after returning from garden
         storage.saveCharacter(widget.character);
         setState(() {});
         widget.onUpdate();
@@ -232,31 +533,85 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
     }
   }
 
+  void refreshCurrencyUI() => setState(() {});
+
+  // ── Butterfly ─────────────────────────────────────────────────────────
+  void _startButterflyLoop() {
+    Future.delayed(const Duration(seconds: 5), () {
+      if (mounted) {
+        setState(() {
+          showButterfly = true;
+          butterflyX    = -50;
+          butterflyY    = MediaQuery.of(context).size.height * 0.5;
+        });
+        _butterflyController?.forward(from: 0).then((_) {
+          if (mounted) {
+            setState(() => showButterfly = false);
+            _startButterflyLoop();
+          }
+        });
+      }
+    });
+  }
+
+  // ── Alex movement ─────────────────────────────────────────────────────
+  void moveAlexTo(double x, double y) {
+    setState(() {
+      if (x > alexX) facingRight = true;
+      else if (x < alexX) facingRight = false;
+      alexX    = x - 30;
+      alexY    = y - 60;
+      isWalking = true;
+    });
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) setState(() => isWalking = false);
+    });
+  }
+
+  // ── Achievement rewards ───────────────────────────────────────────────
+  void _grantAchievementRewards(Achievement achievement) async {
+    final currency = CurrencyService();
+    for (var reward in achievement.rewards) {
+      switch (reward.type) {
+        case RewardType.coins:
+          await currency.addCoins(reward.value as int);
+          break;
+        case RewardType.peas:
+          await currency.addPeas(reward.value as int);
+          break;
+        case RewardType.furniture:
+          FurnitureService().ownedFurniture.add(reward.value as String);
+          await FurnitureService().saveFurniture();
+          break;
+        case RewardType.cosmetic:
+          break;
+        case RewardType.multiplier:
+          break;
+      }
+    }
+  }
+
+  // ── BUILD ─────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    final double screenW = MediaQuery.of(context).size.width;
+
     return SafeArea(
       child: Column(
         children: [
-          // Top Bar
-          // Top Bar - Currency System
-          // Top Bar - Currency System
+          // ── Top Bar ──────────────────────────────────────────────────
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: StageTheme.getTheme(UpgradeService().currentStage).shopHeaderColor,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black26,
-                  blurRadius: 10,
-                  offset: Offset(0, 2),
-                ),
+              color: StageTheme.getTheme(UpgradeService().currentStage.clamp(0, 2)).shopHeaderColor,
+              boxShadow: const [
+                BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, 2)),
               ],
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // Peas counter (left)
-                // Peas counter (left) - DYNAMIC CROP
+                // Peas counter
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                   decoration: BoxDecoration(
@@ -268,17 +623,15 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                     children: [
                       Text(currency.cropEmoji, style: const TextStyle(fontSize: 20)),
                       const SizedBox(width: 6),
-                      Text(
-                        NumberFormatter.format(currency.peas),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 17,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                      Text(NumberFormatter.format(currency.peas),
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 17,
+                              fontWeight: FontWeight.bold)),
                     ],
                   ),
                 ),
+                // Debug +100
                 GestureDetector(
                   onTap: () async {
                     await currency.addPeas(100000000000000000);
@@ -287,28 +640,21 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                   child: Container(
                     padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text("+100", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                        color: Colors.red, borderRadius: BorderRadius.circular(8)),
+                    child: const Text('+100',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold)),
                   ),
                 ),
-                // Add this button to your top bar or menu
+                // Achievements
                 IconButton(
                   icon: const Icon(Icons.emoji_events, color: Color(0xFFFFD700)),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const AchievementsScreen(),
-                      ),
-                    );
-                  },
+                  onPressed: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const AchievementsScreen())),
                 ),
-
-
-                // Converter button (center)
-                // Converter button (center) - DYNAMIC CROP
+                // Converter
                 ElevatedButton(
                   onPressed: () async {
                     bool? converted = await showConverterDialog(context);
@@ -317,9 +663,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF4CAF50),
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     elevation: 4,
                   ),
                   child: Row(
@@ -329,12 +673,11 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                       const SizedBox(width: 4),
                       const Icon(Icons.arrow_forward, size: 16, color: Colors.white),
                       const SizedBox(width: 4),
-                      const Text("🪙", style: TextStyle(fontSize: 16)),
+                      const Text('🪙', style: TextStyle(fontSize: 16)),
                     ],
                   ),
                 ),
-
-                // Coins counter (right)
+                // Coins counter
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                   decoration: BoxDecoration(
@@ -344,16 +687,13 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                   ),
                   child: Row(
                     children: [
-                      const Text("🪙", style: TextStyle(fontSize: 20)),
+                      const Text('🪙', style: TextStyle(fontSize: 20)),
                       const SizedBox(width: 6),
-                      Text(
-                        NumberFormatter.format(currency.coins),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 17,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                      Text(NumberFormatter.format(currency.coins),
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 17,
+                              fontWeight: FontWeight.bold)),
                     ],
                   ),
                 ),
@@ -361,38 +701,22 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
             ),
           ),
 
-          // Cave Scene
+          // ── Scene ────────────────────────────────────────────────────
           Expanded(
             child: GestureDetector(
-              onTapDown: (details) {
-                moveAlexTo(
-                  details.localPosition.dx,
-                  details.localPosition.dy,
-                );
-              },
-              onPanUpdate: (details) {
-                moveAlexTo(
-                  details.localPosition.dx,
-                  details.localPosition.dy,
-                );
-              },
+              onTapDown: (d) => moveAlexTo(d.localPosition.dx, d.localPosition.dy),
+              onPanUpdate: (d) => moveAlexTo(d.localPosition.dx, d.localPosition.dy),
               child: SizedBox(
                 width: double.infinity,
                 child: Stack(
                   children: [
-                    // SKY (top portion)
-                    Positioned.fill(
-                      child: CustomPaint(
-                        painter: OutdoorSkyPainter(),
-                      ),
-                    ),
+                    // Sky
+                    Positioned.fill(child: CustomPaint(painter: OutdoorSkyPainter())),
 
-                    // GRASS (bottom portion)
+                    // Grass
                     Positioned(
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      height: MediaQuery.of(context).size.height * 0.4, // Bottom 40%
+                      bottom: 0, left: 0, right: 0,
+                      height: MediaQuery.of(context).size.height * 0.4,
                       child: Container(
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
@@ -400,80 +724,137 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                             end: Alignment.bottomCenter,
                             colors: [
                               StageTheme.getTheme(displayStage).groundColor,
-                          StageTheme.getTheme(displayStage).groundAccent,
+                              StageTheme.getTheme(displayStage).groundAccent,
                             ],
                           ),
                         ),
-                        child: CustomPaint(
-                          painter: GrassTexturePainter(),
+                        child: CustomPaint(painter: GrassTexturePainter()),
+                      ),
+                    ),
+
+                    // House / Cave image
+                    Positioned(
+                      top: 98,
+                      left: MediaQuery.of(context).size.width * 0.16,
+                      child: GestureDetector(
+                        onTapDown: (_) => setState(() => _caveScale = 0.95),
+                        onTapUp: (_) {
+                          setState(() => _caveScale = 1.0);
+                          openCave();
+                        },
+                        onTapCancel: () => setState(() => _caveScale = 1.0),
+                        child: AnimatedScale(
+                          scale: _caveScale,
+                          duration: const Duration(milliseconds: 100),
+                          child: SizedBox(
+                            width: MediaQuery.of(context).size.width * 0.7,
+                            height: 350,
+                            child: Image.asset(_getHouseImage(displayStage),
+                                fit: BoxFit.contain),
+                          ),
                         ),
                       ),
                     ),
 
-                    if (displayStage == 0)
-                    // Keep your existing Rive cave for stage 0
+                    // ── TORCHES (cave only, stage 0) ──────────────────
+                    if (displayStage == 0) ...[
+                      // Left torch
                       Positioned(
-                        top: MediaQuery.of(context).size.height * 0.2 - 176,
-                        left: MediaQuery.of(context).size.width / 2 - 140,
-                        child: SizedBox(
-                          width: 300,
-                          height: 350,
-                          child: Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              AnimatedScale(
-                                scale: _caveScale,
-                                duration: const Duration(milliseconds: 100),
-                                curve: Curves.easeInOut,
-                                child: const RiveAnimation.asset(
-                                  'assets/animations/cave.riv',
-                                  fit: BoxFit.contain,
-                                  alignment: Alignment.bottomCenter,
-                                  stateMachines: ['State Machine 1'],
-                                ),
-                              ),
-                              Positioned(
-                                left: 50, top: 150,
-                                child: GestureDetector(
-                                  behavior: HitTestBehavior.translucent,
-                                  onTapDown: (_) => setState(() => _caveScale = .95),
-                                  onTapUp: (_) { setState(() => _caveScale = 1.0); openCave(); },
-                                  onTapCancel: () => setState(() => _caveScale = 1.0),
-                                  child: Container(
-                                    width: 230, height: 200,
-                                    color: Colors.transparent,
-                                  ),
-                                ),
-                              ),
-                            ],
+                        top: 205,
+                        left: screenW * 0.22,
+                        child: GestureDetector(
+                          onTap: _onTorchSpotTapped,
+                          child: SizedBox(
+                            width: 60, height: 130,
+                            child: _torchPurchased
+                                ? CustomPaint(
+                                size: const Size(60, 130),
+                                painter: _TorchPainter())
+                                : Opacity(
+                                opacity: 0.18,
+                                child: CustomPaint(
+                                    size: const Size(60, 130),
+                                    painter: _TorchPainter())),
                           ),
                         ),
-                      )
-                    else
-                    // CustomPainter house for stages 1-3
+                      ),
+                      // Right torch
                       Positioned(
-                        top: 154,
-                        left: MediaQuery.of(context).size.width * 0.25,
+                        top: 205,
+                        left: screenW * 0.65,
                         child: GestureDetector(
-                          onTapDown: (_) => setState(() => _caveScale = 0.95),
-                          onTapUp: (_) { setState(() => _caveScale = 1.0); openCave(); },
-                          onTapCancel: () => setState(() => _caveScale = 1.0),
-                          child: AnimatedScale(
-                            scale: _caveScale,
-                            duration: const Duration(milliseconds: 100),
-                            child: SizedBox(
-                              width: MediaQuery.of(context).size.width * 0.5,
-                              height: 150,
-                              child: CustomPaint(
-                                painter: getHousePainter(displayStage),
-                                size: Size.infinite,
+                          onTap: _onTorchSpotTapped,
+                          child: SizedBox(
+                            width: 60, height: 130,
+                            child: _torchPurchased
+                                ? CustomPaint(
+                                size: const Size(60, 130),
+                                painter: _TorchPainter())
+                                : Opacity(
+                                opacity: 0.18,
+                                child: CustomPaint(
+                                    size: const Size(60, 130),
+                                    painter: _TorchPainter())),
+                          ),
+                        ),
+                      ),
+                    ],
+
+                    // ── WIND CHIMES (shack only, stage 1) ────────────
+                    if (displayStage == 1)
+                      Positioned(
+                        top: 170,
+                        left: screenW * 0.58,
+                        child: GestureDetector(
+                          onTap: _onWindChimesTapped,
+                          child: SizedBox(
+                            width: 80, height: 120,
+                            child: _windChimesPurchased
+                                ? AnimatedBuilder(
+                              animation: _chimesController!,
+                              builder: (_, __) => CustomPaint(
+                                painter: _WindChimesPainter(
+                                  swing: (_chimesController!.value - 0.5) * 0.3,
+                                ),
                               ),
+                            )
+                                : Opacity(
+                              opacity: 0.18,
+                              child: CustomPaint(
+                                  painter: _WindChimesPainter(swing: 0.0)),
                             ),
                           ),
                         ),
                       ),
 
+                    // ── FOUNTAIN (house only, stage 2) ────────────────
+                    if (displayStage == 2)
+                      Positioned(
+                        top: 295,
+                        left: screenW * 0.41,
+                        child: GestureDetector(
+                          onTap: _onFountainTapped,
+                          child: SizedBox(
+                            width: 90, height: 90,
+                            child: _fountainPurchased
+                                ? AnimatedBuilder(
+                              animation: _fountainController!,
+                              builder: (_, __) => CustomPaint(
+                                painter: _FountainPainter(
+                                  ripple: _fountainController!.value,
+                                ),
+                              ),
+                            )
+                                : Opacity(
+                              opacity: 0.18,
+                              child: CustomPaint(
+                                  painter: _FountainPainter(ripple: 0.4)),
+                            ),
+                          ),
+                        ),
+                      ),
 
+                    // Garden painter
                     Positioned(
                       bottom: MediaQuery.of(context).size.height * 0.05,
                       left: MediaQuery.of(context).size.width * 0.05,
@@ -486,138 +867,142 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                         ),
                       ),
                     ),
+
+                    // Stage nav arrows
                     Positioned(
-                      bottom: 300,
-                      left: 0,
-                      right: 0,
+                      bottom: 300, left: 0, right: 0,
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           if (displayStage > 0)
                             GestureDetector(
-                              onTap: () => setState(() { _viewingStage = displayStage - 1; }),
+                              onTap: () => setState(() {
+                                _viewingStage = (displayStage - 1).clamp(0, 2);
+                              }),
                               child: Container(
-                                padding: EdgeInsets.all(8),
-                                decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
-                                child: Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 18),
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                    color: Colors.black54,
+                                    borderRadius: BorderRadius.circular(20)),
+                                child: const Icon(Icons.arrow_back_ios_new,
+                                    color: Colors.white, size: 18),
                               ),
                             )
-                          else SizedBox(width: 34),
-                          SizedBox(width: 12),
+                          else
+                            const SizedBox(width: 34),
+                          const SizedBox(width: 12),
                           Container(
-                            padding: EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                            decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(16)),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 6),
+                            decoration: BoxDecoration(
+                                color: Colors.black54,
+                                borderRadius: BorderRadius.circular(16)),
                             child: Text(
-                              ['Cave', 'Shack', 'House', 'Mansion'][displayStage] +
-                                  (displayStage == UpgradeService().currentStage ? '' : '  👀'),
-                              style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                              ['Cave', 'Shack', 'House'][displayStage.clamp(0, 2)] +
+                                  (displayStage ==
+                                      UpgradeService().currentStage.clamp(0, 2)
+                                      ? ''
+                                      : '  👀'),
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold),
                             ),
                           ),
-                          SizedBox(width: 12),
-                          if (displayStage < UpgradeService().currentStage)
+                          const SizedBox(width: 12),
+                          if (displayStage < UpgradeService().currentStage.clamp(0, 2))
                             GestureDetector(
-                              onTap: () => setState(() { _viewingStage = displayStage + 1; }),
+                              onTap: () => setState(() {
+                                _viewingStage = (displayStage + 1).clamp(0, 2);
+                              }),
                               child: Container(
-                                padding: EdgeInsets.all(8),
-                                decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
-                                child: Icon(Icons.arrow_forward_ios, color: Colors.white, size: 18),
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                    color: Colors.black54,
+                                    borderRadius: BorderRadius.circular(20)),
+                                child: const Icon(Icons.arrow_forward_ios,
+                                    color: Colors.white, size: 18),
                               ),
                             )
-                          else SizedBox(width: 34),
+                          else
+                            const SizedBox(width: 34),
                         ],
                       ),
                     ),
-                    // FOCUS BUTTON (better centered)
+
+                    // Focus button
                     Positioned(
-                      bottom: 30,
-                      left: 0,
-                      right: 0, // This makes it truly centered
+                      bottom: 30, left: 0, right: 0,
                       child: Center(
                         child: GestureDetector(
-                          onTapDown: (_) {
-                            setState(() => _gardenScale = 0.95);
-                          },
+                          onTapDown: (_) => setState(() => _gardenScale = 0.95),
                           onTapUp: (_) {
                             setState(() => _gardenScale = 1.0);
                             startFocus();
                           },
-                          onTapCancel: () {
-                            setState(() => _gardenScale = 1.0);
-                          },
+                          onTapCancel: () => setState(() => _gardenScale = 1.0),
                           child: AnimatedScale(
                             scale: _gardenScale,
                             duration: const Duration(milliseconds: 100),
                             curve: Curves.easeInOut,
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 35, vertical: 16),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 35, vertical: 16),
                               decoration: BoxDecoration(
-                                color: StageTheme.getTheme(UpgradeService().currentStage).primaryColor,
+                                color: StageTheme.getTheme(
+                                    UpgradeService().currentStage.clamp(0, 2))
+                                    .primaryColor,
                                 borderRadius: BorderRadius.circular(30),
                                 boxShadow: const [
                                   BoxShadow(
-                                    color: Colors.black26,
-                                    blurRadius: 10,
-                                    offset: Offset(0, 4),
-                                  ),
+                                      color: Colors.black26,
+                                      blurRadius: 10,
+                                      offset: Offset(0, 4)),
                                 ],
                               ),
-                              child: const Text(
-                                "Focus",
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 1,
-                                ),
-                              ),
+                              child: const Text('Focus',
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1)),
                             ),
                           ),
                         ),
                       ),
                     ),
 
-                    // Alex
-                    // Alex (tappable for facts!)
+                    // Alex character
                     AnimatedPositioned(
                       duration: const Duration(milliseconds: 300),
                       curve: Curves.easeInOut,
                       left: alexX,
-                      top: alexY,
+                      top:  alexY,
                       child: GestureDetector(
-                        onTap: () => _showRandomFact(),  // ← ADD THIS
+                        onTap: _showRandomFact,
                         child: _buildAlex(),
                       ),
                     ),
-                    // Animated Butterfly
+
+                    // Butterfly
                     if (showButterfly && _butterflyController != null)
                       AnimatedBuilder(
                         animation: _butterflyController!,
-                        builder: (context, child) {
-                          double progress = _butterflyController!.value;
+                        builder: (context, _) {
+                          double progress  = _butterflyController!.value;
                           double screenWidth = MediaQuery.of(context).size.width;
-
-                          // Butterfly flies from left to right
                           double x = -50 + (screenWidth + 100) * progress;
-
-                          // Sine wave motion for natural flight
                           double y = butterflyY + math.sin(progress * math.pi * 4) * 30;
-
                           return Positioned(
-                            left: x,
-                            top: y,
+                            left: x, top: y,
                             child: Transform.rotate(
-                              angle: math.sin(progress * math.pi * 8) * 0.2, // Wing flapping
-                              child: const Text(
-                                "🦋",
-                                style: TextStyle(fontSize: 24),
-                              ),
+                              angle: math.sin(progress * math.pi * 8) * 0.2,
+                              child: const Text('🦋',
+                                  style: TextStyle(fontSize: 24)),
                             ),
                           );
                         },
                       ),
-                    // TOP BAR WITH CURRENCIES
-                    // TOP BAR WITH CURRENCIES (SIMPLIFIED)
-
                   ],
                 ),
               ),
@@ -627,110 +1012,65 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
       ),
     );
   }
-  // ============================================================
-// ✅ COMPLETE UPDATED METHOD
-// Replace the _showRandomFact() method in cave_scene_screen.dart
-// ============================================================
 
+  // ── Helper widgets / dialogs ──────────────────────────────────────────
   void _showRandomFact() {
-    final FactsService facts = FactsService();
-    String fact = facts.getRandomFact();
-
+    final fact = FactsService().getRandomFact();
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF16213e),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
-            // Character avatar (large emoji circle)
             Container(
-              width: 50,
-              height: 50,
+              width: 50, height: 50,
               decoration: BoxDecoration(
                 color: const Color(0xFF00d4ff).withOpacity(0.2),
                 shape: BoxShape.circle,
-                border: Border.all(
-                  color: const Color(0xFF00d4ff),
-                  width: 2,
-                ),
+                border: Border.all(color: const Color(0xFF00d4ff), width: 2),
               ),
-              child: const Center(
-                child: Text(
-                  '😊', // ← Change this to any emoji you want!
-                  style: TextStyle(fontSize: 30),
-                ),
-              ),
+              child: const Center(child: Text('😊', style: TextStyle(fontSize: 30))),
             ),
             const SizedBox(width: 12),
-
-            // Character name + "says..."
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    widget.character.name, // ← This shows "Bob", "Fred", etc.
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const Text(
-                    'says...',
-                    style: TextStyle(
-                      color: Colors.white54,
-                      fontSize: 12,
-                    ),
-                  ),
+                  Text(widget.character.name,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold)),
+                  const Text('says...',
+                      style: TextStyle(color: Colors.white54, fontSize: 12)),
                 ],
               ),
             ),
           ],
         ),
-
-        // The fact itself in a styled box
         content: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: const Color(0xFF0f3460).withOpacity(0.5),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: const Color(0xFF00d4ff).withOpacity(0.3),
-              width: 2,
-            ),
+                color: const Color(0xFF00d4ff).withOpacity(0.3), width: 2),
           ),
-          child: Text(
-            fact,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              height: 1.5,
-            ),
-          ),
+          child: Text(fact,
+              style: const TextStyle(color: Colors.white, fontSize: 16, height: 1.5)),
         ),
-
-        // Close button
         actions: [
           ElevatedButton(
             onPressed: () => Navigator.pop(context),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF00d4ff),
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            child: const Text(
-              'Cool! 😎',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            child: const Text('Cool! 😎',
+                style:
+                TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -740,31 +1080,22 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
   Widget _buildAlex() {
     return Column(
       children: [
-        // Name tag
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
-            color: Colors.black54,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Text(
-            widget.character.name,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+              color: Colors.black54, borderRadius: BorderRadius.circular(10)),
+          child: Text(widget.character.name,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold)),
         ),
         const SizedBox(height: 5),
-
-        // Bob Rive animation
         Transform(
           alignment: Alignment.center,
           transform: Matrix4.identity()..scale(facingRight ? 1.0 : -1.0, 1.0),
           child: const SizedBox(
-            width: 140,   // ← INCREASED from 60
-            height: 170, // ← INCREASED from 80
+            width: 140, height: 170,
             child: RiveAnimation.asset(
               'assets/animations/bob_idle.riv',
               fit: BoxFit.contain,
@@ -775,63 +1106,48 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
       ],
     );
   }
+
+  // ── Session recovery ──────────────────────────────────────────────────
   Future<void> _checkForRecoveredSession() async {
     final sessionService = FocusSessionService();
     final hasSession = await sessionService.hasActiveSession();
-
     if (!hasSession) return;
-
     final sessionData = await sessionService.getActiveSession();
-
-    if (sessionData == null) return;
-
-    if (!mounted) return;
-
-    // If session was completed while app was closed
+    if (sessionData == null || !mounted) return;
     if (sessionData.wasCompleted) {
       _showSessionCompletedDialog(sessionData);
     } else {
-      // Session still in progress, ask to resume
       _showResumeSessionDialog(sessionData);
     }
   }
 
   void _showSessionCompletedDialog(FocusSessionData session) async {
-    // Calculate rewards
-    double multiplier = UpgradeService().getTotalMultiplier();
+    double multiplier = UpgradeService().getTotalMultiplier()
+        * (_CaveSceneScreenState.torchesOwned  ? 1.15 : 1.0)
+        * (_CaveSceneScreenState.chimesOwned   ? 1.10 : 1.0)
+        * (_CaveSceneScreenState.fountainOwned ? 1.12 : 1.0);
     int peasEarned = CurrencyService.calculatePeasFromFocus(
-      session.durationMinutes,
-      upgradeMultiplier: multiplier,
-    );
-
+        session.durationMinutes, upgradeMultiplier: multiplier);
     await CurrencyService().addPeas(peasEarned);
-
     int earnings = session.durationMinutes * 5;
     widget.character.earnMoney(earnings);
     widget.character.addFocusMinutes(session.durationMinutes);
     await StreakService().recordFocusSession();
-
     if (!mounted) return;
-
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF2d2d2d),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          "Session Completed! 🎉",
-          style: TextStyle(color: Colors.white),
-          textAlign: TextAlign.center,
-        ),
+        title: const Text('Session Completed! 🎉',
+            style: TextStyle(color: Colors.white), textAlign: TextAlign.center),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              "Your focus session finished while the app was closed!",
-              style: TextStyle(color: Colors.white70),
-              textAlign: TextAlign.center,
-            ),
+            const Text('Your focus session finished while the app was closed!',
+                style: TextStyle(color: Colors.white70),
+                textAlign: TextAlign.center),
             const SizedBox(height: 20),
             Container(
               padding: const EdgeInsets.all(16),
@@ -842,19 +1158,14 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
               ),
               child: Column(
                 children: [
-                  Text(
-                    "$peasEarned ${CurrencyService().cropEmoji}",
-                    style: const TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF4CAF50),
-                    ),
-                  ),
+                  Text('$peasEarned ${CurrencyService().cropEmoji}',
+                      style: const TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF4CAF50))),
                   const SizedBox(height: 8),
-                  Text(
-                    "${session.durationMinutes} minutes completed!",
-                    style: const TextStyle(color: Colors.white70),
-                  ),
+                  Text('${session.durationMinutes} minutes completed!',
+                      style: const TextStyle(color: Colors.white70)),
                 ],
               ),
             ),
@@ -868,12 +1179,14 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF4CAF50),
                 padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-              child: const Text(
-                "Awesome!",
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-              ),
+              child: const Text('Awesome!',
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white)),
             ),
           ),
         ],
@@ -888,19 +1201,14 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF2d2d2d),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          "Resume Focus Session?",
-          style: TextStyle(color: Colors.white),
-          textAlign: TextAlign.center,
-        ),
+        title: const Text('Resume Focus Session?',
+            style: TextStyle(color: Colors.white), textAlign: TextAlign.center),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              "You have an active focus session:",
-              style: TextStyle(color: Colors.white70),
-              textAlign: TextAlign.center,
-            ),
+            const Text('You have an active focus session:',
+                style: TextStyle(color: Colors.white70),
+                textAlign: TextAlign.center),
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(16),
@@ -910,19 +1218,14 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
               ),
               child: Column(
                 children: [
-                  Text(
-                    "${session.durationMinutes} minute session",
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  Text('${session.durationMinutes} minute session',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
-                  Text(
-                    "${session.remainingSeconds ~/ 60} minutes remaining",
-                    style: const TextStyle(color: Color(0xFF4CAF50)),
-                  ),
+                  Text('${session.remainingSeconds ~/ 60} minutes remaining',
+                      style: const TextStyle(color: Color(0xFF4CAF50))),
                 ],
               ),
             ),
@@ -934,10 +1237,8 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
               await FocusSessionService().cancelSession();
               Navigator.pop(context);
             },
-            child: const Text(
-              "Cancel Session",
-              style: TextStyle(color: Colors.red),
-            ),
+            child: const Text('Cancel Session',
+                style: TextStyle(color: Colors.red)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -945,7 +1246,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => GardenFocusScreen(
+                  builder: (_) => GardenFocusScreen(
                     character: widget.character,
                     focusDurationMinutes: session.durationMinutes,
                   ),
@@ -956,79 +1257,29 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
               });
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4CAF50),
-            ),
-            child: const Text(
-              "Resume",
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-            ),
+                backgroundColor: const Color(0xFF4CAF50)),
+            child: const Text('Resume',
+                style:
+                TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
     );
   }
 
-  List<Widget> _buildCaveDecorations() {
-    return [
-      Positioned(
-        top: 50,
-        left: 10,
-        child: _buildRock(40, 60),
-      ),
-      Positioned(
-        top: 80,
-        right: 20,
-        child: _buildRock(50, 50),
-      ),
-      Positioned(
-        bottom: 150,
-        left: 30,
-        child: _buildRock(35, 45),
-      ),
-      Positioned(
-        bottom: 200,
-        right: 40,
-        child: _buildRock(45, 55),
-      ),
-      Positioned(
-        bottom: 180,
-        left: 50,
-        child: Column(
-          children: [
-            const Text("🔥", style: TextStyle(fontSize: 30)),
-            Container(
-              width: 40,
-              height: 8,
-              decoration: BoxDecoration(
-                color: Colors.brown[900],
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ],
-        ),
-      ),
-    ];
-  }
+  // ── Unused but kept for build compatibility ───────────────────────────
+  List<Widget> _buildCaveDecorations() => [];
 
   Widget _buildRock(double width, double height) {
     return Container(
-      width: width,
-      height: height,
+      width: width, height: height,
       decoration: const BoxDecoration(
         color: Color(0xFF3a3a3a),
         borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(20),
-          topRight: Radius.circular(25),
-          bottomLeft: Radius.circular(10),
-          bottomRight: Radius.circular(15),
+          topLeft: Radius.circular(20), topRight: Radius.circular(25),
+          bottomLeft: Radius.circular(10), bottomRight: Radius.circular(15),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black54,
-            blurRadius: 8,
-            offset: Offset(2, 4),
-          ),
-        ],
+        boxShadow: [BoxShadow(color: Colors.black54, blurRadius: 8, offset: Offset(2, 4))],
       ),
     );
   }
@@ -1037,27 +1288,286 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFF0f3460),
-        borderRadius: BorderRadius.circular(20),
-      ),
+          color: const Color(0xFF0f3460),
+          borderRadius: BorderRadius.circular(20)),
       child: Row(
         children: [
           Text(emoji, style: const TextStyle(fontSize: 20)),
           const SizedBox(width: 8),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+          Text(value,
+              style: const TextStyle(
+                  color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
         ],
       ),
     );
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// TORCH PAINTER
+// ═══════════════════════════════════════════════════════════════
+class _TorchPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2;
+
+    // Handle
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(cx - 5, size.height * 0.45, 10, size.height * 0.55),
+        const Radius.circular(3),
+      ),
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF8B5E3C), Color(0xFF5C3A1E)],
+        ).createShader(Rect.fromLTWH(cx - 5, 0, 10, size.height)),
+    );
+
+    // Bowl
+    canvas.drawPath(
+      Path()
+        ..moveTo(cx - 12, size.height * 0.45)
+        ..lineTo(cx + 12, size.height * 0.45)
+        ..lineTo(cx + 8,  size.height * 0.55)
+        ..lineTo(cx - 8,  size.height * 0.55)
+        ..close(),
+      Paint()..color = const Color(0xFF7A4E2D),
+    );
+
+    // Flame outer
+    canvas.drawPath(
+      Path()
+        ..moveTo(cx, 0)
+        ..cubicTo(cx + 14, size.height * 0.10, cx + 14, size.height * 0.28, cx, size.height * 0.46)
+        ..cubicTo(cx - 14, size.height * 0.28, cx - 14, size.height * 0.10, cx, 0)
+        ..close(),
+      Paint()
+        ..shader = const RadialGradient(
+          center: Alignment(0, 0.4),
+          radius: 0.8,
+          colors: [Color(0xFFFFD700), Color(0xFFFF6600)],
+        ).createShader(Rect.fromLTWH(cx - 14, 0, 28, size.height * 0.5)),
+    );
+
+    // Flame inner
+    canvas.drawPath(
+      Path()
+        ..moveTo(cx, size.height * 0.06)
+        ..cubicTo(cx + 7, size.height * 0.14, cx + 7, size.height * 0.30, cx, size.height * 0.44)
+        ..cubicTo(cx - 7, size.height * 0.30, cx - 7, size.height * 0.14, cx, size.height * 0.06)
+        ..close(),
+      Paint()
+        ..color = const Color(0xFFFFF176).withOpacity(0.85)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+    );
+
+    // Glow
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(cx, size.height * 0.25), width: 36, height: 42),
+      Paint()
+        ..color = const Color(0xFFFF8C00).withOpacity(0.25)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter old) => false;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FOUNTAIN PAINTER
+// ═══════════════════════════════════════════════════════════════
+class _FountainPainter extends CustomPainter {
+  final double ripple; // 0.0 → 1.0, repeating
+
+  const _FountainPainter({required this.ripple});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width  / 2;
+    final cy = size.height / 2 + 8;
+
+    // ── Basin (outer stone ring) ──────────────────────────────
+    final stonePaint = Paint()
+      ..shader = RadialGradient(
+        colors: [const Color(0xFF9E9E9E), const Color(0xFF616161)],
+      ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: 38));
+
+    canvas.drawCircle(Offset(cx, cy), 36, stonePaint);
+
+    // Basin rim highlight
+    canvas.drawCircle(
+      Offset(cx, cy), 36,
+      Paint()
+        ..color = const Color(0xFFBDBDBD)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4,
+    );
+
+    // ── Water inside basin ────────────────────────────────────
+    canvas.drawCircle(
+      Offset(cx, cy), 30,
+      Paint()..color = const Color(0xFF42A5F5).withOpacity(0.85),
+    );
+
+    // Water shimmer
+    canvas.drawCircle(
+      Offset(cx - 8, cy - 6), 8,
+      Paint()..color = Colors.white.withOpacity(0.18),
+    );
+
+    // ── Animated ripple rings ─────────────────────────────────
+    for (int i = 0; i < 3; i++) {
+      double phase  = (ripple + i / 3.0) % 1.0;
+      double radius = 4 + phase * 24;
+      double opacity = (1.0 - phase) * 0.55;
+      canvas.drawCircle(
+        Offset(cx, cy), radius,
+        Paint()
+          ..color = Colors.white.withOpacity(opacity)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.8,
+      );
+    }
+
+    // ── Center pedestal ───────────────────────────────────────
+    final pedPaint = Paint()..color = const Color(0xFF757575);
+    canvas.drawCircle(Offset(cx, cy), 7, pedPaint);
+
+    // ── Water spout arc (left + right) ────────────────────────
+    // Animated droop based on ripple phase
+    double droop = 6 + math.sin(ripple * math.pi * 2) * 2;
+
+    for (int side in [-1, 1]) {
+      final arcPath = Path()
+        ..moveTo(cx, cy - 6)
+        ..quadraticBezierTo(
+          cx + side * 18, cy - 22,
+          cx + side * 26, cy - droop,
+        );
+      canvas.drawPath(
+        arcPath,
+        Paint()
+          ..color = const Color(0xFF90CAF9).withOpacity(0.9)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5
+          ..strokeCap = StrokeCap.round,
+      );
+
+      // Water droplet at arc end
+      canvas.drawCircle(
+        Offset(cx + side * 26, cy - droop + 2), 3,
+        Paint()..color = const Color(0xFF64B5F6),
+      );
+    }
+
+    // ── Straight upward spout ─────────────────────────────────
+    double spoutH = 14 + math.sin(ripple * math.pi * 2) * 2;
+    canvas.drawLine(
+      Offset(cx, cy - 6),
+      Offset(cx, cy - 6 - spoutH),
+      Paint()
+        ..color = const Color(0xFF90CAF9)
+        ..strokeWidth = 3
+        ..strokeCap = StrokeCap.round,
+    );
+    // Droplet at top
+    canvas.drawCircle(
+      Offset(cx, cy - 6 - spoutH),
+      3.5,
+      Paint()..color = const Color(0xFFBBDEFB),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_FountainPainter old) => old.ripple != ripple;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WIND CHIMES PAINTER
+// ═══════════════════════════════════════════════════════════════
+class _WindChimesPainter extends CustomPainter {
+  final double swing; // -0.15 to 0.15 radians
+
+  const _WindChimesPainter({required this.swing});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2;
+
+    canvas.save();
+    canvas.translate(cx, 0);
+    canvas.rotate(swing);
+    canvas.translate(-cx, 0);
+
+    final woodPaint = Paint()
+      ..color = const Color(0xFFa0724a)
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+
+    final stringPaint = Paint()
+      ..color = const Color(0xFFdddddd)
+      ..strokeWidth = 1.2;
+
+    final chimePaint = Paint()
+      ..color = const Color(0xFFc8d8e8)
+      ..style = PaintingStyle.fill;
+
+    final chimeStroke = Paint()
+      ..color = const Color(0xFF8aabcc)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+
+    // Top hanging string
+    canvas.drawLine(Offset(cx, 0), Offset(cx, 14), stringPaint);
+
+    // Horizontal bar
+    canvas.drawLine(Offset(cx - 28, 14), Offset(cx + 28, 14), woodPaint);
+
+    // 5 chimes
+    final chimeXs   = [cx - 24.0, cx - 12.0, cx, cx + 12.0, cx + 24.0];
+    final chimeLens = [38.0, 50.0, 44.0, 48.0, 36.0];
+
+    for (int i = 0; i < 5; i++) {
+      final x   = chimeXs[i];
+      final len = chimeLens[i];
+
+      canvas.drawLine(Offset(x, 14), Offset(x, 20), stringPaint);
+
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromCenter(center: Offset(x, 20 + len / 2), width: 7, height: len),
+        const Radius.circular(3),
+      );
+      canvas.drawRRect(rect, chimePaint);
+      canvas.drawRRect(rect, chimeStroke);
+
+      // Shine
+      canvas.drawLine(
+        Offset(x - 1.5, 22),
+        Offset(x - 1.5, 20 + len - 6),
+        Paint()
+          ..color = Colors.white.withOpacity(0.4)
+          ..strokeWidth = 1.5,
+      );
+    }
+
+    // Clapper
+    canvas.drawCircle(Offset(cx, 20 + chimeLens[2] + 6), 4, chimePaint);
+    canvas.drawCircle(Offset(cx, 20 + chimeLens[2] + 6), 4, chimeStroke);
+
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_WindChimesPainter old) => old.swing != swing;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MISC PAINTERS (kept for compatibility)
+// ═══════════════════════════════════════════════════════════════
 class RaggedClothPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
@@ -1065,7 +1575,6 @@ class RaggedClothPainter extends CustomPainter {
       ..color = const Color(0xFF3d3426)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
-
     canvas.drawLine(const Offset(5, 10), const Offset(15, 15), paint);
     canvas.drawLine(const Offset(20, 8), const Offset(25, 18), paint);
     canvas.drawLine(const Offset(10, 25), const Offset(18, 30), paint);
@@ -1075,75 +1584,40 @@ class RaggedClothPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-// Realistic grass texture painter
 class GrassTexturePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final Random random = Random(123); // Fixed seed for consistency
-
-    // Draw individual grass blades with variation
+    final Random random = Random(123);
     for (int i = 0; i < 150; i++) {
-      double x = random.nextDouble() * size.width;
-      double baseY = random.nextDouble() * size.height;
-
-      // Grass blade properties
-      double height = 15 + random.nextDouble() * 12;
-      double width = 1.5 + random.nextDouble() * 1;
-      double bend = (random.nextDouble() - 0.5) * 5;
-
-      // Color variation (different shades of green)
-      Color grassColor;
-      double colorRand = random.nextDouble();
-      if (colorRand < 0.3) {
-        grassColor = const Color(0xFF689F38);
-      } else if (colorRand < 0.6) {
-        grassColor = const Color(0xFF7CB342);
-      } else {
-        grassColor = const Color(0xFF8BC34A);
-      }
-
-      final grassPaint = Paint()
-        ..color = grassColor
-        ..strokeWidth = width
-        ..strokeCap = StrokeCap.round;
-
-      // Draw curved grass blade
-      final path = Path()
-        ..moveTo(x, baseY + height)
-        ..quadraticBezierTo(
-          x + bend,
-          baseY + height / 2,
-          x + bend * 1.5,
-          baseY,
-        );
-
-      canvas.drawPath(path, grassPaint);
+      double x     = random.nextDouble() * size.width;
+      double baseY  = random.nextDouble() * size.height;
+      double h      = 15 + random.nextDouble() * 12;
+      double w      = 1.5 + random.nextDouble();
+      double bend   = (random.nextDouble() - 0.5) * 5;
+      double cr     = random.nextDouble();
+      Color color   = cr < 0.3
+          ? const Color(0xFF689F38)
+          : cr < 0.6
+          ? const Color(0xFF7CB342)
+          : const Color(0xFF8BC34A);
+      canvas.drawPath(
+        Path()
+          ..moveTo(x, baseY + h)
+          ..quadraticBezierTo(x + bend, baseY + h / 2, x + bend * 1.5, baseY),
+        Paint()..color = color..strokeWidth = w..strokeCap = StrokeCap.round,
+      );
     }
-
-    // Add some small flowers scattered
     for (int i = 0; i < 12; i++) {
       double x = random.nextDouble() * size.width;
       double y = random.nextDouble() * size.height;
-
-      // Flower colors
-      List<Color> flowerColors = [
-        const Color(0xFFFFEB3B), // Yellow
-        const Color(0xFFFFFFFF), // White
-        const Color(0xFFFF69B4), // Pink
-        const Color(0xFFE1BEE7), // Light purple
+      final colors = [
+        const Color(0xFFFFEB3B), const Color(0xFFFFFFFF),
+        const Color(0xFFFF69B4), const Color(0xFFE1BEE7),
       ];
-
-      Color flowerColor = flowerColors[random.nextInt(flowerColors.length)];
-
-      // Draw small flower
-      final flowerPaint = Paint()..color = flowerColor;
-      canvas.drawCircle(Offset(x, y), 2, flowerPaint);
-
-      // Stem
-      final stemPaint = Paint()
-        ..color = const Color(0xFF558B2F)
-        ..strokeWidth = 1;
-      canvas.drawLine(Offset(x, y), Offset(x, y + 5), stemPaint);
+      canvas.drawCircle(Offset(x, y), 2,
+          Paint()..color = colors[random.nextInt(colors.length)]);
+      canvas.drawLine(Offset(x, y), Offset(x, y + 5),
+          Paint()..color = const Color(0xFF558B2F)..strokeWidth = 1);
     }
   }
 
@@ -1151,7 +1625,9 @@ class GrassTexturePainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-// ========== TIMER PICKER DIALOG WITH SLIDER ==========
+// ═══════════════════════════════════════════════════════════════
+// TIMER PICKER DIALOG
+// ═══════════════════════════════════════════════════════════════
 class TimerPickerDialog extends StatefulWidget {
   const TimerPickerDialog({super.key});
 
@@ -1185,155 +1661,111 @@ class _TimerPickerDialogState extends State<TimerPickerDialog> {
   @override
   Widget build(BuildContext context) {
     int minutes = selectedMinutes.round();
-    int hours = minutes ~/ 60;
-    int mins = minutes % 60;
+    int hours   = minutes ~/ 60;
+    int mins    = minutes % 60;
 
-    // Format display string
     String timeDisplay;
-    if (hours > 0 && mins > 0) {
-      timeDisplay = '${hours}hr ${mins}min';
-    } else if (hours > 0) {
-      timeDisplay = '${hours}hr';
-    } else {
-      timeDisplay = '${mins}min';
-    }
+    if (hours > 0 && mins > 0)      timeDisplay = '${hours}hr ${mins}min';
+    else if (hours > 0)             timeDisplay = '${hours}hr';
+    else                            timeDisplay = '${mins}min';
 
-    // PEA earnings (with all boosts!)
+    // Combined multiplier including torch and chimes boosts
+    double totalMultiplier = UpgradeService().getTotalMultiplier()
+        * (_CaveSceneScreenState.torchesOwned  ? 1.15 : 1.0)
+        * (_CaveSceneScreenState.chimesOwned   ? 1.10 : 1.0)
+        * (_CaveSceneScreenState.fountainOwned ? 1.12 : 1.0);
+
     int peaEarnings = CurrencyService.calculatePeasFromFocus(
       minutes,
-      upgradeMultiplier: UpgradeService().getTotalMultiplier(),
+      upgradeMultiplier: totalMultiplier,
     );
 
     return AlertDialog(
       backgroundColor: const Color(0xFF16213e),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-      ),
-      title: const Text(
-        'Choose Focus Duration',
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 20,
-          fontWeight: FontWeight.bold,
-        ),
-        textAlign: TextAlign.center,
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Text('Choose Focus Duration',
+          style: TextStyle(
+              color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+          textAlign: TextAlign.center),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Time display with arrows
+          // Time selector row
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Down arrow
               GestureDetector(
-                onTap: () {
-                  setState(() {
-                    if (selectedMinutes > 1) selectedMinutes -= 1;
-                  });
-                },
+                onTap: () =>
+                    setState(() { if (selectedMinutes > 1) selectedMinutes -= 1; }),
                 onLongPressStart: (_) => _startRepeating(-1),
-                onLongPressEnd: (_) => _stopRepeating(),
+                onLongPressEnd:   (_) => _stopRepeating(),
                 child: Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(
-                    Icons.remove,
-                    color: Colors.white70,
-                    size: 28,
-                  ),
+                  child: const Icon(Icons.remove, color: Colors.white70, size: 28),
                 ),
               ),
               const SizedBox(width: 16),
-              // Time display
               Column(
                 children: [
-                  Text(
-                    timeDisplay,
-                    style: const TextStyle(
-                      color: Color(0xFF4CAF50),
-                      fontSize: 29,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(
-                    '($minutes minutes)',
-                    style: const TextStyle(
-                      color: Colors.white38,
-                      fontSize: 15,
-                    ),
-                  ),
+                  Text(timeDisplay,
+                      style: const TextStyle(
+                          color: Color(0xFF4CAF50),
+                          fontSize: 29,
+                          fontWeight: FontWeight.bold)),
+                  Text('($minutes minutes)',
+                      style: const TextStyle(
+                          color: Colors.white38, fontSize: 15)),
                 ],
               ),
               const SizedBox(width: 16),
-              // Up arrow
               GestureDetector(
-                onTap: () {
-                  setState(() {
-                    if (selectedMinutes < 600) selectedMinutes += 1;
-                  });
-                },
+                onTap: () =>
+                    setState(() { if (selectedMinutes < 600) selectedMinutes += 1; }),
                 onLongPressStart: (_) => _startRepeating(1),
-                onLongPressEnd: (_) => _stopRepeating(),
+                onLongPressEnd:   (_) => _stopRepeating(),
                 child: Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(
-                    Icons.add,
-                    color: Colors.white70,
-                    size: 28,
-                  ),
+                  child: const Icon(Icons.add, color: Colors.white70, size: 28),
                 ),
               ),
             ],
           ),
-
           const SizedBox(height: 16),
-
           // Slider
           SliderTheme(
             data: SliderTheme.of(context).copyWith(
-              activeTrackColor: const Color(0xFF4CAF50),
+              activeTrackColor:   const Color(0xFF4CAF50),
               inactiveTrackColor: const Color(0xFF2d3e5f),
-              thumbColor: const Color(0xFF4CAF50),
-              overlayColor: const Color(0xFF4CAF50).withOpacity(0.3),
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 12),
-              trackHeight: 6,
+              thumbColor:         const Color(0xFF4CAF50),
+              overlayColor:       const Color(0xFF4CAF50).withOpacity(0.3),
+              thumbShape:         const RoundSliderThumbShape(enabledThumbRadius: 12),
+              trackHeight:        6,
             ),
             child: Slider(
-              value: selectedMinutes,
-              min: 1,
-              max: 600,
-              divisions: 599,
-              onChanged: (value) {
-                setState(() {
-                  selectedMinutes = value;
-                });
-              },
+              value: selectedMinutes, min: 1, max: 600, divisions: 599,
+              onChanged: (v) => setState(() => selectedMinutes = v),
             ),
           ),
-
-          // Min/Max labels
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('1min', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                Text('1min',  style: TextStyle(color: Colors.white54, fontSize: 12)),
                 Text('10hrs', style: TextStyle(color: Colors.white54, fontSize: 12)),
               ],
             ),
           ),
-
           const SizedBox(height: 20),
-
-          // Estimated earnings display
+          // Earnings box
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -1343,62 +1775,67 @@ class _TimerPickerDialogState extends State<TimerPickerDialog> {
             ),
             child: Column(
               children: [
-                const Text(
-                  'You will earn:',
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 14,
-                  ),
-                ),
+                const Text('You will earn:',
+                    style: TextStyle(color: Colors.white70, fontSize: 14)),
                 const SizedBox(height: 8),
-                Text(
-                  '~${NumberFormatter.format(peaEarnings)} ${CurrencyService().cropEmoji}',
-                  style: const TextStyle(
-                    color: Color(0xFF4CAF50),
-                    fontSize: 36,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-
-                Text(
-                  CurrencyService().cropName.toLowerCase(),
-                  style: const TextStyle(
-                    color: Colors.white60,
-                    fontSize: 14,
-                  ),
-                ),
+                Text('~${NumberFormatter.format(peaEarnings)} ${CurrencyService().cropEmoji}',
+                    style: const TextStyle(
+                        color: Color(0xFF4CAF50),
+                        fontSize: 36,
+                        fontWeight: FontWeight.bold)),
+                Text(CurrencyService().cropName.toLowerCase(),
+                    style: const TextStyle(color: Colors.white60, fontSize: 14)),
                 const SizedBox(height: 12),
-                Text(
-                  FurnitureService().getBoostString(),
-                  style: const TextStyle(
-                    color: Colors.amber,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const Text(
-                  'Furniture Boost',
-                  style: TextStyle(
-                    color: Colors.white54,
-                    fontSize: 12,
-                  ),
-                ),
+                // Furniture boost
+                Text(FurnitureService().getBoostString(),
+                    style: const TextStyle(
+                        color: Colors.amber,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold)),
+                const Text('Furniture Boost',
+                    style: TextStyle(color: Colors.white54, fontSize: 12)),
                 const SizedBox(height: 8),
+                // Upgrade boost
+                Text(UpgradeService().getBonusPercentageString(),
+                    style: const TextStyle(
+                        color: Colors.cyanAccent,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold)),
+                const Text('Upgrade Boost',
+                    style: TextStyle(color: Colors.white54, fontSize: 12)),
+                const SizedBox(height: 8),
+                // Torch boost
                 Text(
-                  UpgradeService().getBonusPercentageString(),
+                  _CaveSceneScreenState.torchesOwned ? '+15%' : '+0%',
                   style: const TextStyle(
-                    color: Colors.cyanAccent,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+                      color: Colors.orangeAccent,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold),
                 ),
-                const Text(
-                  'Upgrade Boost',
-                  style: TextStyle(
-                    color: Colors.white54,
-                    fontSize: 12,
-                  ),
+                const Text('Torch Boost',
+                    style: TextStyle(color: Colors.white54, fontSize: 12)),
+                const SizedBox(height: 8),
+                // Wind chimes boost
+                Text(
+                  _CaveSceneScreenState.chimesOwned ? '+10%' : '+0%',
+                  style: const TextStyle(
+                      color: Colors.tealAccent,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold),
                 ),
+                const Text('Wind Chimes Boost',
+                    style: TextStyle(color: Colors.white54, fontSize: 12)),
+                const SizedBox(height: 8),
+                // Fountain boost
+                Text(
+                  _CaveSceneScreenState.fountainOwned ? '+12%' : '+0%',
+                  style: const TextStyle(
+                      color: Colors.blueAccent,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold),
+                ),
+                const Text('Fountain Boost',
+                    style: TextStyle(color: Colors.white54, fontSize: 12)),
               ],
             ),
           ),
@@ -1407,62 +1844,23 @@ class _TimerPickerDialogState extends State<TimerPickerDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text(
-            'Cancel',
-            style: TextStyle(color: Colors.white54, fontSize: 16),
-          ),
+          child: const Text('Cancel',
+              style: TextStyle(color: Colors.white54, fontSize: 16)),
         ),
         ElevatedButton(
           onPressed: () => Navigator.pop(context, selectedMinutes.round()),
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF4CAF50),
             padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
-          child: const Text(
-            'Start Focus',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
-          ),
+          child: const Text('Start Focus',
+              style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16)),
         ),
       ],
-    );
-  }
-
-
-  Widget _buildQuickButton(int minutes) {
-    bool isSelected = selectedMinutes.round() == minutes;
-
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          selectedMinutes = minutes.toDouble();
-        });
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF4CAF50) : const Color(0xFF1e2a47),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isSelected ? const Color(0xFF4CAF50) : const Color(0xFF2d3e5f),
-            width: 2,
-          ),
-        ),
-        child: Text(
-          '${minutes}m',
-          style: TextStyle(
-            color: isSelected ? Colors.white : Colors.white70,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            fontSize: 14,
-          ),
-        ),
-      ),
     );
   }
 }

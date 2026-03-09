@@ -631,7 +631,6 @@ CustomPainter getGardenPainter(int stage) {
     case 0: return PeaGardenPainter();
     case 1: return CarrotGardenPainter();
     case 2: return CornGardenPainter();
-    case 3: return StrawberryWheatGardenPainter();
     default: return PeaGardenPainter();
   }
 }

@@ -17,9 +17,6 @@ void main() async {
   await achievementService.init();
   final dailyRewardService = DailyRewardService();
   await dailyRewardService.init();
-  achievementService.onAchievementUnlocked = (achievement) {
-
-  };
 
   // ✅ Initialize all services with error handling
   try {
