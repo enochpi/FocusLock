@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/services.dart';
+import 'package:focus_life/furniture/earthen_window_painter.dart';
+import 'package:focus_life/furniture/wooden_window_painter.dart';
+import 'package:focus_life/services/furniture_service.dart';
 import '../models/character.dart';
 import '../models/cave_decorations.dart';
 import '../services/currency_service.dart';
-import '../services/day_night_cycle.dart';
+import 'package:focus_life/services/day_night_cycle.dart';
 import 'cave_shop_screen.dart';
 import 'room_screen.dart';
-import 'package:rive/rive.dart';
+import '../furniture/stone_fire_painter.dart';
 
 
 class CaveInteriorScreen extends StatefulWidget {
@@ -195,6 +198,152 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
       ),
     );
   }
+  Widget _buyableImage(double x, double y, double w, double h, String asset, String furnitureId, int price) {
+    final owned = _isOwned(furnitureId);
+    return Positioned(
+      left: x, top: y, width: w, height: h,
+      child: Stack(
+        children: [
+          Opacity(
+            opacity: owned ? 1.0 : 0.15,
+            child: Image.asset(asset, fit: BoxFit.contain, width: w, height: h),
+          ),
+          if (!owned)
+            Center(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _showBuyDialog(furnitureId, price),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF5A3A22).withOpacity(0.75),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFFF8C00).withOpacity(0.2),
+                          blurRadius: 8,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(Icons.add, color: Color(0xFFFFB347), size: 14),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buyablePainter(double x, double y, double w, double h, CustomPainter painter, String furnitureId, int price) {
+    final owned = _isOwned(furnitureId);
+    return Positioned(
+      left: x, top: y, width: w, height: h,
+      child: Stack(
+        children: [
+          Opacity(
+            opacity: owned ? 1.0 : 0.15,
+            child: CustomPaint(painter: painter, size: Size(w, h)),
+          ),
+          if (!owned)
+            Center(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _showBuyDialog(furnitureId, price),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF5A3A22).withOpacity(0.75),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFFF8C00).withOpacity(0.2),
+                          blurRadius: 8,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(Icons.add, color: Color(0xFFFFB347), size: 14),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+  void _showBuyDialog(String furnitureId, int price) {
+    final canAfford = CurrencyService().coins >= price;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF3D2B1A),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: const Color(0xFF7A5238).withOpacity(0.5), width: 1.5),
+        ),
+        title: Text(
+          canAfford ? 'Build this?' : 'Not enough coins!',
+          style: const TextStyle(color: Color(0xFFDDC4A0)),
+          textAlign: TextAlign.center,
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text('🪙', style: TextStyle(fontSize: 24)),
+                const SizedBox(width: 8),
+                Text(
+                  '$price',
+                  style: TextStyle(
+                    color: canAfford ? const Color(0xFFFFB347) : Colors.red[300],
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'You have: ${CurrencyService().coins} 🪙',
+              style: const TextStyle(color: Color(0xFF9B7A5C), fontSize: 14),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF9B7A5C))),
+          ),
+          if (canAfford)
+            ElevatedButton(
+              onPressed: () async {
+                await CurrencyService().removeCoins(price);
+                FurnitureService().buyFurniture(furnitureId);
+                Navigator.pop(context);
+                setState(() {});
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF5A3A22),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                side: const BorderSide(color: Color(0xFFFFB347), width: 1.5),
+              ),
+              child: const Text('Build!',
+                  style: TextStyle(color: Color(0xFFFFB347), fontWeight: FontWeight.bold, fontSize: 16)),
+            ),
+        ],
+      ),
+    );
+  }
 
   // ── Furniture layout per stage ────────────────────────────────────────
   List<Widget> _buildFurniture(
@@ -212,26 +361,34 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
       double left, double top, double roomW, double roomH) {
     final s = roomW / 420.0;
     return [
-      // Earthen window — Rive animation
-      Positioned(
-        left: left + roomW * 0.38,
-        top: top + roomH * 0.10,
-        width: 80 * s,
-        height: 70 * s,
-        child: CustomPaint(
-          painter: _EarthenWindowPainter(cycle: DayNightCycle.current()),
-          size: Size(80 * s, 70 * s),
-        ),
-      ),
+      // Earthen window
+      _buyablePainter(left + roomW * 0.40, top + roomH * 0.17, 80 * s, 70 * s,
+          EarthenWindowPainter(cycle: DayNightCycle.current()), 'stone_window', 50),
 
-      // Stone fire — centre floor
-      _placed(left + roomW * 0.43, top + roomH * 0.52, 90 * s, 90 * s,
-          const _StoneFirePainter()),
+      // Rug (under everything)
+      _buyableImage(left + roomW * 0.01, top + roomH * 0.44, 250 * s, 250 * s,
+          'assets/images/stone_rug.png', 'stone_rug', 30),
 
-      // Stone bed — left floor
-      _placed(left + roomW * 0.06, top + roomH * 0.52, 140 * s, 80 * s,
-          const _StoneBedPainter()),
+      // Stone bed
+      _buyableImage(left + roomW * 0.09, top + roomH * 0.42, 200 * s, 120 * s,
+          'assets/images/stone_bed.png', 'stone_bed', 40),
+
+      // Fire (on top of rug)
+      _buyableImage(left + roomW * 0.42, top + roomH * 0.60, 90 * s, 90 * s,
+          'assets/images/stone_fire.png', 'stone_fire', 25),
+
+      // Stone table
+      _buyableImage(left + roomW * 0.57, top + roomH * 0.45, 150 * s, 150 * s,
+          'assets/images/stone_table.png', 'stone_table', 60),
+
+      // Stone chair
+      _buyableImage(left + roomW * 0.654, top + roomH * 0.63, 80 * s, 80 * s,
+          'assets/images/stone_chair.png', 'stone_chair', 35),
     ];
+  }
+
+  bool _isOwned(String furnitureId) {
+    return FurnitureService().isFurnitureOwned(furnitureId);
   }
 
   // ── SHACK ─────────────────────────────────────────────────────────────
@@ -244,12 +401,12 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
           const _StringLightsPainter()),
 
       // Wooden window — top centre
-      _placed(left + roomW * 0.40, top + roomH * 0.08, 80 * s, 68 * s,
-          const _WoodWindowPainter()),
+      _placed(left + roomW * 0.414, top + roomH * 0.2, 70 * s, 60 * s,
+          WoodenWindowPainter(cycle: DayNightCycle.current())),
 
       // Wooden bed — left floor
-      _placed(left + roomW * 0.04, top + roomH * 0.52, 140 * s, 84 * s,
-          const _WoodBedPainter()),
+      _buyableImage(left + roomW * 0, top + roomH * 0.41, 200 * s, 150 * s,
+          'assets/images/shack_bed.png', 'shack_bed', 35),
 
       // Wood stove — right floor
       _placed(left + roomW * 0.74, top + roomH * 0.44, 88 * s, 100 * s,
@@ -285,6 +442,15 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
     return Positioned(
       left: x, top: y, width: w, height: h,
       child: CustomPaint(painter: painter, size: Size(w, h)),
+    );
+  }
+  Widget _placedImage(double x, double y, double w, double h, String asset, {double opacity = 1.0}) {
+    return Positioned(
+      left: x, top: y, width: w, height: h,
+      child: Opacity(
+        opacity: opacity,
+        child: Image.asset(asset, fit: BoxFit.contain),
+      ),
     );
   }
 }

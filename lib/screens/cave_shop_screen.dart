@@ -156,7 +156,8 @@ class _CaveShopScreenState extends State<CaveShopScreen> {
             padding: const EdgeInsets.all(12),
             child: Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
                   color: theme.priceColor.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(12),
@@ -212,19 +213,22 @@ class _CaveShopScreenState extends State<CaveShopScreen> {
           final stageTheme = ShopTheme.getTheme(index);
 
           return GestureDetector(
-            onTap: () => setState(() {
-              shopStage = index;
-              selectedCategory = FurnitureCategory.bed;
-            }),
+            onTap: () =>
+                setState(() {
+                  shopStage = index;
+                  selectedCategory = FurnitureCategory.bed;
+                }),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               margin: const EdgeInsets.symmetric(horizontal: 4),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
               decoration: BoxDecoration(
-                color: isSelected ? stageTheme.tabActive : stageTheme.tabInactive.withOpacity(0.4),
+                color: isSelected ? stageTheme.tabActive : stageTheme
+                    .tabInactive.withOpacity(0.4),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                  color: isSelected ? stageTheme.accentColor : Colors.transparent,
+                  color: isSelected ? stageTheme.accentColor : Colors
+                      .transparent,
                   width: 1.5,
                 ),
               ),
@@ -233,7 +237,8 @@ class _CaveShopScreenState extends State<CaveShopScreen> {
                   stageNames[index],
                   style: TextStyle(
                     color: isSelected ? Colors.white : Colors.white54,
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight
+                        .normal,
                     fontSize: 13,
                   ),
                 ),
@@ -254,7 +259,8 @@ class _CaveShopScreenState extends State<CaveShopScreen> {
       decoration: BoxDecoration(
         color: theme.cardColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: theme.accentColor.withOpacity(0.5), width: 1.5),
+        border: Border.all(
+            color: theme.accentColor.withOpacity(0.5), width: 1.5),
       ),
       child: Column(
         children: [
@@ -300,7 +306,8 @@ class _CaveShopScreenState extends State<CaveShopScreen> {
               margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 4),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: isSelected ? theme.tabActive : theme.tabInactive.withOpacity(0.3),
+                color: isSelected ? theme.tabActive : theme.tabInactive
+                    .withOpacity(0.3),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
                   color: isSelected ? theme.accentColor : Colors.transparent,
@@ -316,7 +323,8 @@ class _CaveShopScreenState extends State<CaveShopScreen> {
                     cat.$3,
                     style: TextStyle(
                       color: isSelected ? Colors.white : Colors.white60,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight
+                          .normal,
                       fontSize: 12,
                     ),
                   ),
@@ -331,7 +339,8 @@ class _CaveShopScreenState extends State<CaveShopScreen> {
 
   // ── Furniture grid ──
   Widget _buildFurnitureGrid() {
-    final items = furnitureService.getFurnitureForStageAndCategory(shopStage, selectedCategory);
+    final items = furnitureService.getFurnitureForStageAndCategory(
+        shopStage, selectedCategory);
 
     if (items.isEmpty) {
       return Center(
@@ -412,19 +421,28 @@ class _CaveShopScreenState extends State<CaveShopScreen> {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    furniture.description,
-                    style: TextStyle(
-                      color: theme.accentColor,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: theme.accentColor.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: theme.accentColor.withOpacity(0.5)),
+                    ),
+                    child: Text(
+                      '⚡ +${(furniture.boost * 100).toStringAsFixed(0)}% ${CurrencyService().cropName} boost',
+                      style: TextStyle(
+                        color: theme.accentColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                   if (!isOwned)
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
                       child: Text(
-                        '🪙 ${NumberFormatter.format(furniture.cost.toDouble())}',
+                        '🪙 ${NumberFormatter.format(
+                            furniture.cost.toDouble())}',
                         style: TextStyle(
                           color: canAfford ? theme.priceColor : Colors.red[300],
                           fontSize: 13,
@@ -443,7 +461,8 @@ class _CaveShopScreenState extends State<CaveShopScreen> {
     );
   }
 
-  Widget _buildActionButton(Furniture furniture, bool isOwned, bool isPlaced, bool canAfford) {
+  Widget _buildActionButton(Furniture furniture, bool isOwned, bool isPlaced,
+      bool canAfford) {
     if (isPlaced) {
       // Remove button
       return GestureDetector(
@@ -541,26 +560,59 @@ class _CaveShopScreenState extends State<CaveShopScreen> {
     // Success feedback
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: theme.cardColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(
-          '${furniture.emoji} Purchased!',
-          style: TextStyle(color: theme.textPrimary),
-          textAlign: TextAlign.center,
-        ),
-        content: Text(
-          '${furniture.name} has been equipped!\n${furniture.description}',
-          style: TextStyle(color: theme.textSecondary),
-          textAlign: TextAlign.center,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Nice!', style: TextStyle(color: theme.accentColor)),
+      builder: (context) =>
+          AlertDialog(
+            backgroundColor: theme.cardColor,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16)),
+            title: Text(
+              '${furniture.emoji} Purchased!',
+              style: TextStyle(color: theme.textPrimary),
+              textAlign: TextAlign.center,
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${furniture.name} has been equipped!',
+                  style: TextStyle(color: theme.textSecondary),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: theme.accentColor.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: theme.accentColor.withOpacity(0.4)),
+                  ),
+                  child: Text(
+                    '⚡ +${(furniture.boost * 100).toStringAsFixed(
+                        0)}% ${CurrencyService().cropName} boost added',
+                    style: TextStyle(
+                      color: theme.accentColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Total furniture boost: ${furnitureService.getBoostString()}',
+                  style: TextStyle(color: theme.textSecondary, fontSize: 12),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(
+                    'Nice!', style: TextStyle(color: theme.accentColor)),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 }

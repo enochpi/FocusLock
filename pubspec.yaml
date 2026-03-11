@@ -58,6 +58,12 @@ flutter:
     - assets/images/door1.png
     - assets/images/door2.png
     - assets/images/house_bedroom_background.png
+    - assets/images/stone_fire.png
+    - assets/images/stone_bed.png
+    - assets/images/stone_rug.png
+    - assets/images/stone_table.png
+    - assets/images/stone_chair.png
+    - assets/images/shack_bed.png
     - assets/animations/cave_window.riv
 
 
