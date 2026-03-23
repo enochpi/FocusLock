@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/services.dart';
+import 'package:focus_life/services/currency_service.dart';
+import 'package:focus_life/services/furniture_service.dart';
+import 'cave_shop_screen.dart';
 
 enum RoomType {
   houseBedroom,
@@ -84,70 +87,211 @@ class _RoomScreenState extends State<RoomScreen> {
     if (mounted) setState(() => _showFlash = false);
   }
 
+  bool _isOwned(String furnitureId) =>
+      FurnitureService().isFurnitureOwned(furnitureId);
+
+  Widget _buyableImage(double x, double y, double w, double h, String asset,
+      String furnitureId, int price, {double boost = 0.0}) {
+    final owned = _isOwned(furnitureId);
+    return Positioned(
+      left: x, top: y, width: w, height: h,
+      child: Stack(
+        children: [
+          Opacity(
+            opacity: owned ? 1.0 : 0.15,
+            child: Image.asset(asset, fit: BoxFit.contain, width: w, height: h),
+          ),
+          if (!owned)
+            Center(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _showBuyDialog(furnitureId, price, boost: boost),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF5A3A22).withOpacity(0.75),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFFF8C00).withOpacity(0.2),
+                          blurRadius: 8, spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(Icons.add, color: Color(0xFFFFB347), size: 14),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _showBuyDialog(String furnitureId, int price, {double boost = 0.0}) {
+    final canAfford = CurrencyService().coins >= price;
+    final boostPercent = (boost * 100).toStringAsFixed(0);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF3D2B1A),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: const Color(0xFF7A5238).withOpacity(0.5), width: 1.5),
+        ),
+        title: Text(
+          canAfford ? 'Build this?' : 'Not enough coins!',
+          style: const TextStyle(color: Color(0xFFDDC4A0)),
+          textAlign: TextAlign.center,
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (boost > 0)
+              Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.green, width: 1.5),
+                ),
+                child: Text(
+                  '+$boostPercent% production boost',
+                  style: const TextStyle(
+                    color: Colors.greenAccent,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text('🪙', style: TextStyle(fontSize: 24)),
+                const SizedBox(width: 8),
+                Text(
+                  '$price',
+                  style: TextStyle(
+                    color: canAfford ? const Color(0xFFFFB347) : Colors.red[300],
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'You have: ${CurrencyService().coins} 🪙',
+              style: const TextStyle(color: Color(0xFF9B7A5C), fontSize: 14),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF9B7A5C))),
+          ),
+          if (canAfford)
+            ElevatedButton(
+              onPressed: () async {
+                await CurrencyService().removeCoins(price);
+                FurnitureService().buyFurniture(furnitureId);
+                Navigator.pop(context);
+                setState(() {});
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF5A3A22),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                side: const BorderSide(color: Color(0xFFFFB347), width: 1.5),
+              ),
+              child: const Text('Build!',
+                  style: TextStyle(color: Color(0xFFFFB347), fontWeight: FontWeight.bold, fontSize: 16)),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ── BEDROOM furniture ─────────────────────────────────────────────────
+  // Prices: 300c → 1000c (endgame bedroom)
+  // Boosts: 8% → 15%
+  List<Widget> _bedroomFurniture(
+      double left, double top, double roomW, double roomH) {
+    final s = roomW / 420.0;
+    return [
+      _buyableImage(left + roomW * 0.435, top + roomH * 0.20, 50 * s, 50 * s,
+          'assets/images/house_clock.png', 'bedroom_clock', 15000, boost: 0.54),
+
+      _buyableImage(left + roomW * 0.76, top + roomH * 0.20, 60 * s, 60 * s,
+          'assets/images/house_picture.png', 'bedroom_picture', 25000, boost: 0.54),
+
+      _buyableImage(left + roomW * 0.58, top + roomH * 0.37, 80 * s, 80 * s,
+          'assets/images/house_desk.png', 'bedroom_desk', 45000, boost: 0.78),
+
+      _buyableImage(left + roomW * 0.001, top + roomH * 0.22, 200 * s, 160 * s,
+          'assets/images/house_bunkbed.png', 'bedroom_bunkbed', 80000, boost: 1.00),
+
+      _buyableImage(left + roomW * 0.66, top + roomH * 0.42, 150 * s, 100 * s,
+          'assets/images/house_bed.png', 'bedroom_bed', 150000, boost: 1.30),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final hasNextRoom = widget.roomType.nextRoom != null;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0d0d0d),
+      backgroundColor: const Color(0xFF0a0a0a),
       body: SafeArea(
         child: Stack(
           children: [
-            // ── Room drawn small + centered via CustomPainter ─────────────
+            // ── Background + furniture ────────────────────────────────────
             Positioned.fill(
-              child: _backgroundImage != null
-                  ? CustomPaint(
-                painter: _RoomBackgroundPainter(_backgroundImage!),
-              )
-                  : Container(color: widget.roomType.fallbackColor),
+              child: LayoutBuilder(builder: (context, constraints) {
+                final w     = constraints.maxWidth;
+                final h     = constraints.maxHeight;
+                final roomW = w;
+                final roomH = (w / (420.0 / 300.0)).clamp(0.0, h);
+                final top   = (h - roomH) / 2;
+
+                return Stack(
+                  children: [
+                    Positioned(
+                      left: 0, top: top,
+                      width: roomW, height: roomH,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: _backgroundImage != null
+                            ? RawImage(
+                          image: _backgroundImage,
+                          fit: BoxFit.cover,
+                          width: roomW,
+                          height: roomH,
+                        )
+                            : Container(color: widget.roomType.fallbackColor),
+                      ),
+                    ),
+                    if (widget.roomType == RoomType.houseBedroom)
+                      ..._bedroomFurniture(0, top, roomW, roomH),
+                  ],
+                );
+              }),
             ),
-
-            // ── Bedroom furniture ─────────────────────────────────────────
-            if (widget.roomType == RoomType.houseBedroom)
-              Positioned.fill(
-                child: LayoutBuilder(builder: (context, constraints) {
-                  final w     = constraints.maxWidth;
-                  final h     = constraints.maxHeight;
-                  const scale = 0.75;
-                  final roomW = w * scale;
-                  final roomH = h * scale;
-                  final left  = (w - roomW) / 2;
-                  final top   = (h - roomH) / 2;
-
-                  Widget placed(double xP, double yP, double fw, double fh,
-                      CustomPainter painter) {
-                    return Positioned(
-                      left: left + roomW * xP,
-                      top:  top  + roomH * yP,
-                      width: fw, height: fh,
-                      child: CustomPaint(painter: painter, size: Size(fw, fh)),
-                    );
-                  }
-
-                  return Stack(children: [
-                    placed(0.04, 0.18, 115, 145, const _BunkBedPainter()),
-                    placed(0.62, 0.52, 100, 60,  const _BedroomTablePainter()),
-                    placed(0.80, 0.28, 40,  70,  const _LampPainter()),
-                  ]);
-                }),
-              ),
 
             // ── Door to next room ─────────────────────────────────────────
             if (hasNextRoom)
               Positioned(
-                bottom: 370,
-                left: 0,
-                right: 230,
+                bottom: 370, left: 0, right: 0,
                 child: Center(
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: _onDoorTapped,
-                    child: Container(
-                      width: 50,
-                      height: 100,
-                      color: Colors.transparent,
-                      // ↑ change to Colors.red.withOpacity(0.5) to debug
-                    ),
+                    child: Container(width: 50, height: 100, color: Colors.transparent),
                   ),
                 ),
               ),
@@ -156,21 +300,16 @@ class _RoomScreenState extends State<RoomScreen> {
             if (_showFlash)
               Positioned.fill(
                 child: IgnorePointer(
-                  child: Container(
-                    color: Colors.white.withOpacity(_flashOpacity),
-                  ),
+                  child: Container(color: Colors.white.withOpacity(_flashOpacity)),
                 ),
               ),
 
             // ── Room title ────────────────────────────────────────────────
             Positioned(
-              top: 16,
-              left: 0,
-              right: 0,
+              top: 16, left: 0, right: 0,
               child: Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 20, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   decoration: BoxDecoration(
                     color: Colors.black54,
                     borderRadius: BorderRadius.circular(16),
@@ -189,8 +328,7 @@ class _RoomScreenState extends State<RoomScreen> {
 
             // ── Back button ───────────────────────────────────────────────
             Positioned(
-              top: 8,
-              left: 8,
+              top: 8, left: 8,
               child: IconButton(
                 icon: const Icon(Icons.arrow_back, color: Colors.white),
                 onPressed: () => Navigator.pop(context),
@@ -201,181 +339,4 @@ class _RoomScreenState extends State<RoomScreen> {
       ),
     );
   }
-}
-
-class _RoomBackgroundPainter extends CustomPainter {
-  final ui.Image image;
-  _RoomBackgroundPainter(this.image);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // How much of the screen the room should take up (0.0 – 1.0)
-    const double scale = 0.75; // ← tweak this one number
-
-    final roomW = size.width  * scale;
-    final roomH = size.height * scale;
-
-    // Center it on the canvas
-    final left = (size.width  - roomW) / 2;
-    final top  = (size.height - roomH) / 2;
-
-    final dest = Rect.fromLTWH(left, top, roomW, roomH);
-
-    paintImage(
-      canvas: canvas,
-      rect: dest,
-      image: image,
-      fit: BoxFit.cover,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _RoomBackgroundPainter old) =>
-      old.image != image;
-}
-
-// ════════════════════════════════════════════════════════════════
-//  BEDROOM PAINTERS
-// ════════════════════════════════════════════════════════════════
-
-// Bunk bed — two stacked beds with a ladder on the right
-class _BunkBedPainter extends CustomPainter {
-  const _BunkBedPainter();
-  @override
-  void paint(Canvas canvas, Size s) {
-    final frame   = Paint()..color = const Color(0xFF6B4423);
-    final mattress= Paint()..color = const Color(0xFFf0e6d0);
-    final blanket1= Paint()..color = const Color(0xFF4a7c59); // lower
-    final blanket2= Paint()..color = const Color(0xFF4a6a9c); // upper
-    final pillow  = Paint()..color = const Color(0xFFf5deb3);
-    final ladder  = Paint()..color = const Color(0xFF8B5E3C)
-      ..strokeWidth = 4 ..strokeCap = StrokeCap.round;
-    final rung    = Paint()..color = const Color(0xFF8B5E3C)
-      ..strokeWidth = 3 ..strokeCap = StrokeCap.round;
-
-    // Posts (4 corners)
-    for (double x in [0.04, 0.76]) {
-      canvas.drawRect(Rect.fromLTWH(s.width * x, 0, 8, s.height * 0.95), frame);
-    }
-
-    // Lower bed frame
-    canvas.drawRect(
-        Rect.fromLTWH(s.width * 0.04, s.height * 0.52, s.width * 0.80, 10), frame);
-    // Lower mattress + blanket
-    canvas.drawRRect(
-        RRect.fromRectAndRadius(
-            Rect.fromLTWH(s.width * 0.04, s.height * 0.58, s.width * 0.58, s.height * 0.30),
-            const Radius.circular(3)),
-        mattress);
-    canvas.drawRRect(
-        RRect.fromRectAndRadius(
-            Rect.fromLTWH(s.width * 0.04, s.height * 0.58, s.width * 0.58, s.height * 0.20),
-            const Radius.circular(3)),
-        blanket1);
-    // Lower pillow
-    canvas.drawRRect(
-        RRect.fromRectAndRadius(
-            Rect.fromLTWH(s.width * 0.62, s.height * 0.60, s.width * 0.16, s.height * 0.22),
-            const Radius.circular(4)),
-        pillow);
-
-    // Upper bed frame
-    canvas.drawRect(
-        Rect.fromLTWH(s.width * 0.04, s.height * 0.12, s.width * 0.80, 8), frame);
-    // Upper mattress + blanket
-    canvas.drawRRect(
-        RRect.fromRectAndRadius(
-            Rect.fromLTWH(s.width * 0.04, s.height * 0.18, s.width * 0.58, s.height * 0.30),
-            const Radius.circular(3)),
-        mattress);
-    canvas.drawRRect(
-        RRect.fromRectAndRadius(
-            Rect.fromLTWH(s.width * 0.04, s.height * 0.18, s.width * 0.58, s.height * 0.18),
-            const Radius.circular(3)),
-        blanket2);
-    // Upper pillow
-    canvas.drawRRect(
-        RRect.fromRectAndRadius(
-            Rect.fromLTWH(s.width * 0.62, s.height * 0.20, s.width * 0.16, s.height * 0.22),
-            const Radius.circular(4)),
-        pillow);
-
-    // Safety rail on upper bed
-    canvas.drawLine(Offset(s.width * 0.04, s.height * 0.10),
-        Offset(s.width * 0.38, s.height * 0.10), frame..strokeWidth = 5);
-
-    // Ladder (right side)
-    canvas.drawLine(Offset(s.width * 0.84, s.height * 0.12),
-        Offset(s.width * 0.84, s.height * 0.95), ladder);
-    canvas.drawLine(Offset(s.width * 0.94, s.height * 0.12),
-        Offset(s.width * 0.94, s.height * 0.95), ladder);
-    for (int i = 1; i <= 4; i++) {
-      double y = s.height * (0.12 + i * 0.16);
-      canvas.drawLine(Offset(s.width * 0.84, y), Offset(s.width * 0.94, y), rung);
-    }
-  }
-  @override bool shouldRepaint(_) => false;
-}
-
-// Simple table matching the house room table
-class _BedroomTablePainter extends CustomPainter {
-  const _BedroomTablePainter();
-  @override
-  void paint(Canvas canvas, Size s) {
-    final top = Paint()..color = const Color(0xFFc8a878);
-    final leg = Paint()..color = const Color(0xFFa08060)
-      ..strokeWidth = 7 ..strokeCap = StrokeCap.round;
-    final rim = Paint()..color = const Color(0xFFa08060)
-      ..style = PaintingStyle.stroke ..strokeWidth = 1.5;
-
-    canvas.drawRRect(
-        RRect.fromRectAndRadius(
-            Rect.fromLTWH(0, 0, s.width, s.height * 0.22), const Radius.circular(4)),
-        top);
-    canvas.drawRRect(
-        RRect.fromRectAndRadius(
-            Rect.fromLTWH(0, 0, s.width, s.height * 0.22), const Radius.circular(4)),
-        rim);
-    canvas.drawLine(Offset(s.width * 0.15, s.height * 0.22),
-        Offset(s.width * 0.15, s.height), leg);
-    canvas.drawLine(Offset(s.width * 0.85, s.height * 0.22),
-        Offset(s.width * 0.85, s.height), leg);
-  }
-  @override bool shouldRepaint(_) => false;
-}
-
-// Table lamp — base, stem, shade
-class _LampPainter extends CustomPainter {
-  const _LampPainter();
-  @override
-  void paint(Canvas canvas, Size s) {
-    final base  = Paint()..color = const Color(0xFF888888);
-    final stem  = Paint()..color = const Color(0xFFaaaaaa)..strokeWidth = 3;
-    final shade = Paint()..color = const Color(0xFFf5e6a0);
-    final glow  = Paint()..color = const Color(0xFFffee88).withOpacity(0.35);
-
-    // Base
-    canvas.drawRRect(
-        RRect.fromRectAndRadius(
-            Rect.fromLTWH(s.width * 0.20, s.height * 0.82, s.width * 0.60, s.height * 0.18),
-            const Radius.circular(3)),
-        base);
-
-    // Stem
-    canvas.drawLine(Offset(s.width / 2, s.height * 0.82),
-        Offset(s.width / 2, s.height * 0.48), stem);
-
-    // Shade
-    final shadePath = Path()
-      ..moveTo(s.width * 0.08, s.height * 0.48)
-      ..lineTo(s.width * 0.92, s.height * 0.48)
-      ..lineTo(s.width * 0.78, s.height * 0.18)
-      ..lineTo(s.width * 0.22, s.height * 0.18)
-      ..close();
-    canvas.drawPath(shadePath, shade);
-
-    // Glow below shade
-    canvas.drawCircle(Offset(s.width / 2, s.height * 0.56), s.width * 0.40, glow);
-  }
-  @override bool shouldRepaint(_) => false;
 }

@@ -1,13 +1,15 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'currency_service.dart';
+
 class Upgrade {
   final String id;
   final String name;
   final String emoji;
   final String description;
-  final double cost; // ← CHANGED FROM int TO double
+  final double cost;
   final double multiplier;
-  final int stageRequired; // ← ADDED THIS FIELD
+  final int stageRequired;
   bool isPurchased;
 
   Upgrade({
@@ -17,36 +19,31 @@ class Upgrade {
     required this.description,
     required this.cost,
     required this.multiplier,
-    this.stageRequired = 0, // ← DEFAULT VALUE
+    this.stageRequired = 0,
     this.isPurchased = false,
   });
 
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'isPurchased': isPurchased,
-  };
+  Map<String, dynamic> toJson() => {'id': id, 'isPurchased': isPurchased};
 
   static Upgrade fromJson(Map<String, dynamic> json, Upgrade template) {
     return Upgrade(
-      id: template.id,
-      name: template.name,
-      emoji: template.emoji,
-      description: template.description,
-      cost: template.cost,
-      multiplier: template.multiplier,
-      stageRequired: template.stageRequired,
+      id: template.id, name: template.name, emoji: template.emoji,
+      description: template.description, cost: template.cost,
+      multiplier: template.multiplier, stageRequired: template.stageRequired,
       isPurchased: json['isPurchased'] ?? false,
     );
   }
 }
+
 class HouseUnlock {
   final String id;
   final String name;
   final String emoji;
   final String description;
-  final double cost;
+  final double cost;      // peas cost
+  final int coinCost;     // coins cost
   final int unlocksStage;
-  final double houseMultiplier; // ← NEW! Huge bonus when you buy a house
+  final double houseMultiplier;
   bool isPurchased;
 
   HouseUnlock({
@@ -55,25 +52,19 @@ class HouseUnlock {
     required this.emoji,
     required this.description,
     required this.cost,
+    this.coinCost = 0,
     required this.unlocksStage,
     this.houseMultiplier = 1.0,
     this.isPurchased = false,
   });
 
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'isPurchased': isPurchased,
-  };
+  Map<String, dynamic> toJson() => {'id': id, 'isPurchased': isPurchased};
 
   static HouseUnlock fromJson(Map<String, dynamic> json, HouseUnlock template) {
     return HouseUnlock(
-      id: template.id,
-      name: template.name,
-      emoji: template.emoji,
-      description: template.description,
-      cost: template.cost,
-      unlocksStage: template.unlocksStage,
-      houseMultiplier: template.houseMultiplier,
+      id: template.id, name: template.name, emoji: template.emoji,
+      description: template.description, cost: template.cost,
+      unlocksStage: template.unlocksStage, houseMultiplier: template.houseMultiplier,
       isPurchased: json['isPurchased'] ?? false,
     );
   }
@@ -86,64 +77,88 @@ class UpgradeService {
 
   int _currentStage = 0;
 
+  // ── ECONOMY DESIGN ────────────────────────────────────────
+  //
+  // Base peas per minute: ~10 + time bonus
+  // 25 min session ≈ 350 peas → 7 coins (at 50:1)
+  // Target: buy first upgrade after ~5-8 sessions (35-55 min total)
+  //
+  // CAVE upgrades (coins):
+  //   Cost ladder: 50 → 150 → 400 → 1K → 3K → 8K → 20K → 55K → 140K → 350K
+  //   Each gives +25% to +10% multiplier (diminishing returns)
+  //   After all 10 cave upgrades: ~8.5x total from upgrades alone
+  //
+  // SHACK unlock: 500K coins (big goal, feels earned)
+  //   Grants 3x bonus on purchase
+  //
+  // SHACK upgrades (coins):
+  //   Cost ladder starts at 200K, scales up to ~50B
+  //   Each gives +20% to +5% multiplier
+  //   After all 12 shack upgrades: ~3.5x additional
+  //
+  // HOUSE unlock: 5B coins
+  //   Grants 10x bonus on purchase
+  //
+  // HOUSE upgrades (coins):
+  //   Cost ladder starts at 2B, scales into quadrillions
+  //   Each gives +15% down to +2%
+  //
+  // Total theoretical max multiplier (all upgrades + both houses):
+  //   ~8.5x (cave) × 3x (shack unlock) × 3.5x (shack upgrades)
+  //   × 10x (house unlock) × ~6x (house upgrades) ≈ 53,000x
+  // ─────────────────────────────────────────────────────────
 
-  List<Upgrade> _upgrades = [
-    // ========================================
-    // STAGE 0: CAVE SHOP — UNCHANGED
-    // ========================================
-    Upgrade(id: 'cave_hoe', name: 'Basic Hoe', emoji: '⛏️', description: '2.10x per focus', cost: 100, multiplier: 1.10, stageRequired: 0),
-    Upgrade(id: 'cave_seeds', name: 'Good Seeds', emoji: '🌱', description: '1.88x per focus', cost: 300, multiplier: 0.88, stageRequired: 0),
-    Upgrade(id: 'cave_bucket', name: 'Water Bucket', emoji: '🪣', description: '1.66x per focus', cost: 800, multiplier: 0.66, stageRequired: 0),
-    Upgrade(id: 'cave_tools', name: 'Sharp Tools', emoji: '🔨', description: '1.55x per focus', cost: 2000, multiplier: 0.55, stageRequired: 0),
-    Upgrade(id: 'cave_fertilizer', name: 'Fertilizer', emoji: '🌿', description: '1.44x per focus', cost: 5000, multiplier: 0.44, stageRequired: 0),
-    Upgrade(id: 'cave_watering', name: 'Watering Can', emoji: '💧', description: '1.39x per focus', cost: 12000, multiplier: 0.39, stageRequired: 0),
-    Upgrade(id: 'cave_soil', name: 'Rich Soil', emoji: '🪴', description: '1.33x per focus', cost: 28000, multiplier: 0.33, stageRequired: 0),
-    Upgrade(id: 'cave_compost', name: 'Compost', emoji: '♻️', description: '1.28x per focus', cost: 65000, multiplier: 0.28, stageRequired: 0),
-    Upgrade(id: 'cave_greenhouse', name: 'Tiny Greenhouse', emoji: '🏡', description: '1.22x per focus', cost: 150000, multiplier: 0.22, stageRequired: 0),
-    Upgrade(id: 'cave_irrigation', name: 'Basic Irrigation', emoji: '💦', description: '1.17x per focus', cost: 350000, multiplier: 0.17, stageRequired: 0),
+  final List<Upgrade> _upgrades = [
 
-    // ========================================
-    // STAGE 1: SHACK — 50% mult cut, 47% cost cut
-    // ========================================
-    Upgrade(id: 'shack_advanced_hoe', name: 'Advanced Hoe', emoji: '⚒️', description: '1.50x per focus', cost: 143000, multiplier: 0.50, stageRequired: 1),
-    Upgrade(id: 'shack_premium_seeds', name: 'Premium Seeds', emoji: '🌾', description: '1.33x per focus', cost: 322000, multiplier: 0.33, stageRequired: 1),
-    Upgrade(id: 'shack_sprinklers', name: 'Sprinkler System', emoji: '🚿', description: '1.27x per focus', cost: 716000, multiplier: 0.27, stageRequired: 1),
-    Upgrade(id: 'shack_pro_tools', name: 'Professional Tools', emoji: '🔧', description: '1.23x per focus', cost: 1550000, multiplier: 0.23, stageRequired: 1),
-    Upgrade(id: 'shack_super_fertilizer', name: 'Super Fertilizer', emoji: '🧪', description: '1.20x per focus', cost: 3580000, multiplier: 0.20, stageRequired: 1),
-    Upgrade(id: 'shack_auto_water', name: 'Auto Watering', emoji: '⚡', description: '1.17x per focus', cost: 7870000, multiplier: 0.17, stageRequired: 1),
-    Upgrade(id: 'shack_premium_soil', name: 'Premium Soil Mix', emoji: '🌱', description: '1.15x per focus', cost: 17900000, multiplier: 0.15, stageRequired: 1),
-    Upgrade(id: 'shack_biotech', name: 'Bio-Technology', emoji: '🧬', description: '1.13x per focus', cost: 39400000, multiplier: 0.13, stageRequired: 1),
-    Upgrade(id: 'shack_climate', name: 'Climate Control', emoji: '🌡️', description: '1.12x per focus', cost: 89400000, multiplier: 0.12, stageRequired: 1),
-    Upgrade(id: 'shack_hydroponics', name: 'Hydroponic System', emoji: '💧', description: '1.10x per focus', cost: 200000000, multiplier: 0.10, stageRequired: 1),
-    Upgrade(id: 'shack_led_grow', name: 'LED Grow Lights', emoji: '💡', description: '1.09x per focus', cost: 451000000, multiplier: 0.09, stageRequired: 1),
-    Upgrade(id: 'shack_ph_optimizer', name: 'pH Optimizer', emoji: '🔬', description: '1.07x per focus', cost: 1000000000, multiplier: 0.07, stageRequired: 1),
-    Upgrade(id: 'shack_nutrient_mix', name: 'Nutrient Mix System', emoji: '🧫', description: '1.06x per focus', cost: 2270000000, multiplier: 0.06, stageRequired: 1),
-    Upgrade(id: 'shack_smart_sensors', name: 'Smart Sensors', emoji: '📡', description: '1.05x per focus', cost: 5130000000, multiplier: 0.05, stageRequired: 1),
-    Upgrade(id: 'shack_master_gardener', name: 'Master Gardener Training', emoji: '👨‍🌾', description: '1.04x per focus', cost: 11400000000, multiplier: 0.04, stageRequired: 1),
+    // ╔══════════════════════════════════════════╗
+    // ║  CAVE — 10 upgrades                      ║
+    // ║  First upgrade reachable in ~5 sessions  ║
+    // ╚══════════════════════════════════════════╝
+    Upgrade(id: 'cave_hoe',        name: 'Basic Hoe',        emoji: '⛏️', description: '+25% peas/focus', cost: 1,   multiplier: 0.25, stageRequired: 0),
+    Upgrade(id: 'cave_seeds',      name: 'Good Seeds',       emoji: '🌱', description: '+22% peas/focus', cost: 20,   multiplier: 0.22, stageRequired: 0),
+    Upgrade(id: 'cave_bucket',     name: 'Water Bucket',     emoji: '🪣', description: '+20% peas/focus', cost: 50,  multiplier: 0.20, stageRequired: 0),
+    Upgrade(id: 'cave_tools',      name: 'Sharp Tools',      emoji: '🔨', description: '+18% peas/focus', cost: 100,  multiplier: 0.18, stageRequired: 0),
+    Upgrade(id: 'cave_fertilizer', name: 'Fertilizer',       emoji: '🌿', description: '+16% peas/focus', cost: 200,  multiplier: 0.16, stageRequired: 0),
+    Upgrade(id: 'cave_watering',   name: 'Watering Can',     emoji: '💧', description: '+14% peas/focus', cost: 350,  multiplier: 0.14, stageRequired: 0),
+    Upgrade(id: 'cave_soil',       name: 'Rich Soil',        emoji: '🪴', description: '+13% peas/focus', cost: 550,  multiplier: 0.13, stageRequired: 0),
+    Upgrade(id: 'cave_compost',    name: 'Compost',          emoji: '♻️', description: '+12% peas/focus', cost: 800, multiplier: 0.12, stageRequired: 0),
+    Upgrade(id: 'cave_greenhouse', name: 'Mini Greenhouse',  emoji: '🏡', description: '+11% peas/focus', cost: 1000, multiplier: 0.11, stageRequired: 0),
+    Upgrade(id: 'cave_irrigation', name: 'Basic Irrigation', emoji: '💦', description: '+10% peas/focus', cost: 5000, multiplier: 0.10, stageRequired: 0),
 
-    // ========================================
-    // STAGE 2: HOUSE — 50% mult cut, 44% cost cut
-    // ========================================
-    Upgrade(id: 'house_quantum_hoe', name: 'Quantum Hoe', emoji: '⚛️', description: '1.40x per focus', cost: 25200000000, multiplier: 0.40, stageRequired: 2),
-    Upgrade(id: 'house_genetic_seeds', name: 'Genetically Modified Seeds', emoji: '🔬', description: '1.30x per focus', cost: 54600000000, multiplier: 0.30, stageRequired: 2),
-    Upgrade(id: 'house_laser_irrigation', name: 'Laser Irrigation', emoji: '🔴', description: '1.23x per focus', cost: 122000000000, multiplier: 0.23, stageRequired: 2),
-    Upgrade(id: 'house_ai_tools', name: 'AI-Powered Tools', emoji: '🤖', description: '1.20x per focus', cost: 269000000000, multiplier: 0.20, stageRequired: 2),
-    Upgrade(id: 'house_nano_fertilizer', name: 'Nano-Fertilizer', emoji: '🔭', description: '1.17x per focus', cost: 588000000000, multiplier: 0.17, stageRequired: 2),
-    Upgrade(id: 'house_plasma_water', name: 'Plasma Water Treatment', emoji: '💥', description: '1.15x per focus', cost: 1300000000000, multiplier: 0.15, stageRequired: 2),
-    Upgrade(id: 'house_cosmic_soil', name: 'Cosmic Soil Enhancement', emoji: '🌌', description: '1.13x per focus', cost: 2800000000000, multiplier: 0.13, stageRequired: 2),
-    Upgrade(id: 'house_dimension_tech', name: 'Dimensional Technology', emoji: '🌀', description: '1.12x per focus', cost: 6300000000000, multiplier: 0.12, stageRequired: 2),
-    Upgrade(id: 'house_fusion_climate', name: 'Fusion Climate System', emoji: '☢️', description: '1.10x per focus', cost: 13900000000000, multiplier: 0.10, stageRequired: 2),
-    Upgrade(id: 'house_mega_hydro', name: 'Mega-Hydroponic Array', emoji: '🏭', description: '1.09x per focus', cost: 30200000000000, multiplier: 0.09, stageRequired: 2),
-    Upgrade(id: 'house_neural_network', name: 'Neural Network Farm', emoji: '🧠', description: '1.07x per focus', cost: 67200000000000, multiplier: 0.07, stageRequired: 2),
-    Upgrade(id: 'house_photon_boost', name: 'Photon Accelerator', emoji: '🌟', description: '1.06x per focus', cost: 147000000000000, multiplier: 0.06, stageRequired: 2),
-    Upgrade(id: 'house_dark_matter', name: 'Dark Matter Fertilizer', emoji: '🕳️', description: '1.06x per focus', cost: 323000000000000, multiplier: 0.06, stageRequired: 2),
-    Upgrade(id: 'house_antimatter', name: 'Antimatter Generator', emoji: '💫', description: '1.05x per focus', cost: 714000000000000, multiplier: 0.05, stageRequired: 2),
-    Upgrade(id: 'house_wormhole', name: 'Wormhole Irrigation', emoji: '🌪️', description: '1.05x per focus', cost: 1550000000000000, multiplier: 0.05, stageRequired: 2),
-    Upgrade(id: 'house_singularity', name: 'Singularity Core', emoji: '⚫', description: '1.04x per focus', cost: 3440000000000000, multiplier: 0.04, stageRequired: 2),
-    Upgrade(id: 'house_parallel_universe', name: 'Parallel Universe Farm', emoji: '🌐', description: '1.04x per focus', cost: 7560000000000000, multiplier: 0.04, stageRequired: 2),
-    Upgrade(id: 'house_quantum_entangle', name: 'Quantum Entanglement', emoji: '🔗', description: '1.04x per focus', cost: 16800000000000000, multiplier: 0.04, stageRequired: 2),
-    Upgrade(id: 'house_multiverse', name: 'Multiverse Harvesting', emoji: '🎭', description: '1.03x per focus', cost: 37000000000000000, multiplier: 0.03, stageRequired: 2),
-    Upgrade(id: 'house_legendary_mastery', name: 'Legendary Mastery', emoji: '⚡', description: '1.02x per focus', cost: 79800000000000000, multiplier: 0.02, stageRequired: 2),
+    // ╔══════════════════════════════════════════╗
+    // ║  SHACK — 12 upgrades                     ║
+    // ╚══════════════════════════════════════════╝
+    Upgrade(id: 'shack_advanced_hoe',     name: 'Advanced Hoe',       emoji: '⚒️',  description: '+24% carrots/focus', cost: 1500,   multiplier: 0.24, stageRequired: 1),
+    Upgrade(id: 'shack_premium_seeds',    name: 'Premium Seeds',      emoji: '🌾',  description: '+22% carrots/focus', cost: 3500,   multiplier: 0.22, stageRequired: 1),
+    Upgrade(id: 'shack_sprinklers',       name: 'Sprinkler System',   emoji: '🚿',  description: '+20% carrots/focus', cost: 7000,   multiplier: 0.20, stageRequired: 1),
+    Upgrade(id: 'shack_pro_tools',        name: 'Professional Tools', emoji: '🔧',  description: '+18% carrots/focus', cost: 13000,  multiplier: 0.18, stageRequired: 1),
+    Upgrade(id: 'shack_super_fertilizer', name: 'Super Fertilizer',   emoji: '🧪',  description: '+16% carrots/focus', cost: 22000,  multiplier: 0.16, stageRequired: 1),
+    Upgrade(id: 'shack_auto_water',       name: 'Auto Watering',      emoji: '⚡',  description: '+15% carrots/focus', cost: 36000,  multiplier: 0.15, stageRequired: 1),
+    Upgrade(id: 'shack_premium_soil',     name: 'Premium Soil Mix',   emoji: '🌱',  description: '+13% carrots/focus', cost: 52000,  multiplier: 0.13, stageRequired: 1),
+    Upgrade(id: 'shack_biotech',          name: 'Bio-Technology',     emoji: '🧬',  description: '+12% carrots/focus', cost: 70000,  multiplier: 0.12, stageRequired: 1),
+    Upgrade(id: 'shack_climate',          name: 'Climate Control',    emoji: '🌡️', description: '+11% carrots/focus', cost: 88000,  multiplier: 0.11, stageRequired: 1),
+    Upgrade(id: 'shack_hydroponics',      name: 'Hydroponic System',  emoji: '💧',  description: '+10% carrots/focus', cost: 107000, multiplier: 0.10, stageRequired: 1),
+    Upgrade(id: 'shack_led_grow',         name: 'LED Grow Lights',    emoji: '💡',  description: '+9% carrots/focus',  cost: 128000, multiplier: 0.09, stageRequired: 1),
+    Upgrade(id: 'shack_master_gardener',  name: 'Master Gardener',    emoji: '👨‍🌾', description: '+8% carrots/focus', cost: 150000, multiplier: 0.08, stageRequired: 1),
+
+    // ╔══════════════════════════════════════════╗
+    // ║  HOUSE — 15 upgrades                     ║
+    // ╚══════════════════════════════════════════╝
+    Upgrade(id: 'house_quantum_hoe',      name: 'Quantum Hoe',            emoji: '⚛️',  description: '+15% corn/focus', cost: 500000,       multiplier: 0.15, stageRequired: 2),
+    Upgrade(id: 'house_genetic_seeds',    name: 'GMO Seeds',              emoji: '🔬',  description: '+14% corn/focus', cost: 860514,       multiplier: 0.14, stageRequired: 2),
+    Upgrade(id: 'house_laser_irrigation', name: 'Laser Irrigation',       emoji: '🔴',  description: '+13% corn/focus', cost: 1480968,      multiplier: 0.13, stageRequired: 2),
+    Upgrade(id: 'house_ai_tools',         name: 'AI-Powered Tools',       emoji: '🤖',  description: '+12% corn/focus', cost: 2548787,      multiplier: 0.12, stageRequired: 2),
+    Upgrade(id: 'house_nano_fertilizer',  name: 'Nano-Fertilizer',        emoji: '🔭',  description: '+11% corn/focus', cost: 4386533,      multiplier: 0.11, stageRequired: 2),
+    Upgrade(id: 'house_plasma_water',     name: 'Plasma Water',           emoji: '💥',  description: '+10% corn/focus', cost: 7549345,      multiplier: 0.10, stageRequired: 2),
+    Upgrade(id: 'house_cosmic_soil',      name: 'Cosmic Soil',            emoji: '🌌',  description: '+9% corn/focus',  cost: 12992632,     multiplier: 0.09, stageRequired: 2),
+    Upgrade(id: 'house_dimension_tech',   name: 'Dimensional Tech',       emoji: '🌀',  description: '+8% corn/focus',  cost: 22360679,     multiplier: 0.08, stageRequired: 2),
+    Upgrade(id: 'house_fusion_climate',   name: 'Fusion Climate',         emoji: '☢️',  description: '+8% corn/focus',  cost: 38483348,     multiplier: 0.08, stageRequired: 2),
+    Upgrade(id: 'house_mega_hydro',       name: 'Mega-Hydroponic Array',  emoji: '🏭',  description: '+7% corn/focus',  cost: 66230907,     multiplier: 0.07, stageRequired: 2),
+    Upgrade(id: 'house_neural_network',   name: 'Neural Network Farm',    emoji: '🧠',  description: '+6% corn/focus',  cost: 113985225,    multiplier: 0.06, stageRequired: 2),
+    Upgrade(id: 'house_photon_boost',     name: 'Photon Accelerator',     emoji: '🌟',  description: '+5% corn/focus',  cost: 196171728,    multiplier: 0.05, stageRequired: 2),
+    Upgrade(id: 'house_dark_matter',      name: 'Dark Matter Fertilizer', emoji: '🕳️', description: '+5% corn/focus',  cost: 337616975,    multiplier: 0.05, stageRequired: 2),
+    Upgrade(id: 'house_antimatter',       name: 'Antimatter Generator',   emoji: '💫',  description: '+4% corn/focus',  cost: 581048161,    multiplier: 0.04, stageRequired: 2),
+    Upgrade(id: 'house_singularity',      name: 'Singularity Core',       emoji: '⚫',  description: '+3% corn/focus',  cost: 999999972,    multiplier: 0.03, stageRequired: 2),
   ];
 
   final List<HouseUnlock> _houseUnlocks = [
@@ -151,36 +166,31 @@ class UpgradeService {
       id: 'unlock_shack',
       name: 'Cave Door',
       emoji: '🚪',
-      description: 'Unlock Shack & Shack Shop (3.5x bonus!)',
-      cost: 204000,         // 49% cost cut
+      description: 'Unlock Shack (3x bonus!)',
+      cost: 10000,      // 10,000 peas
       unlocksStage: 1,
-      houseMultiplier: 3.5, // 50% mult cut
+      houseMultiplier: 3.0,
     ),
     HouseUnlock(
       id: 'unlock_house',
       name: 'Shack Upgrade',
       emoji: '🏠',
-      description: 'Unlock House & House Shop (18.5x bonus!)',
-      cost: 2240000000,     // 44% cost cut
+      description: 'Unlock House & House Shop (10x bonus!)',
+      cost: 200000,
       unlocksStage: 2,
-      houseMultiplier: 18.5, // 50% mult cut
+      houseMultiplier: 10.0,
     ),
   ];
 
+  List<Upgrade>     get allUpgrades       => _upgrades;
+  List<Upgrade>     get purchasedUpgrades => _upgrades.where((u) => u.isPurchased).toList();
+  List<Upgrade>     get availableUpgrades => _upgrades.where((u) => !u.isPurchased).toList();
+  List<HouseUnlock> get houseUnlocks      => _houseUnlocks;
+  int               get currentStage      => _currentStage;
 
-  // Getters
-  List<Upgrade> get allUpgrades => _upgrades;
-  List<Upgrade> get purchasedUpgrades => _upgrades.where((u) => u.isPurchased).toList();
-  List<Upgrade> get availableUpgrades => _upgrades.where((u) => !u.isPurchased).toList();
-  List<HouseUnlock> get houseUnlocks => _houseUnlocks;
-  int get currentStage => _currentStage;
+  List<Upgrade> getUpgradesForStage(int stage) =>
+      _upgrades.where((u) => u.stageRequired == stage).toList();
 
-  // Get upgrades for a specific stage
-  List<Upgrade> getUpgradesForStage(int stage) {
-    return _upgrades.where((u) => u.stageRequired == stage).toList();
-  }
-
-  // Get the unlock for current stage
   HouseUnlock? getNextUnlock() {
     for (var unlock in _houseUnlocks) {
       if (!unlock.isPurchased && unlock.unlocksStage == _currentStage + 1) {
@@ -190,7 +200,6 @@ class UpgradeService {
     return null;
   }
 
-  /// Initialize - Load saved upgrades AND house unlocks
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     _currentStage = prefs.getInt('current_stage') ?? 0;
@@ -198,143 +207,101 @@ class UpgradeService {
     await loadHouseUnlocks();
   }
 
-  /// Calculate total multiplier - MULTIPLICATIVE (boosts compound!)
+  /// Total multiplier — all purchased upgrades compound multiplicatively,
+  /// then house bonuses are applied on top.
   double getTotalMultiplier() {
     double total = 1.0;
-
-    // Multiply each purchased upgrade (they compound!)
     for (var upgrade in _upgrades) {
-      if (upgrade.isPurchased) {
-        total *= (1.0 + upgrade.multiplier);
-      }
+      if (upgrade.isPurchased) total *= (1.0 + upgrade.multiplier);
     }
-
-    // Multiply by house bonuses (HUGE jumps!)
     for (var unlock in _houseUnlocks) {
-      if (unlock.isPurchased) {
-        total *= unlock.houseMultiplier;
-      }
+      if (unlock.isPurchased) total *= unlock.houseMultiplier;
     }
-
     return total;
   }
 
   String getMultiplierString() {
-    double multiplier = getTotalMultiplier();
-    if (multiplier >= 10000) {
-      return "${(multiplier / 1000).toStringAsFixed(1)}Kx";
-    } else if (multiplier >= 100) {
-      return "${multiplier.toStringAsFixed(0)}x";
-    } else if (multiplier >= 10) {
-      return "${multiplier.toStringAsFixed(1)}x";
-    }
-    return "${multiplier.toStringAsFixed(2)}x";
+    final m = getTotalMultiplier();
+    if (m >= 10000) return '${(m / 1000).toStringAsFixed(1)}Kx';
+    if (m >= 100)   return '${m.toStringAsFixed(0)}x';
+    if (m >= 10)    return '${m.toStringAsFixed(1)}x';
+    return '${m.toStringAsFixed(2)}x';
   }
 
   String getBonusPercentageString() {
-    double multiplier = getTotalMultiplier();
-    if (multiplier <= 1.0) return "No bonus yet";
-    return "${multiplier.toStringAsFixed(1)}x boost";
+    final m = getTotalMultiplier();
+    if (m <= 1.0) return 'No boost yet';
+    return '${m.toStringAsFixed(1)}x boost';
   }
 
-  /// Purchase an upgrade
   Future<bool> purchaseUpgrade(String upgradeId, double currentPeas) async {
-    // Find upgrade
-    Upgrade? upgrade = _upgrades.firstWhere(
+    final upgrade = _upgrades.firstWhere(
           (u) => u.id == upgradeId,
       orElse: () => throw Exception('Upgrade not found'),
     );
-
-    // Check if already purchased
-    if (upgrade.isPurchased) {
-      return false;
-    }
-
-    // Check if can afford
-    if (currentPeas < upgrade.cost) {
-      return false;
-    }
-
-    // Purchase!
+    if (upgrade.isPurchased || currentPeas < upgrade.cost) return false;
     upgrade.isPurchased = true;
     await saveUpgrades();
     return true;
   }
 
-  /// Purchase a house unlock
   Future<bool> purchaseHouseUnlock(String unlockId, double currentPeas) async {
-    HouseUnlock unlock = _houseUnlocks.firstWhere((u) => u.id == unlockId);
+    final unlock = _houseUnlocks.firstWhere((u) => u.id == unlockId);
+    if (unlock.isPurchased) return false;
+    if (currentPeas < unlock.cost) return false;
+    if (CurrencyService().coins < unlock.coinCost) return false;
 
-    if (unlock.isPurchased || currentPeas < unlock.cost) {
-      return false;
-    }
+    await CurrencyService().removePeas(unlock.cost.toInt());
+    await CurrencyService().removeCoins(unlock.coinCost);
 
     unlock.isPurchased = true;
     _currentStage = unlock.unlocksStage;
     await saveUpgrades();
     await saveHouseUnlocks();
-
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('current_stage', _currentStage);
-
     return true;
   }
 
-  /// Get upgrade by ID
   Upgrade? getUpgrade(String id) {
-    try {
-      return _upgrades.firstWhere((u) => u.id == id);
-    } catch (e) {
-      return null;
-    }
+    try { return _upgrades.firstWhere((u) => u.id == id); }
+    catch (_) { return null; }
   }
 
-  /// Check if upgrade is purchased
-  bool isPurchased(String id) {
-    Upgrade? upgrade = getUpgrade(id);
-    return upgrade?.isPurchased ?? false;
-  }
+  bool isPurchased(String id) => getUpgrade(id)?.isPurchased ?? false;
 
-  /// Save upgrades to storage
   Future<void> saveUpgrades() async {
     final prefs = await SharedPreferences.getInstance();
-    List<String> purchasedIds = _upgrades
-        .where((u) => u.isPurchased)
-        .map((u) => u.id)
-        .toList();
-    await prefs.setStringList('purchased_upgrades', purchasedIds);
+    await prefs.setStringList(
+      'purchased_upgrades',
+      _upgrades.where((u) => u.isPurchased).map((u) => u.id).toList(),
+    );
   }
 
-  /// Load upgrades from storage
   Future<void> loadUpgrades() async {
     final prefs = await SharedPreferences.getInstance();
-    List<String>? purchasedIds = prefs.getStringList('purchased_upgrades');
-
-    if (purchasedIds != null) {
+    final ids = prefs.getStringList('purchased_upgrades');
+    if (ids != null) {
       for (var upgrade in _upgrades) {
-        upgrade.isPurchased = purchasedIds.contains(upgrade.id);
+        upgrade.isPurchased = ids.contains(upgrade.id);
       }
     }
   }
 
-  /// Save house unlocks
   Future<void> saveHouseUnlocks() async {
     final prefs = await SharedPreferences.getInstance();
-    List<String> purchasedIds = _houseUnlocks
-        .where((u) => u.isPurchased)
-        .map((u) => u.id)
-        .toList();
-    await prefs.setStringList('purchased_house_unlocks', purchasedIds);
+    await prefs.setStringList(
+      'purchased_house_unlocks',
+      _houseUnlocks.where((u) => u.isPurchased).map((u) => u.id).toList(),
+    );
   }
 
-  /// Load house unlocks
   Future<void> loadHouseUnlocks() async {
     final prefs = await SharedPreferences.getInstance();
-    List<String>? purchasedIds = prefs.getStringList('purchased_house_unlocks');
-
-    if (purchasedIds != null) {
+    final ids = prefs.getStringList('purchased_house_unlocks');
+    if (ids != null) {
       for (var unlock in _houseUnlocks) {
-        unlock.isPurchased = purchasedIds.contains(unlock.id);
+        unlock.isPurchased = ids.contains(unlock.id);
         if (unlock.isPurchased && unlock.unlocksStage > _currentStage) {
           _currentStage = unlock.unlocksStage;
         }
@@ -342,14 +309,9 @@ class UpgradeService {
     }
   }
 
-  /// Reset all upgrades and house unlocks (for testing)
   Future<void> reset() async {
-    for (var upgrade in _upgrades) {
-      upgrade.isPurchased = false;
-    }
-    for (var unlock in _houseUnlocks) {
-      unlock.isPurchased = false;
-    }
+    for (var u in _upgrades)     { u.isPurchased = false; }
+    for (var u in _houseUnlocks) { u.isPurchased = false; }
     _currentStage = 0;
     await saveUpgrades();
     await saveHouseUnlocks();
@@ -357,42 +319,25 @@ class UpgradeService {
     await prefs.setInt('current_stage', 0);
   }
 
-  /// Get next affordable upgrade (based on current peas)
   Upgrade? getNextAffordableUpgrade(double currentPeas) {
-    var available = availableUpgrades;
-    available.sort((a, b) => a.cost.compareTo(b.cost));
-
-    for (var upgrade in available) {
-      if (currentPeas >= upgrade.cost) {
-        return upgrade;
-      }
-    }
+    final sorted = availableUpgrades..sort((a, b) => a.cost.compareTo(b.cost));
+    for (var u in sorted) { if (currentPeas >= u.cost) return u; }
     return null;
   }
+
+  Upgrade? getNextGoal(double currentPeas) {
+    final sorted = availableUpgrades..sort((a, b) => a.cost.compareTo(b.cost));
+    for (var u in sorted) { if (currentPeas < u.cost) return u; }
+    return null;
+  }
+
   int getTotalUpgradesPurchased() {
     int total = 0;
-
     for (int stage = 0; stage < 3; stage++) {
-      for (var upgrade in getUpgradesForStage(stage)) {
-        if (isPurchased(upgrade.id)) {
-          total++;
-        }
+      for (var u in getUpgradesForStage(stage)) {
+        if (isPurchased(u.id)) total++;
       }
     }
-
     return total;
-  }
-
-  /// Get next upgrade to save for
-  Upgrade? getNextGoal(double currentPeas) {
-    var available = availableUpgrades;
-    available.sort((a, b) => a.cost.compareTo(b.cost));
-
-    for (var upgrade in available) {
-      if (currentPeas < upgrade.cost) {
-        return upgrade;
-      }
-    }
-    return null;
   }
 }

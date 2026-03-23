@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/cave_decorations.dart';
 import '../models/character.dart';
 import '../models/farm.dart';
+import 'furniture_service.dart';
 
 class StorageService {
   static const String CHARACTER_KEY = 'character_data';
@@ -34,6 +35,50 @@ class StorageService {
       print("❌ Error loading character: $e");
     }
     return null;
+  }
+  Future<void> resetAll() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // Core game data
+    await prefs.remove(CHARACTER_KEY);
+    await prefs.remove(FARM_KEY);
+    await prefs.remove('cave_decorations');
+
+    // Currency
+    await prefs.remove('coins');
+    await prefs.remove('peas');
+
+    // Furniture
+    await prefs.remove('owned_furniture');
+    await prefs.remove('placed_furniture');
+
+    // Upgrades
+    await prefs.remove('upgrades');
+    await prefs.remove('current_stage');
+
+    // Achievements
+    await prefs.remove('achievement_progress');
+
+    // Streak & daily reward
+    await prefs.remove('last_focus_date');
+    await prefs.remove('current_streak');
+    await prefs.remove('last_reward_date');
+
+    // Torches / chimes / fountain
+    await prefs.setBool('torches_purchased', false);
+    await prefs.setBool('wind_chimes_purchased', false);
+    await prefs.setBool('fountain_purchased', false);
+
+    // Focus session
+    await prefs.remove('active_focus_session');
+
+    // In-memory reset
+    FurnitureService().ownedFurniture.clear();
+    for (var key in FurnitureService().placedFurniture.keys) {
+      FurnitureService().placedFurniture[key] = null;
+    }
+
+    print("🗑️ Full reset complete");
   }
 
   // Save farm

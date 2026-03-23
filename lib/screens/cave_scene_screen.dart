@@ -8,6 +8,7 @@ import 'package:focus_life/services/stage_theme.dart';
 import 'package:focus_life/services/streak_service.dart';
 import 'package:focus_life/widgets/dialy_reward_dialog.dart';
 import 'dart:async';
+import 'dart:ui' as ui;
 import 'dart:math' as math;
 import 'dart:math' show Random;
 import 'package:rive/rive.dart' hide LinearGradient, RadialGradient, Image;
@@ -27,6 +28,11 @@ import 'package:focus_life/painters/garden_painters.dart';
 import 'package:focus_life/services/focus_session_service.dart';
 import 'package:focus_life/widgets/achievement_notification.dart';
 
+import '../furniture/flame.dart';
+void resetCaveBoostFlags() {
+  _CaveSceneScreenState.resetBoostFlags();
+}
+
 class CaveSceneScreen extends StatefulWidget {
   final Character character;
   final Farm farm;
@@ -40,6 +46,7 @@ class CaveSceneScreen extends StatefulWidget {
     required this.decorations,
     required this.onUpdate,
   });
+
 
   @override
   _CaveSceneScreenState createState() => _CaveSceneScreenState();
@@ -60,10 +67,17 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
 
   int _viewingStage = -1;
 
-  // ── Static flags (accessible from TimerPickerDialog) ─────────────────
+  // ── Static flags ──────────────────────────────────────────
   static bool torchesOwned  = false;
   static bool chimesOwned   = false;
   static bool fountainOwned = false;
+
+  static void resetBoostFlags() {
+    torchesOwned  = false;
+    chimesOwned   = false;
+    fountainOwned = false;
+  }
+
 
   // ── Torch system (cave only) ──────────────────────────────────────────
   bool _torchPurchased = false;
@@ -104,7 +118,6 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
         : _viewingStage;
     return stage.clamp(0, 2);
   }
-
   // ── initState ────────────────────────────────────────────────────────
   @override
   void initState() {
@@ -201,6 +214,28 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
         _CaveSceneScreenState.fountainOwned = true;
       });
     }
+  }
+  Widget _stageTab(int stage, String label) {
+    final isActive = displayStage == stage;
+    return GestureDetector(
+      onTap: () => setState(() => _viewingStage = stage),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
+        decoration: BoxDecoration(
+          color: isActive ? Colors.white.withOpacity(0.15) : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isActive ? Colors.white : Colors.white38,
+            fontSize: 13,
+            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _saveFountainState() async {
@@ -641,7 +676,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                     padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
                         color: Colors.red, borderRadius: BorderRadius.circular(8)),
-                    child: const Text('+100',
+                    child: const Text('0',
                         style: TextStyle(
                             color: Colors.white,
                             fontSize: 12,
@@ -678,28 +713,56 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                   ),
                 ),
                 // Coins counter
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFD700).withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFFFD700), width: 2),
-                  ),
-                  child: Row(
-                    children: [
-                      const Text('🪙', style: TextStyle(fontSize: 20)),
-                      const SizedBox(width: 6),
-                      Text(NumberFormatter.format(currency.coins),
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 17,
-                              fontWeight: FontWeight.bold)),
-                    ],
+                Flexible(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFD700).withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFFFD700), width: 2),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('🪙', style: TextStyle(fontSize: 20)),
+                        const SizedBox(width: 6),
+                        Text(NumberFormatter.format(currency.coins),
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold)),
+                      ],
+                    ),
                   ),
                 ),
               ],
             ),
           ),
+          if (UpgradeService().currentStage > 0)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              color: Colors.black26,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      color: Colors.black38,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _stageTab(0, '🪨 Cave'),
+                        if (UpgradeService().currentStage >= 1) _stageTab(1, '🛖 Shack'),
+                        if (UpgradeService().currentStage >= 2) _stageTab(2, '🏠 House'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
           // ── Scene ────────────────────────────────────────────────────
           Expanded(
@@ -734,7 +797,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
 
                     // House / Cave image
                     Positioned(
-                      top: 98,
+                      top: 50,
                       left: MediaQuery.of(context).size.width * 0.16,
                       child: GestureDetector(
                         onTapDown: (_) => setState(() => _caveScale = 0.95),
@@ -760,42 +823,20 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                     if (displayStage == 0) ...[
                       // Left torch
                       Positioned(
-                        top: 205,
-                        left: screenW * 0.22,
+                        top: 180,
+                        left: screenW * 0.38,
                         child: GestureDetector(
                           onTap: _onTorchSpotTapped,
-                          child: SizedBox(
-                            width: 60, height: 130,
-                            child: _torchPurchased
-                                ? CustomPaint(
-                                size: const Size(60, 130),
-                                painter: _TorchPainter())
-                                : Opacity(
-                                opacity: 0.18,
-                                child: CustomPaint(
-                                    size: const Size(60, 130),
-                                    painter: _TorchPainter())),
-                          ),
+                          child: FlameWidget(width: 30, height: 40, opacity: _torchPurchased ? 1.0 : 0.18),
                         ),
                       ),
                       // Right torch
                       Positioned(
-                        top: 205,
-                        left: screenW * 0.65,
+                        top: 180,
+                        left: screenW * 0.58,
                         child: GestureDetector(
                           onTap: _onTorchSpotTapped,
-                          child: SizedBox(
-                            width: 60, height: 130,
-                            child: _torchPurchased
-                                ? CustomPaint(
-                                size: const Size(60, 130),
-                                painter: _TorchPainter())
-                                : Opacity(
-                                opacity: 0.18,
-                                child: CustomPaint(
-                                    size: const Size(60, 130),
-                                    painter: _TorchPainter())),
-                          ),
+                          child: FlameWidget(width: 30, height: 40, opacity: _torchPurchased ? 1.0 : 0.18),
                         ),
                       ),
                     ],
@@ -803,16 +844,17 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                     // ── WIND CHIMES (shack only, stage 1) ────────────
                     if (displayStage == 1)
                       Positioned(
-                        top: 170,
-                        left: screenW * 0.58,
+                        top: 230,
+                        left: screenW * 0.57,
                         child: GestureDetector(
                           onTap: _onWindChimesTapped,
                           child: SizedBox(
-                            width: 80, height: 120,
+                            width: 30, height: 60,
                             child: _windChimesPurchased
                                 ? AnimatedBuilder(
                               animation: _chimesController!,
                               builder: (_, __) => CustomPaint(
+                                size: const Size(30, 60),
                                 painter: _WindChimesPainter(
                                   swing: (_chimesController!.value - 0.5) * 0.3,
                                 ),
@@ -821,6 +863,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                                 : Opacity(
                               opacity: 0.18,
                               child: CustomPaint(
+                                  size: const Size(30, 60),
                                   painter: _WindChimesPainter(swing: 0.0)),
                             ),
                           ),
@@ -830,7 +873,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                     // ── FOUNTAIN (house only, stage 2) ────────────────
                     if (displayStage == 2)
                       Positioned(
-                        top: 295,
+                        top: 280,
                         left: screenW * 0.41,
                         child: GestureDetector(
                           onTap: _onFountainTapped,
@@ -867,70 +910,6 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                         ),
                       ),
                     ),
-
-                    // Stage nav arrows
-                    Positioned(
-                      bottom: 300, left: 0, right: 0,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          if (displayStage > 0)
-                            GestureDetector(
-                              onTap: () => setState(() {
-                                _viewingStage = (displayStage - 1).clamp(0, 2);
-                              }),
-                              child: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                    color: Colors.black54,
-                                    borderRadius: BorderRadius.circular(20)),
-                                child: const Icon(Icons.arrow_back_ios_new,
-                                    color: Colors.white, size: 18),
-                              ),
-                            )
-                          else
-                            const SizedBox(width: 34),
-                          const SizedBox(width: 12),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 6),
-                            decoration: BoxDecoration(
-                                color: Colors.black54,
-                                borderRadius: BorderRadius.circular(16)),
-                            child: Text(
-                              ['Cave', 'Shack', 'House'][displayStage.clamp(0, 2)] +
-                                  (displayStage ==
-                                      UpgradeService().currentStage.clamp(0, 2)
-                                      ? ''
-                                      : '  👀'),
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          if (displayStage < UpgradeService().currentStage.clamp(0, 2))
-                            GestureDetector(
-                              onTap: () => setState(() {
-                                _viewingStage = (displayStage + 1).clamp(0, 2);
-                              }),
-                              child: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                    color: Colors.black54,
-                                    borderRadius: BorderRadius.circular(20)),
-                                child: const Icon(Icons.arrow_forward_ios,
-                                    color: Colors.white, size: 18),
-                              ),
-                            )
-                          else
-                            const SizedBox(width: 34),
-                        ],
-                      ),
-                    ),
-
-                    // Focus button
                     Positioned(
                       bottom: 30, left: 0, right: 0,
                       child: Center(
@@ -1091,15 +1070,17 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                   fontWeight: FontWeight.bold)),
         ),
         const SizedBox(height: 5),
+
         Transform(
           alignment: Alignment.center,
-          transform: Matrix4.identity()..scale(facingRight ? 1.0 : -1.0, 1.0),
-          child: const SizedBox(
+          transform: Matrix4.identity()
+            ..scale(facingRight ? 1.0 : -1.0, 1.0),
+          child: SizedBox(
             width: 140, height: 170,
             child: RiveAnimation.asset(
               'assets/animations/bob_idle.riv',
               fit: BoxFit.contain,
-              stateMachines: ['State Machine 1'],
+              stateMachines: const ['State Machine 1'],
             ),
           ),
         ),
@@ -1122,12 +1103,15 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
   }
 
   void _showSessionCompletedDialog(FocusSessionData session) async {
-    double multiplier = UpgradeService().getTotalMultiplier()
-        * (_CaveSceneScreenState.torchesOwned  ? 1.15 : 1.0)
+    double torchMultiplier = (_CaveSceneScreenState.torchesOwned  ? 1.15 : 1.0)
         * (_CaveSceneScreenState.chimesOwned   ? 1.10 : 1.0)
         * (_CaveSceneScreenState.fountainOwned ? 1.12 : 1.0);
+
     int peasEarned = CurrencyService.calculatePeasFromFocus(
-        session.durationMinutes, upgradeMultiplier: multiplier);
+      session.durationMinutes,
+      upgradeMultiplier: UpgradeService().getTotalMultiplier(),
+      torchMultiplier: torchMultiplier,
+    );
     await CurrencyService().addPeas(peasEarned);
     int earnings = session.durationMinutes * 5;
     widget.character.earnMoney(earnings);
@@ -1266,41 +1250,6 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
       ),
     );
   }
-
-  // ── Unused but kept for build compatibility ───────────────────────────
-  List<Widget> _buildCaveDecorations() => [];
-
-  Widget _buildRock(double width, double height) {
-    return Container(
-      width: width, height: height,
-      decoration: const BoxDecoration(
-        color: Color(0xFF3a3a3a),
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(20), topRight: Radius.circular(25),
-          bottomLeft: Radius.circular(10), bottomRight: Radius.circular(15),
-        ),
-        boxShadow: [BoxShadow(color: Colors.black54, blurRadius: 8, offset: Offset(2, 4))],
-      ),
-    );
-  }
-
-  Widget _buildStatBox(String emoji, String value) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      decoration: BoxDecoration(
-          color: const Color(0xFF0f3460),
-          borderRadius: BorderRadius.circular(20)),
-      child: Row(
-        children: [
-          Text(emoji, style: const TextStyle(fontSize: 20)),
-          const SizedBox(width: 8),
-          Text(value,
-              style: const TextStyle(
-                  color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-        ],
-      ),
-    );
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1381,104 +1330,235 @@ class _TorchPainter extends CustomPainter {
 // FOUNTAIN PAINTER
 // ═══════════════════════════════════════════════════════════════
 class _FountainPainter extends CustomPainter {
-  final double ripple; // 0.0 → 1.0, repeating
-
+  final double ripple;
   const _FountainPainter({required this.ripple});
 
   @override
   void paint(Canvas canvas, Size size) {
-    final cx = size.width  / 2;
-    final cy = size.height / 2 + 8;
+    final cx = size.width / 2;
+    final by = size.height * 0.82;
+    final arcPhase = math.sin(ripple * math.pi * 2);
 
-    // ── Basin (outer stone ring) ──────────────────────────────
-    final stonePaint = Paint()
-      ..shader = RadialGradient(
-        colors: [const Color(0xFF9E9E9E), const Color(0xFF616161)],
-      ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: 38));
+    // ── Shadow ────────────────────────────────────────────────
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(cx, by + 5), width: 88, height: 14),
+      Paint()..color = Colors.black.withOpacity(0.18),
+    );
 
-    canvas.drawCircle(Offset(cx, cy), 36, stonePaint);
-
-    // Basin rim highlight
-    canvas.drawCircle(
-      Offset(cx, cy), 36,
+    // ── Outer basin back rim ──────────────────────────────────
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(cx, by - 20), width: 84, height: 26),
+      Paint()..color = const Color(0xFF757575),
+    );
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(cx, by - 20), width: 84, height: 26),
       Paint()
-        ..color = const Color(0xFFBDBDBD)
+        ..color = const Color(0xFF9E9E9E)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 4,
     );
 
-    // ── Water inside basin ────────────────────────────────────
-    canvas.drawCircle(
-      Offset(cx, cy), 30,
-      Paint()..color = const Color(0xFF42A5F5).withOpacity(0.85),
+    // ── Basin side body ───────────────────────────────────────
+    // Dark side (left)
+    canvas.drawPath(
+      Path()
+        ..moveTo(cx - 42, by - 20)
+        ..lineTo(cx - 42, by - 2)
+        ..lineTo(cx, by - 2)
+        ..lineTo(cx, by - 20)
+        ..close(),
+      Paint()..color = const Color(0xFF616161),
+    );
+    // Light side (right)
+    canvas.drawPath(
+      Path()
+        ..moveTo(cx, by - 20)
+        ..lineTo(cx, by - 2)
+        ..lineTo(cx + 42, by - 2)
+        ..lineTo(cx + 42, by - 20)
+        ..close(),
+      Paint()..color = const Color(0xFF757575),
     );
 
+    // ── Front rim ─────────────────────────────────────────────
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(cx, by - 2), width: 84, height: 26),
+      Paint()..color = const Color(0xFF9E9E9E),
+    );
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(cx, by - 2), width: 84, height: 26),
+      Paint()
+        ..color = const Color(0xFFBDBDBD)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.5,
+    );
+    // Front rim highlight strip
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(cx, by - 4), width: 64, height: 8),
+      Paint()..color = Colors.white.withOpacity(0.20),
+    );
+
+    // ── Water surface ─────────────────────────────────────────
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(cx, by - 20), width: 72, height: 20),
+      Paint()..color = const Color(0xFF1565C0).withOpacity(0.9),
+    );
+    // Water color variation
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(cx + 8, by - 22), width: 36, height: 10),
+      Paint()..color = const Color(0xFF1E88E5).withOpacity(0.6),
+    );
     // Water shimmer
-    canvas.drawCircle(
-      Offset(cx - 8, cy - 6), 8,
-      Paint()..color = Colors.white.withOpacity(0.18),
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(cx - 12, by - 22), width: 22, height: 5),
+      Paint()..color = Colors.white.withOpacity(0.28),
+    );
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(cx + 10, by - 19), width: 10, height: 3),
+      Paint()..color = Colors.white.withOpacity(0.15),
     );
 
-    // ── Animated ripple rings ─────────────────────────────────
+    // ── Ripples ───────────────────────────────────────────────
     for (int i = 0; i < 3; i++) {
-      double phase  = (ripple + i / 3.0) % 1.0;
-      double radius = 4 + phase * 24;
-      double opacity = (1.0 - phase) * 0.55;
-      canvas.drawCircle(
-        Offset(cx, cy), radius,
+      final phase = (ripple + i / 3.0) % 1.0;
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(cx, by - 20),
+          width: 6 + phase * 52,
+          height: (6 + phase * 52) * 0.28,
+        ),
         Paint()
-          ..color = Colors.white.withOpacity(opacity)
+          ..color = Colors.white.withOpacity((1 - phase) * 0.38)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.8,
+          ..strokeWidth = 1.2,
       );
     }
 
-    // ── Center pedestal ───────────────────────────────────────
-    final pedPaint = Paint()..color = const Color(0xFF757575);
-    canvas.drawCircle(Offset(cx, cy), 7, pedPaint);
+    // ── Pedestal base ─────────────────────────────────────────
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(cx, by - 22), width: 20, height: 7),
+      Paint()..color = const Color(0xFF616161),
+    );
+    // Pedestal column
+    canvas.drawPath(
+      Path()
+        ..moveTo(cx - 6, by - 22)
+        ..lineTo(cx - 5, by - 56)
+        ..lineTo(cx + 5, by - 56)
+        ..lineTo(cx + 6, by - 22)
+        ..close(),
+      Paint()..color = const Color(0xFF757575),
+    );
+    // Column highlight
+    canvas.drawPath(
+      Path()
+        ..moveTo(cx - 1, by - 22)
+        ..lineTo(cx - 1, by - 56)
+        ..lineTo(cx + 2, by - 56)
+        ..lineTo(cx + 2, by - 22)
+        ..close(),
+      Paint()..color = Colors.white.withOpacity(0.15),
+    );
+    // Pedestal cap
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(cx, by - 56), width: 18, height: 6),
+      Paint()..color = const Color(0xFFAAAAAA),
+    );
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset(cx, by - 57), width: 14, height: 4),
+      Paint()..color = Colors.white.withOpacity(0.25),
+    );
 
-    // ── Water spout arc (left + right) ────────────────────────
-    // Animated droop based on ripple phase
-    double droop = 6 + math.sin(ripple * math.pi * 2) * 2;
-
+    // ── Water arcs ────────────────────────────────────────────
     for (int side in [-1, 1]) {
-      final arcPath = Path()
-        ..moveTo(cx, cy - 6)
-        ..quadraticBezierTo(
-          cx + side * 18, cy - 22,
-          cx + side * 26, cy - droop,
-        );
-      canvas.drawPath(
-        arcPath,
-        Paint()
-          ..color = const Color(0xFF90CAF9).withOpacity(0.9)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5
-          ..strokeCap = StrokeCap.round,
-      );
+      final endX = cx + side * 30;
+      final endY = by - 18 + arcPhase * 1.5;
+      final ctrlX = cx + side * 16;
+      final ctrlY = by - 68 + arcPhase * 2.5;
 
-      // Water droplet at arc end
-      canvas.drawCircle(
-        Offset(cx + side * 26, cy - droop + 2), 3,
-        Paint()..color = const Color(0xFF64B5F6),
-      );
+      final arcPath = Path()
+        ..moveTo(cx, by - 56)
+        ..quadraticBezierTo(ctrlX, ctrlY, endX, endY);
+
+      // Arc glow
+      canvas.drawPath(arcPath,
+          Paint()
+            ..color = const Color(0xFF42A5F5).withOpacity(0.25)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 6
+            ..strokeCap = StrokeCap.round);
+      // Arc body
+      canvas.drawPath(arcPath,
+          Paint()
+            ..color = const Color(0xFF90CAF9)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2.5
+            ..strokeCap = StrokeCap.round);
+      // Arc highlight
+      canvas.drawPath(arcPath,
+          Paint()
+            ..color = Colors.white.withOpacity(0.4)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1
+            ..strokeCap = StrokeCap.round);
+
+      // Splash droplets at landing
+      for (int d = 0; d < 3; d++) {
+        final dPhase = (ripple * 3 + d / 3.0) % 1.0;
+        final angle = (side == -1 ? math.pi * 0.7 : math.pi * 0.3) +
+            d * 0.3 * side;
+        canvas.drawCircle(
+          Offset(
+            endX + math.cos(angle) * dPhase * 6,
+            endY - math.sin(angle) * dPhase * 5,
+          ),
+          (1.5 - dPhase) * 2.5,
+          Paint()..color = const Color(0xFFBBDEFB).withOpacity(1 - dPhase),
+        );
+      }
     }
 
-    // ── Straight upward spout ─────────────────────────────────
-    double spoutH = 14 + math.sin(ripple * math.pi * 2) * 2;
+    // ── Center spout ──────────────────────────────────────────
+    final spoutH = 22 + arcPhase * 4;
+    // Spout glow
     canvas.drawLine(
-      Offset(cx, cy - 6),
-      Offset(cx, cy - 6 - spoutH),
+      Offset(cx, by - 56),
+      Offset(cx, by - 56 - spoutH),
+      Paint()
+        ..color = const Color(0xFF42A5F5).withOpacity(0.3)
+        ..strokeWidth = 6
+        ..strokeCap = StrokeCap.round,
+    );
+    // Spout body
+    canvas.drawLine(
+      Offset(cx, by - 56),
+      Offset(cx, by - 56 - spoutH),
       Paint()
         ..color = const Color(0xFF90CAF9)
         ..strokeWidth = 3
         ..strokeCap = StrokeCap.round,
     );
-    // Droplet at top
+    // Spout highlight
+    canvas.drawLine(
+      Offset(cx - 0.5, by - 56),
+      Offset(cx - 0.5, by - 56 - spoutH),
+      Paint()
+        ..color = Colors.white.withOpacity(0.35)
+        ..strokeWidth = 1
+        ..strokeCap = StrokeCap.round,
+    );
+    // Top droplet
     canvas.drawCircle(
-      Offset(cx, cy - 6 - spoutH),
-      3.5,
+      Offset(cx, by - 56 - spoutH), 5,
+      Paint()..color = const Color(0xFF90CAF9),
+    );
+    canvas.drawCircle(
+      Offset(cx, by - 56 - spoutH), 3,
       Paint()..color = const Color(0xFFBBDEFB),
+    );
+    canvas.drawCircle(
+      Offset(cx, by - 56 - spoutH), 1.5,
+      Paint()..color = Colors.white.withOpacity(0.9),
     );
   }
 
@@ -1490,13 +1570,13 @@ class _FountainPainter extends CustomPainter {
 // WIND CHIMES PAINTER
 // ═══════════════════════════════════════════════════════════════
 class _WindChimesPainter extends CustomPainter {
-  final double swing; // -0.15 to 0.15 radians
-
+  final double swing;
   const _WindChimesPainter({required this.swing});
 
   @override
   void paint(Canvas canvas, Size size) {
     final cx = size.width / 2;
+    const double s = 0.40; // scale factor
 
     canvas.save();
     canvas.translate(cx, 0);
@@ -1505,58 +1585,52 @@ class _WindChimesPainter extends CustomPainter {
 
     final woodPaint = Paint()
       ..color = const Color(0xFFa0724a)
-      ..strokeWidth = 3
+      ..strokeWidth = 3 * s
       ..strokeCap = StrokeCap.round;
 
     final stringPaint = Paint()
       ..color = const Color(0xFFdddddd)
-      ..strokeWidth = 1.2;
+      ..strokeWidth = 1.2 * s;
 
     final chimePaint = Paint()
       ..color = const Color(0xFFc8d8e8)
-      ..style = PaintingStyle.fill;
+      ..style = ui.PaintingStyle.fill;
 
     final chimeStroke = Paint()
       ..color = const Color(0xFF8aabcc)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
+      ..style = ui.PaintingStyle.stroke
+      ..strokeWidth = 1 * s;
 
-    // Top hanging string
-    canvas.drawLine(Offset(cx, 0), Offset(cx, 14), stringPaint);
+    canvas.drawLine(Offset(cx, 0), Offset(cx, 14 * s), stringPaint);
+    canvas.drawLine(Offset(cx - 28 * s, 14 * s), Offset(cx + 28 * s, 14 * s), woodPaint);
 
-    // Horizontal bar
-    canvas.drawLine(Offset(cx - 28, 14), Offset(cx + 28, 14), woodPaint);
-
-    // 5 chimes
-    final chimeXs   = [cx - 24.0, cx - 12.0, cx, cx + 12.0, cx + 24.0];
-    final chimeLens = [38.0, 50.0, 44.0, 48.0, 36.0];
+    final chimeXs  = [cx - 24.0 * s, cx - 12.0 * s, cx, cx + 12.0 * s, cx + 24.0 * s];
+    final chimeLens = [38.0 * s, 50.0 * s, 44.0 * s, 48.0 * s, 36.0 * s];
 
     for (int i = 0; i < 5; i++) {
       final x   = chimeXs[i];
       final len = chimeLens[i];
 
-      canvas.drawLine(Offset(x, 14), Offset(x, 20), stringPaint);
+      canvas.drawLine(Offset(x, 14 * s), Offset(x, 20 * s), stringPaint);
 
       final rect = RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(x, 20 + len / 2), width: 7, height: len),
-        const Radius.circular(3),
+        Rect.fromCenter(center: Offset(x, 20 * s + len / 2), width: 7 * s, height: len),
+        const Radius.circular(3 * s),
       );
       canvas.drawRRect(rect, chimePaint);
       canvas.drawRRect(rect, chimeStroke);
 
-      // Shine
       canvas.drawLine(
-        Offset(x - 1.5, 22),
-        Offset(x - 1.5, 20 + len - 6),
+        Offset(x - 1.5 * s, 22 * s),
+        Offset(x - 1.5 * s, 20 * s + len - 6 * s),
         Paint()
           ..color = Colors.white.withOpacity(0.4)
-          ..strokeWidth = 1.5,
+          ..strokeWidth = 1.5 * s,
       );
     }
 
-    // Clapper
-    canvas.drawCircle(Offset(cx, 20 + chimeLens[2] + 6), 4, chimePaint);
-    canvas.drawCircle(Offset(cx, 20 + chimeLens[2] + 6), 4, chimeStroke);
+    canvas.drawCircle(Offset(cx, 20 * s + chimeLens[2] + 6 * s), 4 * s, chimePaint);
+    canvas.drawCircle(Offset(cx, 20 * s + chimeLens[2] + 6 * s), 4 * s, chimeStroke);
 
     canvas.restore();
   }
@@ -1573,7 +1647,7 @@ class RaggedClothPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = const Color(0xFF3d3426)
-      ..style = PaintingStyle.stroke
+      ..style = ui.PaintingStyle.stroke
       ..strokeWidth = 2;
     canvas.drawLine(const Offset(5, 10), const Offset(15, 15), paint);
     canvas.drawLine(const Offset(20, 8), const Offset(25, 18), paint);

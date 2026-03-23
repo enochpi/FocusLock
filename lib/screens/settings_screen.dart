@@ -3,11 +3,14 @@ import 'package:focus_life/screens/blocked_apps_screen.dart';
 import 'package:focus_life/services/app_monitor_service.dart';
 import 'package:focus_life/services/furniture_service.dart';
 import 'package:focus_life/services/upgrade_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/character.dart';
+import '../services/achievements_service.dart';
 import '../services/settings_service.dart';
 import '../services/streak_service.dart';
 import '../services/currency_service.dart';
 import '../services/storage_service.dart';
+import 'package:focus_life/screens/cave_scene_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final Character character;
@@ -81,7 +84,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onTap: () {
                   // TODO: Navigate to blocked apps screen
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Blocked apps manager coming soon!')),
+                    const SnackBar(
+                        content: Text('Blocked apps manager coming soon!')),
                   );
                 },
               ),
@@ -146,7 +150,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onTap: () {
                   // TODO: Implement export
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Export feature coming soon!')),
+                    const SnackBar(
+                        content: Text('Export feature coming soon!')),
                   );
                 },
               ),
@@ -158,7 +163,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onTap: () {
                   // TODO: Implement import
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Import feature coming soon!')),
+                    const SnackBar(
+                        content: Text('Import feature coming soon!')),
                   );
                 },
               ),
@@ -208,7 +214,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildSectionCard({required String title, required List<Widget> children}) {
+  Widget _buildSectionCard(
+      {required String title, required List<Widget> children}) {
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFF16213e),
@@ -246,7 +253,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       leading: Icon(icon, color: const Color(0xFF00d4ff)),
       title: Text(
         title,
-        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+        style: const TextStyle(
+            color: Colors.white, fontWeight: FontWeight.w500),
       ),
       subtitle: Text(
         subtitle,
@@ -271,7 +279,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       leading: Icon(icon, color: iconColor ?? const Color(0xFF00d4ff)),
       title: Text(
         title,
-        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+        style: const TextStyle(
+            color: Colors.white, fontWeight: FontWeight.w500),
       ),
       subtitle: Text(
         subtitle,
@@ -324,145 +333,149 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          return AlertDialog(
-            backgroundColor: const Color(0xFF16213e),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            title: const Text(
-              'Edit Character Name',
-              style: TextStyle(color: Colors.white),
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    hintText: 'Enter character name',
-                    hintStyle: const TextStyle(color: Colors.white38),
-                    errorText: errorText,
-                    errorStyle: const TextStyle(color: Colors.red),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF00d4ff)),
+      builder: (context) =>
+          StatefulBuilder(
+            builder: (context, setDialogState) {
+              return AlertDialog(
+                backgroundColor: const Color(0xFF16213e),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                title: const Text(
+                  'Edit Character Name',
+                  style: TextStyle(color: Colors.white),
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: nameController,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'Enter character name',
+                        hintStyle: const TextStyle(color: Colors.white38),
+                        errorText: errorText,
+                        errorStyle: const TextStyle(color: Colors.red),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(
+                              0xFF00d4ff)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: Color(0xFF00d4ff),
+                            width: 2,
+                          ),
+                        ),
+                        errorBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Colors.red),
+                        ),
+                        focusedErrorBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: Colors.red,
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                      maxLength: 20,
+                      onChanged: (value) {
+                        // Clear error when user types
+                        if (errorText != null) {
+                          setDialogState(() {
+                            errorText = null;
+                          });
+                        }
+                      },
                     ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(
-                        color: Color(0xFF00d4ff),
-                        width: 2,
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Letters and numbers only (max 20 characters)',
+                      style: TextStyle(
+                        color: Colors.white54,
+                        fontSize: 12,
                       ),
                     ),
-                    errorBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Colors.red),
-                    ),
-                    focusedErrorBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(
-                        color: Colors.red,
-                        width: 2,
-                      ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(color: Colors.white54),
                     ),
                   ),
-                  maxLength: 20,
-                  onChanged: (value) {
-                    // Clear error when user types
-                    if (errorText != null) {
-                      setDialogState(() {
-                        errorText = null;
+                  ElevatedButton(
+                    onPressed: () {
+                      String newName = nameController.text.trim();
+
+                      // ✅ VALIDATION
+                      if (newName.isEmpty) {
+                        setDialogState(() {
+                          errorText = 'Name cannot be empty';
+                        });
+                        return;
+                      }
+
+                      // Check if only whitespace (even after trim)
+                      if (newName
+                          .replaceAll(RegExp(r'\s+'), '')
+                          .isEmpty) {
+                        setDialogState(() {
+                          errorText = 'Name cannot be only spaces';
+                        });
+                        return;
+                      }
+
+                      // Check if only emojis/special characters
+                      if (!RegExp(r'[a-zA-Z0-9]').hasMatch(newName)) {
+                        setDialogState(() {
+                          errorText = 'Name must contain letters or numbers';
+                        });
+                        return;
+                      }
+
+                      // Check length (should be redundant with maxLength but good to have)
+                      if (newName.length > 20) {
+                        setDialogState(() {
+                          errorText = 'Name too long (max 20 characters)';
+                        });
+                        return;
+                      }
+
+                      // ✅ VALIDATION PASSED - Save the name
+                      setState(() {
+                        widget.character.name = newName;
                       });
-                    }
-                  },
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Letters and numbers only (max 20 characters)',
-                  style: TextStyle(
-                    color: Colors.white54,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text(
-                  'Cancel',
-                  style: TextStyle(color: Colors.white54),
-                ),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  String newName = nameController.text.trim();
 
-                  // ✅ VALIDATION
-                  if (newName.isEmpty) {
-                    setDialogState(() {
-                      errorText = 'Name cannot be empty';
-                    });
-                    return;
-                  }
+                      Navigator.pop(context);
 
-                  // Check if only whitespace (even after trim)
-                  if (newName.replaceAll(RegExp(r'\s+'), '').isEmpty) {
-                    setDialogState(() {
-                      errorText = 'Name cannot be only spaces';
-                    });
-                    return;
-                  }
-
-                  // Check if only emojis/special characters
-                  if (!RegExp(r'[a-zA-Z0-9]').hasMatch(newName)) {
-                    setDialogState(() {
-                      errorText = 'Name must contain letters or numbers';
-                    });
-                    return;
-                  }
-
-                  // Check length (should be redundant with maxLength but good to have)
-                  if (newName.length > 20) {
-                    setDialogState(() {
-                      errorText = 'Name too long (max 20 characters)';
-                    });
-                    return;
-                  }
-
-                  // ✅ VALIDATION PASSED - Save the name
-                  setState(() {
-                    widget.character.name = newName;
-                  });
-
-                  Navigator.pop(context);
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Character name changed to "$newName"'),
-                      backgroundColor: const Color(0xFF4CAF50),
-                      duration: const Duration(seconds: 2),
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Character name changed to "$newName"'),
+                          backgroundColor: const Color(0xFF4CAF50),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF00d4ff),
                     ),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF00d4ff),
-                ),
-                child: const Text(
-                  'Save',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
+                    child: const Text(
+                      'Save',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
+                ],
+              );
+            },
+          ),
     );
   }
 
@@ -474,42 +487,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF16213e),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
-          children: [
-            Icon(Icons.bar_chart, color: Color(0xFF00d4ff)),
-            SizedBox(width: 8),
-            Text('Your Stats', style: TextStyle(color: Colors.white)),
-          ],
-        ),
-        content: SingleChildScrollView(  // ← ADD this wrapper
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildStatRow('Total Focus Time', '${widget.character.totalFocusMinutes} min'),
-              const Divider(color: Colors.white24),
-              _buildStatRow('Peas Earned', '${currency.peas} 🌱'),
-              const Divider(color: Colors.white24),
-              _buildStatRow('Coins', '${currency.coins} 🪙'),
-              const Divider(color: Colors.white24),
-              _buildStatRow('Current Streak', '${streak.currentStreak} ${streak.streakEmoji}'),
-              const Divider(color: Colors.white24),
-              _buildStatRow('Longest Streak', '${streak.longestStreak} days'),
-              const Divider(color: Colors.white24),
-              _buildStatRow('Apps Blocked', '$blockCount 🚫'),  // ← ADD THIS
+      builder: (context) =>
+          AlertDialog(
+            backgroundColor: const Color(0xFF16213e),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20)),
+            title: const Row(
+              children: [
+                Icon(Icons.bar_chart, color: Color(0xFF00d4ff)),
+                SizedBox(width: 8),
+                Text('Your Stats', style: TextStyle(color: Colors.white)),
+              ],
+            ),
+            content: SingleChildScrollView( // ← ADD this wrapper
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildStatRow('Total Focus Time',
+                      '${widget.character.totalFocusMinutes} min'),
+                  const Divider(color: Colors.white24),
+                  _buildStatRow('Peas Earned', '${currency.peas} 🌱'),
+                  const Divider(color: Colors.white24),
+                  _buildStatRow('Coins', '${currency.coins} 🪙'),
+                  const Divider(color: Colors.white24),
+                  _buildStatRow('Current Streak',
+                      '${streak.currentStreak} ${streak.streakEmoji}'),
+                  const Divider(color: Colors.white24),
+                  _buildStatRow(
+                      'Longest Streak', '${streak.longestStreak} days'),
+                  const Divider(color: Colors.white24),
+                  _buildStatRow('Apps Blocked', '$blockCount 🚫'), // ← ADD THIS
+                ],
+              ),
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF00d4ff)),
+                child: const Text(
+                    'Close', style: TextStyle(color: Colors.white)),
+              ),
             ],
           ),
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00d4ff)),
-            child: const Text('Close', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
     );
   }
 
@@ -536,30 +556,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showResetConfirmation() async {
     bool? confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Color(0xFF2d2d2d),
-        title: Text('Reset All Progress?', style: TextStyle(color: Colors.white)),
-        content: Text(
-          'This will delete ALL your progress:\n• Currency (peas & coins)\n• All upgrades\n• House unlocks\n• Furniture\n• Back to Cave stage',
-          style: TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text('Cancel', style: TextStyle(color: Colors.white70)),
+      builder: (context) =>
+          AlertDialog(
+            backgroundColor: Color(0xFF2d2d2d),
+            title: Text(
+                'Reset All Progress?', style: TextStyle(color: Colors.white)),
+            content: Text(
+              'This will delete ALL your progress:\n• Currency (peas & coins)\n• All upgrades\n• House unlocks\n• Furniture\n• Back to Cave stage',
+              style: TextStyle(color: Colors.white70),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text('Cancel', style: TextStyle(color: Colors.white70)),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(
+                    'DELETE EVERYTHING', style: TextStyle(color: Colors.red)),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text('DELETE EVERYTHING', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
     );
 
     if (confirm == true) {
       await CurrencyService().reset();
       await UpgradeService().reset();
       await FurnitureService().reset();
+      await StorageService().resetAll();
+      await AchievementService().init(); // reinitializes fresh
+
+      // Reset torches/chimes/fountain in-memory flags
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('torches_purchased', false);
+      await prefs.setBool('wind_chimes_purchased', false);
+      await prefs.setBool('fountain_purchased', false);
+
+      resetCaveBoostFlags();
+
       setState(() {});
 
       ScaffoldMessenger.of(context).showSnackBar(

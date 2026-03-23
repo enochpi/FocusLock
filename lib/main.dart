@@ -3,6 +3,7 @@ import 'package:app_usage/app_usage.dart';
 import 'package:focus_life/services/achievements_service.dart';
 import 'package:focus_life/services/app_monitor_service.dart';
 import 'package:focus_life/services/daily_reward_service.dart';
+import 'package:rive/rive.dart';
 import 'screens/permission_screen.dart';
 import 'screens/main_game_screen.dart';
 import 'services/currency_service.dart';
@@ -11,10 +12,12 @@ import 'services/furniture_service.dart';
 import 'services/settings_service.dart';
 import 'services/streak_service.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
   final achievementService = AchievementService();
   await achievementService.init();
+
   final dailyRewardService = DailyRewardService();
   await dailyRewardService.init();
 

@@ -24,11 +24,15 @@ class WoodenWindowPainter extends CustomPainter {
     );
 
     // ── Sky gradient through glass ──
+    final skyColors = cycle.skyGradient;
+    final c1 = skyColors.isNotEmpty ? skyColors[0] : Colors.black;
+    final c2 = skyColors.length > 1 ? skyColors[1] : c1;
+    final c3 = skyColors.length > 2 ? skyColors[2] : c2;
     final skyPaint = Paint()
       ..shader = ui.Gradient.linear(
         Offset(0, 0),
         Offset(0, h),
-        cycle.skyGradient,
+        [c1, c2, c3],
         [0.0, 0.5, 1.0],
       );
 

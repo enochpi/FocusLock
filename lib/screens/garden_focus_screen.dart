@@ -179,9 +179,13 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
 
   int _calculatePeasSoFar() {
     int elapsedMinutes = widget.focusDurationMinutes - (_remainingSeconds ~/ 60);
+    final double torchMultiplier = (_torchesOwned  ? 1.15 : 1.0)
+        * (_chimesOwned   ? 1.10 : 1.0)
+        * (_fountainOwned ? 1.12 : 1.0);
     return CurrencyService.calculatePeasFromFocus(
       elapsedMinutes,
-      upgradeMultiplier: _totalMultiplier,
+      upgradeMultiplier: upgrades.getTotalMultiplier(),
+      torchMultiplier: torchMultiplier,
     );
   }
 
@@ -202,9 +206,13 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     await StreakService().recordFocusSession();
 
     // Apply upgrade + decoration boosts
+    final double torchMultiplier = (_torchesOwned  ? 1.15 : 1.0)
+        * (_chimesOwned   ? 1.10 : 1.0)
+        * (_fountainOwned ? 1.12 : 1.0);
     int peasEarned = CurrencyService.calculatePeasFromFocus(
       widget.focusDurationMinutes,
-      upgradeMultiplier: _totalMultiplier,
+      upgradeMultiplier: upgrades.getTotalMultiplier(),
+      torchMultiplier: torchMultiplier,
     );
 
     await currency.addPeas(peasEarned);

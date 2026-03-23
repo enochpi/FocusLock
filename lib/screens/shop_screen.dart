@@ -136,7 +136,7 @@ class _ShopScreenState extends State<ShopScreen> {
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 8),
-        itemCount: 4, // Always show all 4
+        itemCount: 3, // Always show all 4
         itemBuilder: (context, index) {
           bool isUnlocked = index <= upgrades.currentStage;
           bool isSelected = selectedShopStage == index;

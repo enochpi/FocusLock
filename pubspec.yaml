@@ -45,8 +45,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/animations/cave.riv
-    - assets/animations/garden.riv
+    - assets/animations/flame.riv
     - assets/animations/bob_idle.riv
     - assets/images/cave_background.png
     - assets/images/house.png
@@ -64,6 +63,18 @@ flutter:
     - assets/images/stone_table.png
     - assets/images/stone_chair.png
     - assets/images/shack_bed.png
-    - assets/animations/cave_window.riv
+    - assets/images/shack_stove.png
+    - assets/images/shack_table.png
+    - assets/images/shack_picture.png
+    - assets/images/house_table.png
+    - assets/images/house_stove.png
+    - assets/images/house_cabinet.png
+    - assets/images/house_light.png
+    - assets/images/house_fridge.png
+    - assets/images/house_bunkbed.png
+    - assets/images/house_bed.png
+    - assets/images/house_desk.png
+    - assets/images/house_clock.png
+    - assets/images/house_picture.png
 
 

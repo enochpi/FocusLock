@@ -5,6 +5,8 @@ class SettingsService {
   factory SettingsService() => _instance;
   SettingsService._internal();
 
+
+
   // Settings values
   bool _soundsEnabled = true;
   bool _breakReminders = true;
