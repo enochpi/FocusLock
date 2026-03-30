@@ -6,11 +6,16 @@ import 'package:focus_life/services/upgrade_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/character.dart';
 import '../services/achievements_service.dart';
+import '../services/notification_service.dart';
+import '../services/save_data_service.dart';
 import '../services/settings_service.dart';
+import '../services/sound_service.dart';
 import '../services/streak_service.dart';
 import '../services/currency_service.dart';
 import '../services/storage_service.dart';
 import 'package:focus_life/screens/cave_scene_screen.dart';
+
+import '../widgets/import_save_dialog.dart';
 
 class SettingsScreen extends StatefulWidget {
   final Character character;
@@ -62,6 +67,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 value: settings.soundsEnabled,
                 onChanged: (value) async {
                   await settings.setSoundsEnabled(value);
+                  await SoundService().onSettingChanged(value);
                   setState(() {});
                 },
               ),
@@ -74,19 +80,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: (value) async {
                   await settings.setBreakReminders(value);
                   setState(() {});
-                },
-              ),
-              const Divider(color: Colors.white24, height: 1),
-              _buildNavTile(
-                title: 'Blocked Apps',
-                subtitle: 'Manage blocked apps',
-                icon: Icons.block,
-                onTap: () {
-                  // TODO: Navigate to blocked apps screen
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text('Blocked apps manager coming soon!')),
-                  );
                 },
               ),
             ],
@@ -105,18 +98,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 value: settings.dailyReminder,
                 onChanged: (value) async {
                   await settings.setDailyReminder(value);
+                  await NotificationService().syncWithSettings();
                   setState(() {});
                 },
               ),
               const Divider(color: Colors.white24, height: 1),
               _buildSwitchTile(
-
                 title: 'Streak Reminders',
                 subtitle: 'Keep my streak alive!',
                 icon: Icons.local_fire_department,
                 value: settings.streakReminders,
                 onChanged: (value) async {
                   await settings.setStreakReminders(value);
+                  await NotificationService().syncWithSettings();
+                  setState(() {});
+                },
+              ),
+              const Divider(color: Colors.white24, height: 1),
+              _buildSwitchTile(
+                title: 'Achievement Alerts',
+                subtitle: 'Show popups when you unlock achievements',
+                icon: Icons.emoji_events,
+                value: settings.achievementAlerts,
+                onChanged: (value) async {
+                  await settings.setAchievementAlerts(value);
                   setState(() {});
                 },
               ),
@@ -147,26 +152,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: 'Export Save Data',
                 subtitle: 'Backup your progress',
                 icon: Icons.upload_file,
-                onTap: () {
-                  // TODO: Implement export
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text('Export feature coming soon!')),
-                  );
-                },
+                onTap: () => SaveDataService().exportSave(context),
               ),
               const Divider(color: Colors.white24, height: 1),
               _buildNavTile(
                 title: 'Import Save Data',
                 subtitle: 'Restore from backup',
                 icon: Icons.download,
-                onTap: () {
-                  // TODO: Implement import
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text('Import feature coming soon!')),
-                  );
-                },
+                onTap: () => showDialog(
+                  context: context,
+                  builder: (_) => const ImportSaveDialog(),
+                ),
               ),
               const Divider(color: Colors.white24, height: 1),
               _buildNavTile(
@@ -333,203 +329,219 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     showDialog(
       context: context,
-      builder: (context) =>
-          StatefulBuilder(
-            builder: (context, setDialogState) {
-              return AlertDialog(
-                backgroundColor: const Color(0xFF16213e),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                title: const Text(
-                  'Edit Character Name',
-                  style: TextStyle(color: Colors.white),
-                ),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: nameController,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: InputDecoration(
-                        hintText: 'Enter character name',
-                        hintStyle: const TextStyle(color: Colors.white38),
-                        errorText: errorText,
-                        errorStyle: const TextStyle(color: Colors.red),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(
-                              0xFF00d4ff)),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                            color: Color(0xFF00d4ff),
-                            width: 2,
-                          ),
-                        ),
-                        errorBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Colors.red),
-                        ),
-                        focusedErrorBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                            color: Colors.red,
-                            width: 2,
-                          ),
-                        ),
-                      ),
-                      maxLength: 20,
-                      onChanged: (value) {
-                        // Clear error when user types
-                        if (errorText != null) {
-                          setDialogState(() {
-                            errorText = null;
-                          });
-                        }
-                      },
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            backgroundColor: const Color(0xFF16213e),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: const Text(
+              'Edit Character Name',
+              style: TextStyle(color: Colors.white),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: 'Enter character name',
+                    hintStyle: const TextStyle(color: Colors.white38),
+                    errorText: errorText,
+                    errorStyle: const TextStyle(color: Colors.red),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide:
+                      const BorderSide(color: Color(0xFF00d4ff)),
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Letters and numbers only (max 20 characters)',
-                      style: TextStyle(
-                        color: Colors.white54,
-                        fontSize: 12,
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: Color(0xFF00d4ff),
+                        width: 2,
                       ),
                     ),
-                  ],
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text(
-                      'Cancel',
-                      style: TextStyle(color: Colors.white54),
+                    errorBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Colors.red),
+                    ),
+                    focusedErrorBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: Colors.red,
+                        width: 2,
+                      ),
                     ),
                   ),
-                  ElevatedButton(
-                    onPressed: () {
-                      String newName = nameController.text.trim();
-
-                      // ✅ VALIDATION
-                      if (newName.isEmpty) {
-                        setDialogState(() {
-                          errorText = 'Name cannot be empty';
-                        });
-                        return;
-                      }
-
-                      // Check if only whitespace (even after trim)
-                      if (newName
-                          .replaceAll(RegExp(r'\s+'), '')
-                          .isEmpty) {
-                        setDialogState(() {
-                          errorText = 'Name cannot be only spaces';
-                        });
-                        return;
-                      }
-
-                      // Check if only emojis/special characters
-                      if (!RegExp(r'[a-zA-Z0-9]').hasMatch(newName)) {
-                        setDialogState(() {
-                          errorText = 'Name must contain letters or numbers';
-                        });
-                        return;
-                      }
-
-                      // Check length (should be redundant with maxLength but good to have)
-                      if (newName.length > 20) {
-                        setDialogState(() {
-                          errorText = 'Name too long (max 20 characters)';
-                        });
-                        return;
-                      }
-
-                      // ✅ VALIDATION PASSED - Save the name
-                      setState(() {
-                        widget.character.name = newName;
-                      });
-
-                      Navigator.pop(context);
-
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Character name changed to "$newName"'),
-                          backgroundColor: const Color(0xFF4CAF50),
-                          duration: const Duration(seconds: 2),
-                        ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF00d4ff),
+                  maxLength: 20,
+                  onChanged: (value) {
+                    if (errorText != null) {
+                      setDialogState(() => errorText = null);
+                    }
+                  },
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Letters and numbers only (max 20 characters)',
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel',
+                    style: TextStyle(color: Colors.white54)),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  String newName = nameController.text.trim();
+                  if (newName.isEmpty) {
+                    setDialogState(
+                            () => errorText = 'Name cannot be empty');
+                    return;
+                  }
+                  if (newName.replaceAll(RegExp(r'\s+'), '').isEmpty) {
+                    setDialogState(
+                            () => errorText = 'Name cannot be only spaces');
+                    return;
+                  }
+                  if (!RegExp(r'[a-zA-Z0-9]').hasMatch(newName)) {
+                    setDialogState(() =>
+                    errorText = 'Name must contain letters or numbers');
+                    return;
+                  }
+                  if (newName.length > 20) {
+                    setDialogState(() =>
+                    errorText = 'Name too long (max 20 characters)');
+                    return;
+                  }
+                  setState(() => widget.character.name = newName);
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content:
+                      Text('Character name changed to "$newName"'),
+                      backgroundColor: const Color(0xFF4CAF50),
+                      duration: const Duration(seconds: 2),
                     ),
-                    child: const Text(
-                      'Save',
-                      style: TextStyle(
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF00d4ff)),
+                child: const Text('Save',
+                    style: TextStyle(
                         color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
+                        fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+  void _showExportDialog() {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF16213e),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.upload_file, color: Color(0xFF00d4ff)),
+            SizedBox(width: 8),
+            Text('Export Save Data', style: TextStyle(color: Colors.white)),
+          ],
+        ),
+        content: const Text(
+          'Choose how to export your save data:',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
           ),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.copy, size: 16),
+            label: const Text('Copy JSON'),
+            onPressed: () async {
+              Navigator.pop(context);
+              await SaveDataService().copyToClipboard(context);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.white24),
+          ),
+          ElevatedButton.icon(
+            icon: const Icon(Icons.share, size: 16),
+            label: const Text('Share File'),
+            onPressed: () async {
+              Navigator.pop(context);
+              await SaveDataService().shareExport(context);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00d4ff)),
+          ),
+        ],
+      ),
     );
   }
 
+  void _showImportDialog() async {
+    await showDialog(
+      context: context,
+      builder: (_) => const ImportSaveDialog(),
+    );
+    setState(() {});
+  }
+
   void _showStatsDialog() async {
-    // Get blocked app count
     int blockCount = await AppMonitorService().getTotalBlockCount();
-
     if (!mounted) return;
-
     showDialog(
       context: context,
-      builder: (context) =>
-          AlertDialog(
-            backgroundColor: const Color(0xFF16213e),
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20)),
-            title: const Row(
-              children: [
-                Icon(Icons.bar_chart, color: Color(0xFF00d4ff)),
-                SizedBox(width: 8),
-                Text('Your Stats', style: TextStyle(color: Colors.white)),
-              ],
-            ),
-            content: SingleChildScrollView( // ← ADD this wrapper
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildStatRow('Total Focus Time',
-                      '${widget.character.totalFocusMinutes} min'),
-                  const Divider(color: Colors.white24),
-                  _buildStatRow('Peas Earned', '${currency.peas} 🌱'),
-                  const Divider(color: Colors.white24),
-                  _buildStatRow('Coins', '${currency.coins} 🪙'),
-                  const Divider(color: Colors.white24),
-                  _buildStatRow('Current Streak',
-                      '${streak.currentStreak} ${streak.streakEmoji}'),
-                  const Divider(color: Colors.white24),
-                  _buildStatRow(
-                      'Longest Streak', '${streak.longestStreak} days'),
-                  const Divider(color: Colors.white24),
-                  _buildStatRow('Apps Blocked', '$blockCount 🚫'), // ← ADD THIS
-                ],
-              ),
-            ),
-            actions: [
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF00d4ff)),
-                child: const Text(
-                    'Close', style: TextStyle(color: Colors.white)),
-              ),
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF16213e),
+        shape:
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.bar_chart, color: Color(0xFF00d4ff)),
+            SizedBox(width: 8),
+            Text('Your Stats', style: TextStyle(color: Colors.white)),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildStatRow('Total Focus Time',
+                  '${widget.character.totalFocusMinutes} min'),
+              const Divider(color: Colors.white24),
+              _buildStatRow('Peas Earned', '${currency.peas} 🌱'),
+              const Divider(color: Colors.white24),
+              _buildStatRow('Coins', '${currency.coins} 🪙'),
+              const Divider(color: Colors.white24),
+              _buildStatRow('Current Streak',
+                  '${streak.currentStreak} ${streak.streakEmoji}'),
+              const Divider(color: Colors.white24),
+              _buildStatRow(
+                  'Longest Streak', '${streak.longestStreak} days'),
+              const Divider(color: Colors.white24),
+              _buildStatRow('Apps Blocked', '$blockCount 🚫'),
             ],
           ),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF00d4ff)),
+            child:
+            const Text('Close', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -556,27 +568,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showResetConfirmation() async {
     bool? confirm = await showDialog<bool>(
       context: context,
-      builder: (context) =>
-          AlertDialog(
-            backgroundColor: Color(0xFF2d2d2d),
-            title: Text(
-                'Reset All Progress?', style: TextStyle(color: Colors.white)),
-            content: Text(
-              'This will delete ALL your progress:\n• Currency (peas & coins)\n• All upgrades\n• House unlocks\n• Furniture\n• Back to Cave stage',
-              style: TextStyle(color: Colors.white70),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: Text('Cancel', style: TextStyle(color: Colors.white70)),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: Text(
-                    'DELETE EVERYTHING', style: TextStyle(color: Colors.red)),
-              ),
-            ],
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF2d2d2d),
+        title: const Text('Reset All Progress?',
+            style: TextStyle(color: Colors.white)),
+        content: const Text(
+          'This will delete ALL your progress:\n• Currency (peas & coins)\n• All upgrades\n• House unlocks\n• Furniture\n• Back to Cave stage',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel',
+                style: TextStyle(color: Colors.white70)),
           ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('DELETE EVERYTHING',
+                style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
     );
 
     if (confirm == true) {
@@ -584,20 +596,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await UpgradeService().reset();
       await FurnitureService().reset();
       await StorageService().resetAll();
-      await AchievementService().init(); // reinitializes fresh
+      await AchievementService().init();
 
-      // Reset torches/chimes/fountain in-memory flags
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('torches_purchased', false);
       await prefs.setBool('wind_chimes_purchased', false);
       await prefs.setBool('fountain_purchased', false);
 
       resetCaveBoostFlags();
-
       setState(() {});
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text('All progress has been reset!'),
           backgroundColor: Colors.red,
         ),

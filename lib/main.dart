@@ -3,7 +3,8 @@ import 'package:app_usage/app_usage.dart';
 import 'package:focus_life/services/achievements_service.dart';
 import 'package:focus_life/services/app_monitor_service.dart';
 import 'package:focus_life/services/daily_reward_service.dart';
-import 'package:rive/rive.dart';
+import 'package:focus_life/services/notification_service.dart';
+import 'package:focus_life/services/sound_service.dart';
 import 'screens/permission_screen.dart';
 import 'screens/main_game_screen.dart';
 import 'services/currency_service.dart';
@@ -21,12 +22,28 @@ Future<void> main() async {
   final dailyRewardService = DailyRewardService();
   await dailyRewardService.init();
 
+  // inside main():
+  try {
+    await SoundService().init();
+    debugPrint('✅ SoundService initialized');
+  } catch (e) {
+    debugPrint('❌ SoundService init failed: $e');
+  }
+
   // ✅ Initialize all services with error handling
   try {
     await CurrencyService().init();
     debugPrint('✅ CurrencyService initialized');
   } catch (e) {
     debugPrint('❌ CurrencyService init failed: $e');
+  }
+
+  try {
+    await NotificationService().init();
+    await NotificationService().syncWithSettings();
+    debugPrint('✅ NotificationService initialized');
+  } catch (e) {
+    debugPrint('❌ NotificationService init failed: $e');
   }
 
   try {

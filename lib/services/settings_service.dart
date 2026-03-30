@@ -64,6 +64,8 @@ class SettingsService {
     await saveSettings();
   }
 
+
+
   /// Save all settings
   Future<void> saveSettings() async {
     final prefs = await SharedPreferences.getInstance();

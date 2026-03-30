@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.focus_lock"
+    namespace = "com.spartalabs.focuslife"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "27.0.12077973"
 
@@ -20,7 +20,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.focus_lock"
+        applicationId = "com.spartalabs.focuslife"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

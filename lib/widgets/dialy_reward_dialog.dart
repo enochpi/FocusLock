@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/daily_reward_service.dart';
 import '../services/currency_service.dart';
+import '../services/sound_service.dart';
 import '../utils/number_formatter.dart';
 import 'dart:math' as math;
 
@@ -74,10 +75,10 @@ class _DailyRewardDialogState extends State<DailyRewardDialog>
     // Grant rewards (addPeas works for all crop types!)
     await CurrencyService().addCoins(coins);
     await CurrencyService().addPeas(crops);
+    SoundService().playDailyReward();
 
     // Wait a moment to show the animation
     await Future.delayed(const Duration(milliseconds: 500));
-
     if (mounted) {
       Navigator.pop(context);
     }

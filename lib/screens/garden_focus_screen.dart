@@ -6,6 +6,9 @@ import 'dart:async';
 import 'dart:math' as math;
 import '../models/character.dart';
 import '../services/currency_service.dart';
+import '../services/notification_service.dart';
+import '../services/settings_service.dart';
+import '../services/sound_service.dart';
 import '../services/upgrade_service.dart';
 import '../services/app_monitor_service.dart';
 import '../services/focus_session_service.dart';
@@ -37,6 +40,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
   bool _isWorking = false;
   int _remainingSeconds = 0;
 
+  Timer? _breakReminderTimer;
   Timer? _countdownTimer;
   Timer? _saveTimer;
   bool _isPaused   = false;
@@ -69,11 +73,13 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     _loadDecorationBoosts().then((_) => _startFocusSession());
   }
 
+
   @override
   void dispose() {
     _characterController.dispose();
     _countdownTimer?.cancel();
     _saveTimer?.cancel();
+    _breakReminderTimer?.cancel(); // ADD THIS
     WidgetsBinding.instance.removeObserver(this);
     appMonitor.stopMonitoring();
     super.dispose();
@@ -94,13 +100,57 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
+
     if (state == AppLifecycleState.paused) {
-      debugPrint('⏸️ App went to background - pausing timer');
       _pauseTimer();
+      SoundService().pauseMusic(); // ADD
     } else if (state == AppLifecycleState.resumed) {
-      debugPrint('▶️ App resumed - resuming timer');
       _resumeTimer();
+      SoundService().resumeMusic(); // ADD
     }
+  }
+  void _startBreakReminderTimer() {
+    if (!SettingsService().breakReminders) return;
+    _breakReminderTimer = Timer.periodic(const Duration(minutes: 25), (_) {
+      if (!mounted || !_isWorking || _isPaused) return;
+      FeedbackService().vibrateOnSuccess();
+      _showBreakReminderOverlay();
+    });
+  }
+
+  void _showBreakReminderOverlay() {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF16213e),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Text('☕', style: TextStyle(fontSize: 28)),
+            SizedBox(width: 12),
+            Text('Break Time!', style: TextStyle(color: Colors.white, fontSize: 20)),
+          ],
+        ),
+        content: const Text(
+          "You've been focusing for 25 minutes.\nConsider taking a short break!",
+          style: TextStyle(color: Colors.white70, fontSize: 15),
+          textAlign: TextAlign.center,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Keep Going 💪',
+                style: TextStyle(color: Color(0xFF4CAF50), fontWeight: FontWeight.bold)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Thanks!',
+                style: TextStyle(color: Colors.white54)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _pauseTimer() {
@@ -125,6 +175,9 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     appMonitor.startMonitoring(_onBlockedAppDetected);
     _startCountdownTimer();
     _startPeriodicSave();
+    _startBreakReminderTimer(); // ADD THIS
+    SoundService().playFocusMusic();
+
   }
 
   void _startPeriodicSave() {
@@ -200,12 +253,32 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
 
     _countdownTimer?.cancel();
     _saveTimer?.cancel();
+    _breakReminderTimer?.cancel();
     appMonitor.stopMonitoring();
 
-    await sessionService.completeSession();
-    await StreakService().recordFocusSession();
+    // Wrap everything in try/catch so nothing blocks the dialog
+    try {
+      await sessionService.completeSession();
+    } catch (e) {
+      debugPrint('❌ completeSession error: $e');
+    }
 
-    // Apply upgrade + decoration boosts
+    try {
+      await StreakService().recordFocusSession();
+    } catch (e) {
+      debugPrint('❌ recordFocusSession error: $e');
+    }
+
+    try {
+      await NotificationService().cancelStreakReminder();
+      if (SettingsService().streakReminders) {
+        await NotificationService().scheduleStreakReminder();
+      }
+    } catch (e) {
+      debugPrint('❌ notification error: $e');
+    }
+
+    // Calculate peas
     final double torchMultiplier = (_torchesOwned  ? 1.15 : 1.0)
         * (_chimesOwned   ? 1.10 : 1.0)
         * (_fountainOwned ? 1.12 : 1.0);
@@ -215,12 +288,34 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
       torchMultiplier: torchMultiplier,
     );
 
-    await currency.addPeas(peasEarned);
-    await AchievementService().onFocusSessionCompleted(widget.focusDurationMinutes);
+    try {
+      await currency.addPeas(peasEarned);
+    } catch (e) {
+      debugPrint('❌ addPeas error: $e');
+    }
+
+    try {
+      await AchievementService().onFocusSessionCompleted(widget.focusDurationMinutes);
+    } catch (e) {
+      debugPrint('❌ achievement error: $e');
+    }
 
     int earnings = widget.focusDurationMinutes * 5;
     widget.character.earnMoney(earnings);
     widget.character.addFocusMinutes(widget.focusDurationMinutes);
+
+    // Play sounds — non-blocking
+    try {
+      await SoundService().playSessionComplete();
+    } catch (e) {
+      debugPrint('❌ sound error: $e');
+    }
+
+    try {
+      SoundService().playBackgroundMusic();
+    } catch (e) {
+      debugPrint('❌ music error: $e');
+    }
 
     if (!mounted) return;
 
@@ -259,12 +354,11 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
               ),
             ),
             const SizedBox(height: 12),
-            Text('${widget.focusDurationMinutes} min + 10% bonus!',
+            Text('${widget.focusDurationMinutes} min focused!',
                 style: const TextStyle(
                     fontSize: 14,
                     color: Colors.white60,
                     fontStyle: FontStyle.italic)),
-            // Show decoration boosts if active
             if (_torchesOwned || _chimesOwned || _fountainOwned) ...[
               const SizedBox(height: 8),
               if (_torchesOwned)

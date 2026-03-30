@@ -1,6 +1,8 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math' as math;
 
+import 'currency_service.dart';
+
 class DailyRewardService {
   static final DailyRewardService _instance = DailyRewardService._internal();
   factory DailyRewardService() => _instance;
@@ -76,61 +78,13 @@ class DailyRewardService {
     return rewards;
   }
 
-  /// ═══════════════════════════════════════════════════════════
-  /// REWARD CALCULATION - LOGARITHMIC GROWTH (Slow down over time)
-  /// ═══════════════════════════════════════════════════════════
-  ///
-  /// Formula: base * (1 + log(day))^power
-  /// This creates BIG jumps early, then MUCH slower growth forever
-  ///
-  /// Examples:
-  /// Day 1:    53 coins,    935 crops
-  /// Day 2:    69 coins,  1,279 crops
-  /// Day 3:    79 coins,  1,486 crops
-  /// Day 7:   103 coins,  1,985 crops
-  /// Day 14:  122 coins,  2,410 crops
-  /// Day 30:  148 coins,  2,915 crops
-  /// Day 100: 187 coins,  3,695 crops
-  /// Day 365: 230 coins,  4,540 crops
-  /// Day 1000: 281 coins, 5,550 crops
-  ///
   Map<String, int> _calculateReward(int day) {
-    // Very slow logarithmic growth for coins
-    // Starts at 53, grows quickly at first, then much slower
-    final coinBase = 30.0;
-    final coinGrowth = math.pow(1 + math.log(day + 1), 1.2);
-    final coins = (coinBase * coinGrowth).round();
-
-    // Slow logarithmic growth for crops (peas/carrots/corn/strawberries/wheat)
-    // Starts at 935, grows quickly at first, then much slower
-    final cropBase = 500.0;
-    final cropGrowth = math.pow(1 + math.log(day + 1), 1.4);
-    final crops = (cropBase * cropGrowth).round();
-
-    return {
-      'coins': coins,
-      'crops': crops,  // Changed from 'peas' to 'crops'
-    };
+    final currency = CurrencyService();
+    final percent = (0.20 + (day - 1) * 0.01).clamp(0.20, 1.0);
+    final coins = (currency.coins * percent).round();
+    final crops = (currency.peas * percent).round();
+    return {'coins': coins, 'crops': crops};
   }
-
-  /// ═══════════════════════════════════════════════════════════
-  /// STREAK MULTIPLIER - INFINITE GROWTH (Never caps!)
-  /// ═══════════════════════════════════════════════════════════
-  ///
-  /// Formula: 1.0 + (sqrt(streak) * 0.03) + (log(streak) * 0.02)
-  /// This creates BIG jumps early, then much slower growth forever
-  ///
-  /// Examples:
-  /// Day 1:   1.03x  (+3%)
-  /// Day 3:   1.07x  (+7%)
-  /// Day 7:   1.12x  (+12%)
-  /// Day 14:  1.18x  (+18%)
-  /// Day 30:  1.23x  (+23%)
-  /// Day 60:  1.29x  (+29%)
-  /// Day 100: 1.39x  (+39%)
-  /// Day 365: 1.69x  (+69%)
-  /// Day 1000: 2.01x (+101%)
-  ///
   double getStreakMultiplier() {
     if (_currentStreak == 0) return 1.0;
 

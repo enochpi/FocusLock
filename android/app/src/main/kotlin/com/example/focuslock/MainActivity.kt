@@ -1,4 +1,4 @@
-package com.example.focuslock
+package com.spartalabs.focuslife
 
 import io.flutter.embedding.android.FlutterActivity
 

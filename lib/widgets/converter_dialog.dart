@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/currency_service.dart';
+import '../services/sound_service.dart';
 import '../utils/number_formatter.dart';
 
 class ConverterDialog extends StatefulWidget {
@@ -139,6 +140,7 @@ class _ConverterDialogState extends State<ConverterDialog> {
                   onPressed: () async {
                     bool success = await currency.convertPeasToCoins(peasToConvert);
                     if (success) {
+                      SoundService().playCoinConvert();
                       Navigator.pop(context, true);
                     }
                   },

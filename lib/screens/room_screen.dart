@@ -3,7 +3,6 @@ import 'dart:ui' as ui;
 import 'package:flutter/services.dart';
 import 'package:focus_life/services/currency_service.dart';
 import 'package:focus_life/services/furniture_service.dart';
-import 'cave_shop_screen.dart';
 
 enum RoomType {
   houseBedroom,

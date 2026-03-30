@@ -34,6 +34,15 @@ dependencies:
 
   cupertino_icons: ^1.0.2
 
+  flutter_local_notifications: ^17.2.4
+  timezone: ^0.9.4
+
+  audioplayers: ^6.0.0
+
+  share_plus: ^10.0.0
+  path_provider: ^2.1.5
+
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -54,8 +63,6 @@ flutter:
     - assets/images/cave_background.png
     - assets/images/shack_background.png
     - assets/images/house_background.png
-    - assets/images/door1.png
-    - assets/images/door2.png
     - assets/images/house_bedroom_background.png
     - assets/images/stone_fire.png
     - assets/images/stone_bed.png
@@ -76,5 +83,13 @@ flutter:
     - assets/images/house_desk.png
     - assets/images/house_clock.png
     - assets/images/house_picture.png
+    - assets/sounds/achievement.wav
+    - assets/sounds/background_music.mp3
+    - assets/sounds/coin_convert.wav
+    - assets/sounds/daily_reward.wav
+    - assets/sounds/focus_music.mp3
+    - assets/sounds/purchase.wav
+    - assets/sounds/session_complete.wav
+
 
 

@@ -77,37 +77,6 @@ class UpgradeService {
 
   int _currentStage = 0;
 
-  // ── ECONOMY DESIGN ────────────────────────────────────────
-  //
-  // Base peas per minute: ~10 + time bonus
-  // 25 min session ≈ 350 peas → 7 coins (at 50:1)
-  // Target: buy first upgrade after ~5-8 sessions (35-55 min total)
-  //
-  // CAVE upgrades (coins):
-  //   Cost ladder: 50 → 150 → 400 → 1K → 3K → 8K → 20K → 55K → 140K → 350K
-  //   Each gives +25% to +10% multiplier (diminishing returns)
-  //   After all 10 cave upgrades: ~8.5x total from upgrades alone
-  //
-  // SHACK unlock: 500K coins (big goal, feels earned)
-  //   Grants 3x bonus on purchase
-  //
-  // SHACK upgrades (coins):
-  //   Cost ladder starts at 200K, scales up to ~50B
-  //   Each gives +20% to +5% multiplier
-  //   After all 12 shack upgrades: ~3.5x additional
-  //
-  // HOUSE unlock: 5B coins
-  //   Grants 10x bonus on purchase
-  //
-  // HOUSE upgrades (coins):
-  //   Cost ladder starts at 2B, scales into quadrillions
-  //   Each gives +15% down to +2%
-  //
-  // Total theoretical max multiplier (all upgrades + both houses):
-  //   ~8.5x (cave) × 3x (shack unlock) × 3.5x (shack upgrades)
-  //   × 10x (house unlock) × ~6x (house upgrades) ≈ 53,000x
-  // ─────────────────────────────────────────────────────────
-
   final List<Upgrade> _upgrades = [
 
     // ╔══════════════════════════════════════════╗

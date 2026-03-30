@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/achievements_service.dart';  // ← Fixed: added 's'
-import '../utils/number_formatter.dart';
-import 'dart:math' as math;
+import '../services/achievements_service.dart';
 
 class AchievementsScreen extends StatefulWidget {
   const AchievementsScreen({Key? key}) : super(key: key);
@@ -179,7 +177,7 @@ class _AchievementsScreenState extends State<AchievementsScreen> with TickerProv
     ];
 
     return SizedBox(
-      height: 60,
+      height: 80,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -194,8 +192,8 @@ class _AchievementsScreenState extends State<AchievementsScreen> with TickerProv
             onTap: () => setState(() => selectedCategory = cat.$1),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
-              margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: isSelected ? const Color(0xFFFFD700).withOpacity(0.2) : const Color(0xFF1a1a1a),
                 borderRadius: BorderRadius.circular(12),

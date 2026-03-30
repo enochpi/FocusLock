@@ -29,6 +29,8 @@ import 'package:focus_life/services/focus_session_service.dart';
 import 'package:focus_life/widgets/achievement_notification.dart';
 
 import '../furniture/flame.dart';
+import '../services/settings_service.dart';
+import '../services/sound_service.dart';
 void resetCaveBoostFlags() {
   _CaveSceneScreenState.resetBoostFlags();
 }
@@ -149,9 +151,14 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
     _loadChimesState();
     _loadFountainState();
 
+    if (!SoundService().isPlaying) SoundService().playBackgroundMusic();
+
     AchievementService().onAchievementUnlocked = (achievement) {
       _grantAchievementRewards(achievement);
-      if (mounted) showAchievementUnlocked(context, achievement);
+      SoundService().playAchievement();
+      if (mounted && SettingsService().achievementAlerts) {
+        showAchievementUnlocked(context, achievement);
+      }
     };
 
     Future.delayed(const Duration(milliseconds: 500), () {
@@ -666,24 +673,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                     ],
                   ),
                 ),
-                // Debug +100
-                GestureDetector(
-                  onTap: () async {
-                    await currency.addPeas(100000000000000000);
-                    setState(() {});
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                        color: Colors.red, borderRadius: BorderRadius.circular(8)),
-                    child: const Text('0',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold)),
-                  ),
-                ),
-                // Achievements
+
                 IconButton(
                   icon: const Icon(Icons.emoji_events, color: Color(0xFFFFD700)),
                   onPressed: () => Navigator.push(context,
@@ -1798,7 +1788,7 @@ class _TimerPickerDialogState extends State<TimerPickerDialog> {
               const SizedBox(width: 16),
               GestureDetector(
                 onTap: () =>
-                    setState(() { if (selectedMinutes < 600) selectedMinutes += 1; }),
+                    setState(() { if (selectedMinutes < 420) selectedMinutes += 1; }),
                 onLongPressStart: (_) => _startRepeating(1),
                 onLongPressEnd:   (_) => _stopRepeating(),
                 child: Container(
@@ -1824,7 +1814,7 @@ class _TimerPickerDialogState extends State<TimerPickerDialog> {
               trackHeight:        6,
             ),
             child: Slider(
-              value: selectedMinutes, min: 1, max: 600, divisions: 599,
+              value: selectedMinutes, min: 1, max: 420, divisions: 419,
               onChanged: (v) => setState(() => selectedMinutes = v),
             ),
           ),
@@ -1834,7 +1824,7 @@ class _TimerPickerDialogState extends State<TimerPickerDialog> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('1min',  style: TextStyle(color: Colors.white54, fontSize: 12)),
-                Text('10hrs', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                Text('7hrs', style: TextStyle(color: Colors.white54, fontSize: 12)),
               ],
             ),
           ),

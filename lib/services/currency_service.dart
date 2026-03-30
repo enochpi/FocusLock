@@ -1,7 +1,6 @@
-import 'package:focus_life/services/daily_reward_service.dart';
+
 import 'package:shared_preferences/shared_preferences.dart';
 import 'furniture_service.dart';
-import 'upgrade_service.dart';
 
 class CurrencyService {
   static final CurrencyService _instance = CurrencyService._internal();

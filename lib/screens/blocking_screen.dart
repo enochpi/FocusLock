@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../services/app_monitor_service.dart';  // ← ADD THIS
 
 class BlockingScreen extends StatefulWidget {
   final VoidCallback onReturn;
