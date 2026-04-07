@@ -152,5 +152,5 @@ class OutdoorSkyPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant OutdoorSkyPainter oldDelegate) => true;
+  bool shouldRepaint(covariant OutdoorSkyPainter oldDelegate) => oldDelegate.cycle.hour != cycle.hour;
 }

@@ -132,7 +132,7 @@ class _BlockedAppsScreenState extends State<BlockedAppsScreen> {
           final userApps = allApps.where((app) {
             return !app.packageName.startsWith('com.android.') &&
                 !app.packageName.startsWith('com.google.android.') &&
-                app.packageName != 'com.example.focus_lock';  // ✅ Fixed!
+                app.packageName != 'com.spartalabs.focuslife';
           }).toList();
 
           // Sort by app name

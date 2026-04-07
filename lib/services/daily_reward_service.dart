@@ -79,6 +79,7 @@ class DailyRewardService {
   }
 
   Map<String, int> _calculateReward(int day) {
+    if (day == 1) return {'coins': 0, 'crops': 0};
     final currency = CurrencyService();
     final percent = (0.20 + (day - 1) * 0.01).clamp(0.20, 1.0);
     final coins = (currency.coins * percent).round();

@@ -1,6 +1,6 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/cave_decorations.dart';
 import '../models/character.dart';
 import '../models/farm.dart';
 import 'furniture_service.dart';
@@ -15,9 +15,9 @@ class StorageService {
       final prefs = await SharedPreferences.getInstance();
       final json = jsonEncode(character.toJson());
       await prefs.setString(CHARACTER_KEY, json);
-      print("💾 Character saved!");
+      debugPrint("💾 Character saved!");
     } catch (e) {
-      print("❌ Error saving character: $e");
+      debugPrint("❌ Error saving character: $e");
     }
   }
 
@@ -28,14 +28,15 @@ class StorageService {
       final json = prefs.getString(CHARACTER_KEY);
 
       if (json != null) {
-        print("📂 Character loaded!");
+        debugPrint("📂 Character loaded!");
         return Character.fromJson(jsonDecode(json));
       }
     } catch (e) {
-      print("❌ Error loading character: $e");
+      debugPrint("❌ Error loading character: $e");
     }
     return null;
   }
+
   Future<void> resetAll() async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -78,7 +79,7 @@ class StorageService {
       FurnitureService().placedFurniture[key] = null;
     }
 
-    print("🗑️ Full reset complete");
+    debugPrint("🗑️ Full reset complete");
   }
 
   // Save farm
@@ -100,35 +101,10 @@ class StorageService {
       };
 
       await prefs.setString(FARM_KEY, jsonEncode(farmData));
-      print("💾 Farm saved! ${farm.crops.length} crops");
+      debugPrint("💾 Farm saved! ${farm.crops.length} crops");
     } catch (e) {
-      print("❌ Error saving farm: $e");
+      debugPrint("❌ Error saving farm: $e");
     }
-  }
-  Future<void> saveCaveDecorations(CaveDecorations decorations) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final json = jsonEncode(decorations.toJson());
-      await prefs.setString('cave_decorations', json);
-      print("💾 Cave decorations saved!");
-    } catch (e) {
-      print("❌ Error saving decorations: $e");
-    }
-  }
-
-  Future<CaveDecorations> loadCaveDecorations() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final json = prefs.getString('cave_decorations');
-
-      if (json != null) {
-        print("📂 Cave decorations loaded!");
-        return CaveDecorations.fromJson(jsonDecode(json));
-      }
-    } catch (e) {
-      print("❌ Error loading decorations: $e");
-    }
-    return CaveDecorations();
   }
 
   // Load farm
@@ -154,10 +130,10 @@ class StorageService {
           return crop;
         }).toList();
 
-        print("📂 Farm loaded! ${farm.crops.length} crops");
+        debugPrint("📂 Farm loaded! ${farm.crops.length} crops");
       }
     } catch (e) {
-      print("❌ Error loading farm: $e");
+      debugPrint("❌ Error loading farm: $e");
     }
 
     return farm;
@@ -167,6 +143,6 @@ class StorageService {
   Future<void> clearAll() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
-    print("🗑️ All data cleared");
+    debugPrint("🗑️ All data cleared");
   }
 }

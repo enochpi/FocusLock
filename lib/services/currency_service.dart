@@ -140,10 +140,4 @@ class CurrencyService {
     _peas = 0; _coins = 0; _currentStage = 0;
     await saveCurrencies();
   }
-
-  Future<void> addDebugCurrency({int peas = 0, int coins = 0}) async {
-    _peas   = (_peas  + peas ).clamp(0, MAX_CURRENCY);
-    _coins  = (_coins + coins).clamp(0, MAX_CURRENCY);
-    await saveCurrencies();
-  }
 }

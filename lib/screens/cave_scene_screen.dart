@@ -14,7 +14,6 @@ import 'dart:math' show Random;
 import 'package:rive/rive.dart' hide LinearGradient, RadialGradient, Image;
 import 'package:focus_life/models/character.dart';
 import 'package:focus_life/models/farm.dart';
-import 'package:focus_life/models/cave_decorations.dart';
 import 'package:focus_life/services/storage_service.dart';
 import 'package:focus_life/screens/garden_focus_screen.dart';
 import 'package:focus_life/screens/cave_interior_screen.dart';
@@ -38,14 +37,12 @@ void resetCaveBoostFlags() {
 class CaveSceneScreen extends StatefulWidget {
   final Character character;
   final Farm farm;
-  final CaveDecorations decorations;
   final VoidCallback onUpdate;
 
   const CaveSceneScreen({
     super.key,
     required this.character,
     required this.farm,
-    required this.decorations,
     required this.onUpdate,
   });
 
@@ -548,7 +545,6 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
       MaterialPageRoute(
         builder: (context) => CaveInteriorScreen(
           character: widget.character,
-          decorations: widget.decorations,
           stage: displayStage,
         ),
       ),
@@ -1740,6 +1736,7 @@ class _TimerPickerDialogState extends State<TimerPickerDialog> {
     super.dispose();
   }
 
+
   @override
   Widget build(BuildContext context) {
     int minutes = selectedMinutes.round();
@@ -1761,18 +1758,6 @@ class _TimerPickerDialogState extends State<TimerPickerDialog> {
       minutes,
       upgradeMultiplier: totalMultiplier,
     );
-    Widget _boostPill(String text, Color color) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.15),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: color.withOpacity(0.5), width: 1),
-        ),
-        child: Text(text,
-            style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.bold)),
-      );
-    }
 
     return AlertDialog(
       backgroundColor: const Color(0xFF16213e),

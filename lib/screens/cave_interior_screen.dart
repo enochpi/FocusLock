@@ -6,7 +6,6 @@ import 'package:focus_life/furniture/wooden_window_painter.dart';
 import 'package:focus_life/services/furniture_service.dart';
 import '../furniture/shack_lights.dart';
 import '../models/character.dart';
-import '../models/cave_decorations.dart';
 import '../services/currency_service.dart';
 import 'package:focus_life/services/day_night_cycle.dart';
 import 'room_screen.dart';
@@ -14,13 +13,11 @@ import 'room_screen.dart';
 
 class CaveInteriorScreen extends StatefulWidget {
   final Character character;
-  final CaveDecorations decorations;
   final int stage;
 
   const CaveInteriorScreen({
     super.key,
     required this.character,
-    required this.decorations,
     required this.stage,
   });
 

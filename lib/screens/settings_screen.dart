@@ -442,58 +442,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
-  void _showExportDialog() {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF16213e),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
-          children: [
-            Icon(Icons.upload_file, color: Color(0xFF00d4ff)),
-            SizedBox(width: 8),
-            Text('Export Save Data', style: TextStyle(color: Colors.white)),
-          ],
-        ),
-        content: const Text(
-          'Choose how to export your save data:',
-          style: TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
-          ),
-          ElevatedButton.icon(
-            icon: const Icon(Icons.copy, size: 16),
-            label: const Text('Copy JSON'),
-            onPressed: () async {
-              Navigator.pop(context);
-              await SaveDataService().copyToClipboard(context);
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.white24),
-          ),
-          ElevatedButton.icon(
-            icon: const Icon(Icons.share, size: 16),
-            label: const Text('Share File'),
-            onPressed: () async {
-              Navigator.pop(context);
-              await SaveDataService().shareExport(context);
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00d4ff)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showImportDialog() async {
-    await showDialog(
-      context: context,
-      builder: (_) => const ImportSaveDialog(),
-    );
-    setState(() {});
-  }
 
   void _showStatsDialog() async {
     int blockCount = await AppMonitorService().getTotalBlockCount();
