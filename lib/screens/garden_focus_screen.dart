@@ -528,49 +528,21 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
         builder: (_) => AlertDialog(
           backgroundColor: const Color(0xFF16213e),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Row(
-            children: [
-              Text('⏱️', style: TextStyle(fontSize: 28)),
-              SizedBox(width: 12),
-              Expanded(
-                child: Text('Stop Session?',
-                    style: TextStyle(color: Colors.white, fontSize: 18)),
-              ),
-            ],
-          ),
-          content: Column(
+          content: const Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.red.withOpacity(0.5)),
-                ),
-                child: Column(
-                  children: [
-                    const Icon(Icons.block, color: Colors.red, size: 48),
-                    const SizedBox(height: 12),
-                    const Text("You won't earn any peas!",
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold),
-                        textAlign: TextAlign.center),
-                    const SizedBox(height: 8),
-                    const Text(
-                        'You need at least 5 minutes of focus to earn peas.',
-                        style: TextStyle(color: Colors.white70, fontSize: 14),
-                        textAlign: TextAlign.center),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Current: $elapsedMinutes min\nRequired: 5 min',
-                      style: TextStyle(color: Colors.red[300], fontSize: 13),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
+              Text('⏱️', style: TextStyle(fontSize: 48)),
+              SizedBox(height: 12),
+              Text(
+                "Don't stop before 5 minutes!",
+                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: 8),
+              Text(
+                "You won't earn any peas.",
+                style: TextStyle(color: Colors.white54, fontSize: 14),
+                textAlign: TextAlign.center,
               ),
             ],
           ),
@@ -578,10 +550,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
             TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('Keep Focusing',
-                  style: TextStyle(
-                      color: Color(0xFF00d4ff),
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold)),
+                  style: TextStyle(color: Color(0xFF4CAF50), fontWeight: FontWeight.bold)),
             ),
             TextButton(
               onPressed: () async {
@@ -593,7 +562,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                 Navigator.pop(context);
               },
               child: const Text('Stop Anyway',
-                  style: TextStyle(color: Colors.red, fontSize: 16)),
+                  style: TextStyle(color: Colors.red)),
             ),
           ],
         ),

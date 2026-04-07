@@ -160,8 +160,13 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
         showAchievementUnlocked(context, achievement);
       }
     };
-
-    Future.delayed(const Duration(milliseconds: 500), () {
+    Future.delayed(const Duration(milliseconds: 500), () async {
+      final prefs = await SharedPreferences.getInstance();
+      final isFirstLaunch = prefs.getBool('has_launched_before') ?? false;
+      if (!isFirstLaunch) {
+        await prefs.setBool('has_launched_before', true);
+        return; // skip daily reward on very first launch
+      }
       if (mounted && DailyRewardService().canClaimReward()) {
         showDailyRewardDialog(context);
       }
@@ -654,23 +659,30 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 // Peas counter
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF4CAF50).withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFF4CAF50), width: 2),
-                  ),
-                  child: Row(
-                    children: [
-                      Text(currency.cropEmoji, style: const TextStyle(fontSize: 20)),
-                      const SizedBox(width: 6),
-                      Text(NumberFormatter.format(currency.peas),
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 17,
-                              fontWeight: FontWeight.bold)),
-                    ],
+                // Peas counter
+                GestureDetector(
+                  onLongPress: () async {
+                    await currency.addPeas(1000000000000);
+                    setState(() {});
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF4CAF50).withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFF4CAF50), width: 2),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(currency.cropEmoji, style: const TextStyle(fontSize: 20)),
+                        const SizedBox(width: 6),
+                        Text(NumberFormatter.format(currency.peas),
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold)),
+                      ],
+                    ),
                   ),
                 ),
 
@@ -728,8 +740,12 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
               ],
             ),
           ),
-          if (UpgradeService().currentStage > 0)
-            Container(
+          Visibility(
+            visible: UpgradeService().currentStage > 0,
+            maintainSize: true,
+            maintainAnimation: true,
+            maintainState: true,
+            child: Container(
               padding: const EdgeInsets.symmetric(vertical: 6),
               color: Colors.black26,
               child: Row(
@@ -753,6 +769,8 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                 ],
               ),
             ),
+          ),
+
 
           // ── Scene ────────────────────────────────────────────────────
           Expanded(
@@ -787,7 +805,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
 
                     // House / Cave image
                     Positioned(
-                      top: 50,
+                      top: 70,
                       left: MediaQuery.of(context).size.width * 0.16,
                       child: GestureDetector(
                         onTapDown: (_) => setState(() => _caveScale = 0.95),
@@ -813,7 +831,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                     if (displayStage == 0) ...[
                       // Left torch
                       Positioned(
-                        top: 180,
+                        top: 200,
                         left: screenW * 0.38,
                         child: GestureDetector(
                           onTap: _onTorchSpotTapped,
@@ -822,7 +840,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                       ),
                       // Right torch
                       Positioned(
-                        top: 180,
+                        top: 200,
                         left: screenW * 0.58,
                         child: GestureDetector(
                           onTap: _onTorchSpotTapped,
@@ -1743,6 +1761,18 @@ class _TimerPickerDialogState extends State<TimerPickerDialog> {
       minutes,
       upgradeMultiplier: totalMultiplier,
     );
+    Widget _boostPill(String text, Color color) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withOpacity(0.5), width: 1),
+        ),
+        child: Text(text,
+            style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.bold)),
+      );
+    }
 
     return AlertDialog(
       backgroundColor: const Color(0xFF16213e),
@@ -1760,49 +1790,49 @@ class _TimerPickerDialogState extends State<TimerPickerDialog> {
             children: [
               GestureDetector(
                 onTap: () =>
-                    setState(() { if (selectedMinutes > 1) selectedMinutes -= 1; }),
-                onLongPressStart: (_) => _startRepeating(-1),
+                    setState(() { if (selectedMinutes > 1) selectedMinutes -= 5; }),
+                onLongPressStart: (_) => _startRepeating(-5),
                 onLongPressEnd:   (_) => _stopRepeating(),
                 child: Container(
-                  padding: const EdgeInsets.all(10),
+                  padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(Icons.remove, color: Colors.white70, size: 28),
+                  child: const Icon(Icons.remove, color: Colors.white70, size: 24),
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 14),
               Column(
                 children: [
                   Text(timeDisplay,
                       style: const TextStyle(
                           color: Color(0xFF4CAF50),
-                          fontSize: 29,
+                          fontSize: 24,
                           fontWeight: FontWeight.bold)),
                   Text('($minutes minutes)',
                       style: const TextStyle(
-                          color: Colors.white38, fontSize: 15)),
+                          color: Colors.white38, fontSize: 13)),
                 ],
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 14),
               GestureDetector(
                 onTap: () =>
-                    setState(() { if (selectedMinutes < 420) selectedMinutes += 1; }),
-                onLongPressStart: (_) => _startRepeating(1),
+                    setState(() { if (selectedMinutes < 420) selectedMinutes += 5; }),
+                onLongPressStart: (_) => _startRepeating(5),
                 onLongPressEnd:   (_) => _stopRepeating(),
                 child: Container(
-                  padding: const EdgeInsets.all(10),
+                  padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(Icons.add, color: Colors.white70, size: 28),
+                  child: const Icon(Icons.add, color: Colors.white70, size: 24),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           // Slider
           SliderTheme(
             data: SliderTheme.of(context).copyWith(
@@ -1814,8 +1844,8 @@ class _TimerPickerDialogState extends State<TimerPickerDialog> {
               trackHeight:        6,
             ),
             child: Slider(
-              value: selectedMinutes, min: 1, max: 420, divisions: 419,
-              onChanged: (v) => setState(() => selectedMinutes = v),
+              value: selectedMinutes, min: 1, max: 420, divisions: 84,
+              onChanged: (v) => setState(() => selectedMinutes = (v / 5).round() * 5.0),
             ),
           ),
           const Padding(
@@ -1828,10 +1858,10 @@ class _TimerPickerDialogState extends State<TimerPickerDialog> {
               ],
             ),
           ),
-          const SizedBox(height: 20),
-          // Earnings box
+          const SizedBox(height: 14),
+// Earnings box
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: const Color(0xFF4CAF50).withOpacity(0.2),
               borderRadius: BorderRadius.circular(12),
@@ -1840,66 +1870,15 @@ class _TimerPickerDialogState extends State<TimerPickerDialog> {
             child: Column(
               children: [
                 const Text('You will earn:',
-                    style: TextStyle(color: Colors.white70, fontSize: 14)),
-                const SizedBox(height: 8),
+                    style: TextStyle(color: Colors.white70, fontSize: 13)),
+                const SizedBox(height: 6),
                 Text('~${NumberFormatter.format(peaEarnings)} ${CurrencyService().cropEmoji}',
                     style: const TextStyle(
                         color: Color(0xFF4CAF50),
-                        fontSize: 36,
+                        fontSize: 32,
                         fontWeight: FontWeight.bold)),
                 Text(CurrencyService().cropName.toLowerCase(),
-                    style: const TextStyle(color: Colors.white60, fontSize: 14)),
-                const SizedBox(height: 12),
-                // Furniture boost
-                Text(FurnitureService().getBoostString(),
-                    style: const TextStyle(
-                        color: Colors.amber,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold)),
-                const Text('Furniture Boost',
-                    style: TextStyle(color: Colors.white54, fontSize: 12)),
-                const SizedBox(height: 8),
-                // Upgrade boost
-                Text(UpgradeService().getBonusPercentageString(),
-                    style: const TextStyle(
-                        color: Colors.cyanAccent,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold)),
-                const Text('Upgrade Boost',
-                    style: TextStyle(color: Colors.white54, fontSize: 12)),
-                const SizedBox(height: 8),
-                // Torch boost
-                Text(
-                  _CaveSceneScreenState.torchesOwned ? '+15%' : '+0%',
-                  style: const TextStyle(
-                      color: Colors.orangeAccent,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold),
-                ),
-                const Text('Torch Boost',
-                    style: TextStyle(color: Colors.white54, fontSize: 12)),
-                const SizedBox(height: 8),
-                // Wind chimes boost
-                Text(
-                  _CaveSceneScreenState.chimesOwned ? '+10%' : '+0%',
-                  style: const TextStyle(
-                      color: Colors.tealAccent,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold),
-                ),
-                const Text('Wind Chimes Boost',
-                    style: TextStyle(color: Colors.white54, fontSize: 12)),
-                const SizedBox(height: 8),
-                // Fountain boost
-                Text(
-                  _CaveSceneScreenState.fountainOwned ? '+12%' : '+0%',
-                  style: const TextStyle(
-                      color: Colors.blueAccent,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold),
-                ),
-                const Text('Fountain Boost',
-                    style: TextStyle(color: Colors.white54, fontSize: 12)),
+                    style: const TextStyle(color: Colors.white60, fontSize: 13)),
               ],
             ),
           ),

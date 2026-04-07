@@ -5,6 +5,7 @@ import 'package:focus_life/services/app_monitor_service.dart';
 import 'package:focus_life/services/daily_reward_service.dart';
 import 'package:focus_life/services/notification_service.dart';
 import 'package:focus_life/services/sound_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/permission_screen.dart';
 import 'screens/main_game_screen.dart';
 import 'services/currency_service.dart';
@@ -22,7 +23,6 @@ Future<void> main() async {
   final dailyRewardService = DailyRewardService();
   await dailyRewardService.init();
 
-  // inside main():
   try {
     await SoundService().init();
     debugPrint('✅ SoundService initialized');
@@ -30,7 +30,6 @@ Future<void> main() async {
     debugPrint('❌ SoundService init failed: $e');
   }
 
-  // ✅ Initialize all services with error handling
   try {
     await CurrencyService().init();
     debugPrint('✅ CurrencyService initialized');
@@ -81,18 +80,22 @@ Future<void> main() async {
     debugPrint('❌ AppMonitorService init failed: $e');
   }
 
-  runApp(const MyApp());
+  final prefs = await SharedPreferences.getInstance();
+  final permissionShown = prefs.getBool('permission_screen_shown') ?? false;
+
+  runApp(MyApp(permissionShown: permissionShown));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final bool permissionShown;
+  const MyApp({super.key, required this.permissionShown});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Focus Life',
       theme: ThemeData.dark(),
-      home: const SplashScreen(),
+      home: permissionShown ? const MainGameScreen() : const PermissionScreen(),
       debugShowCheckedModeBanner: false,
     );
   }

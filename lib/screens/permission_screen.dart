@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:app_usage/app_usage.dart';
 import 'package:app_settings/app_settings.dart';
-import 'main_game_screen.dart'; // CHANGED FROM home_screen.dart!
+import 'package:shared_preferences/shared_preferences.dart';
+import 'main_game_screen.dart';
 
 class PermissionScreen extends StatefulWidget {
   const PermissionScreen({super.key});
@@ -13,129 +14,123 @@ class PermissionScreen extends StatefulWidget {
 class _PermissionScreenState extends State<PermissionScreen> {
   bool isChecking = false;
 
+  void _goToGame() {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => const MainGameScreen()),
+    );
+  }
+
   Future<void> checkPermission() async {
+    setState(() => isChecking = true);
     await Future.delayed(const Duration(seconds: 1));
 
     try {
       DateTime endDate = DateTime.now();
       DateTime startDate = endDate.subtract(const Duration(seconds: 1));
-
-      List<AppUsageInfo> infos = await AppUsage().getAppUsage(startDate, endDate);
-
-      if (!mounted) return;
-
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const MainGameScreen()),
-      );
+      await AppUsage().getAppUsage(startDate, endDate);
     } catch (e) {
-      debugPrint('❌ Permission check failed: $e');
-
-      if (!mounted) return;
-
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const PermissionScreen()),
-      );
+      debugPrint('Permission not granted yet: $e');
     }
+
+    // Mark as seen and go to game regardless
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('permission_screen_shown', true);
+
+    if (!mounted) return;
+    _goToGame();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[900],
+      backgroundColor: const Color(0xFF16213e),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(30),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.shield, size: 100, color: Colors.blue),
-              const SizedBox(height: 30),
+              const Text('🔒', style: TextStyle(fontSize: 80)),
+              const SizedBox(height: 24),
               const Text(
-                "Permission Required",
+                "One quick thing",
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 28,
+                  fontSize: 26,
                   fontWeight: FontWeight.bold,
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
               const Text(
-                "Focus Life needs Usage Access permission to detect when you open distracting apps.",
-                style: TextStyle(color: Colors.white70, fontSize: 16),
+                "Focus Life can block distracting apps while you focus. To do this it needs Usage Access permission.\n\nThis is optional — you can skip it and still use the app.",
+                style: TextStyle(color: Colors.white70, fontSize: 15, height: 1.6),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 40),
+              const SizedBox(height: 32),
               Container(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
-                  color: Colors.grey[850],
-                  borderRadius: BorderRadius.circular(12),
+                  color: Colors.white.withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white12),
                 ),
                 child: const Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      "Steps:",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    Text("How to enable:",
+                        style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
                     SizedBox(height: 10),
                     Text(
                       "1. Tap 'Open Settings' below\n"
                           "2. Find 'Focus Life' in the list\n"
                           "3. Toggle it ON\n"
-                          "4. Come back and tap 'Check Permission'",
-                      style: TextStyle(color: Colors.white70, fontSize: 14),
+                          "4. Come back and tap 'Done'",
+                      style: TextStyle(color: Colors.white60, fontSize: 14, height: 1.7),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 40),
+              const SizedBox(height: 32),
               ElevatedButton(
                 onPressed: () async {
                   await AppSettings.openAppSettings(type: AppSettingsType.settings);
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  backgroundColor: const Color(0xFF4CAF50),
+                  minimumSize: const Size(double.infinity, 52),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
-                child: const Text(
-                  "Open Settings",
-                  style: TextStyle(fontSize: 18, color: Colors.white),
-                ),
+                child: const Text("Open Settings",
+                    style: TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold)),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 12),
               OutlinedButton(
                 onPressed: isChecking ? null : checkPermission,
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Colors.white70),
-                  padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  side: const BorderSide(color: Colors.white30),
+                  minimumSize: const Size(double.infinity, 52),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
                 child: isChecking
                     ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
+                  width: 20, height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                 )
-                    : const Text(
-                  "Check Permission",
-                  style: TextStyle(fontSize: 18, color: Colors.white),
-                ),
+                    : const Text("Done →",
+                    style: TextStyle(fontSize: 16, color: Colors.white70)),
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () async {
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setBool('permission_screen_shown', true);
+                  if (!mounted) return;
+                  _goToGame();
+                },
+                child: const Text("Skip for now",
+                    style: TextStyle(color: Colors.white38, fontSize: 14)),
               ),
             ],
           ),
