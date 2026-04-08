@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:focus_life/services/achievements_service.dart';
 import 'package:focus_life/services/streak_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -14,6 +15,82 @@ import '../services/app_monitor_service.dart';
 import '../services/focus_session_service.dart';
 import 'blocking_screen.dart';
 import '../services/feedback_service.dart';
+
+// ── Foreground task handler (runs in separate isolate) ──────────────────
+@pragma('vm:entry-point')
+void startCallback() {
+  FlutterForegroundTask.setTaskHandler(_FocusTaskHandler());
+}
+class _FocusTaskHandler extends TaskHandler {
+  int _remainingSeconds = 0;
+
+  @override
+  Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
+    _remainingSeconds =
+        await FlutterForegroundTask.getData<int>(key: 'remainingSeconds') ?? 0;
+  }
+
+  @override
+  void onRepeatEvent(DateTime timestamp) async {
+    if (_remainingSeconds > 0) {
+      _remainingSeconds--;
+      await FlutterForegroundTask.saveData(
+          key: 'remainingSeconds', value: _remainingSeconds);
+      FlutterForegroundTask.updateService(
+        notificationTitle: 'Focus Life — Keep it up! 🌱',
+        notificationText: _format(_remainingSeconds),
+      );
+      FlutterForegroundTask.sendDataToMain(_remainingSeconds);
+    } else {
+      FlutterForegroundTask.sendDataToMain(-1);
+    }
+  }
+
+  @override
+  Future<void> onReceiveData(Object data) async {
+    if (data == 'pause') _remainingSeconds = -999; // freeze
+    if (data == 'resume') {
+      _remainingSeconds =
+          await FlutterForegroundTask.getData<int>(key: 'remainingSeconds') ?? 0;
+    }
+  }
+
+  @override
+  Future<void> onDestroy(DateTime timestamp) async {}
+
+  String _format(int s) {
+    int h = s ~/ 3600, m = (s % 3600) ~/ 60, sec = s % 60;
+    if (h > 0) return '${h}h ${m.toString().padLeft(2,'0')}m ${sec.toString().padLeft(2,'0')}s';
+    if (m > 0) return '${m}m ${sec.toString().padLeft(2,'0')}s';
+    return '${sec}s remaining';
+  }
+}
+
+// ── Helper to init foreground task config ──────────────────────────────
+void _initForegroundTask() {
+  FlutterForegroundTask.init(
+    androidNotificationOptions: AndroidNotificationOptions(
+      channelId: 'focus_life_timer',
+      channelName: 'Focus Timer',
+      channelDescription: 'Keeps your focus timer running while the screen is off',
+      channelImportance: NotificationChannelImportance.LOW,
+      priority: NotificationPriority.LOW,
+    ),
+    iosNotificationOptions: const IOSNotificationOptions(
+      showNotification: true,
+      playSound: false,
+    ),
+    foregroundTaskOptions: ForegroundTaskOptions(
+      eventAction: ForegroundTaskEventAction.repeat(1000),
+      autoRunOnBoot: false,
+      allowWakeLock: true,
+    ),
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// MAIN SCREEN
+// ══════════════════════════════════════════════════════════════════════
 
 class GardenFocusScreen extends StatefulWidget {
   final Character character;
@@ -41,17 +118,14 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
   int _remainingSeconds = 0;
 
   Timer? _breakReminderTimer;
-  Timer? _countdownTimer;
   Timer? _saveTimer;
   bool _isPaused   = false;
   bool _isFinished = false;
 
-  // ── Decoration boosts (loaded once at start) ─────────────────────────
   bool _torchesOwned  = false;
   bool _chimesOwned   = false;
   bool _fountainOwned = false;
 
-  // ── Total multiplier including decoration boosts ──────────────────────
   double get _totalMultiplier =>
       upgrades.getTotalMultiplier()
           * (_torchesOwned  ? 1.15 : 1.0)
@@ -69,23 +143,37 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     )..repeat(reverse: true);
 
     WidgetsBinding.instance.addObserver(this);
+    _initForegroundTask();
+
+    // Listen to ticks from the foreground task
+    FlutterForegroundTask.addTaskDataCallback(_onTaskData);
 
     _loadDecorationBoosts().then((_) => _startFocusSession());
   }
 
-
   @override
   void dispose() {
+    FlutterForegroundTask.removeTaskDataCallback(_onTaskData);
     _characterController.dispose();
-    _countdownTimer?.cancel();
     _saveTimer?.cancel();
-    _breakReminderTimer?.cancel(); // ADD THIS
+    _breakReminderTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     appMonitor.stopMonitoring();
     super.dispose();
   }
 
-  // ── Load decoration boost flags from SharedPreferences ────────────────
+  // ── Receive seconds from foreground task ──────────────────────────────
+  void _onTaskData(Object data) {
+    if (!mounted) return;
+    final seconds = data as int;
+    if (seconds == -1) {
+      // Timer finished in background
+      _finishSession();
+    } else {
+      setState(() => _remainingSeconds = seconds);
+    }
+  }
+
   Future<void> _loadDecorationBoosts() async {
     final prefs = await SharedPreferences.getInstance();
     if (mounted) {
@@ -97,18 +185,24 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     }
   }
 
+  // ── App lifecycle — tell foreground task to pause/resume ──────────────
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-
     if (state == AppLifecycleState.paused) {
-      _pauseTimer();
-      SoundService().pauseMusic(); // ADD
+      // Screen off — foreground task keeps counting, just pause music
+      SoundService().pauseMusic();
+      if (_isPaused) {
+        FlutterForegroundTask.sendDataToTask('pause');
+      }
     } else if (state == AppLifecycleState.resumed) {
-      _resumeTimer();
-      SoundService().resumeMusic(); // ADD
+      SoundService().resumeMusic();
+      if (!_isPaused) {
+        FlutterForegroundTask.sendDataToTask('resume');
+      }
     }
   }
+
   void _startBreakReminderTimer() {
     if (!SettingsService().breakReminders) return;
     _breakReminderTimer = Timer.periodic(const Duration(minutes: 25), (_) {
@@ -154,30 +248,39 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
   }
 
   void _pauseTimer() {
-    if (!_isPaused && _countdownTimer != null) {
+    if (!_isPaused) {
       _isPaused = true;
-      _countdownTimer?.cancel();
-      debugPrint('Timer paused at $_remainingSeconds seconds');
+      FlutterForegroundTask.sendDataToTask('pause');
     }
   }
 
   void _resumeTimer() {
     if (_isPaused && _isWorking && _remainingSeconds > 0) {
       _isPaused = false;
-      _startCountdownTimer();
-      debugPrint('Timer resumed at $_remainingSeconds seconds');
+      FlutterForegroundTask.sendDataToTask('resume');
     }
   }
 
   void _startFocusSession() async {
     setState(() => _isWorking = true);
     await sessionService.startSession(durationMinutes: widget.focusDurationMinutes);
-    appMonitor.startMonitoring(_onBlockedAppDetected);
-    _startCountdownTimer();
-    _startPeriodicSave();
-    _startBreakReminderTimer(); // ADD THIS
-    SoundService().playFocusMusic();
 
+    // Save initial seconds for the foreground task to read
+    await FlutterForegroundTask.saveData(
+        key: 'remainingSeconds', value: _remainingSeconds);
+
+    // Start foreground service
+    await FlutterForegroundTask.startService(
+      serviceId: 256,
+      notificationTitle: 'Focus Life — Keep it up! 🌱',
+      notificationText: _formatTime(_remainingSeconds),
+      callback: startCallback,
+    );
+
+    appMonitor.startMonitoring(_onBlockedAppDetected);
+    _startPeriodicSave();
+    _startBreakReminderTimer();
+    SoundService().playFocusMusic();
   }
 
   void _startPeriodicSave() {
@@ -185,23 +288,6 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     _saveTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       if (_isWorking && !_isPaused) {
         sessionService.updateRemainingTime(_remainingSeconds);
-      }
-    });
-  }
-
-  void _startCountdownTimer() {
-    _countdownTimer?.cancel();
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) { timer.cancel(); return; }
-      if (_isPaused) return;
-      if (_remainingSeconds > 0 && _isWorking) {
-        setState(() => _remainingSeconds--);
-        if (_remainingSeconds == 0) {
-          timer.cancel();
-          _finishSession();
-        }
-      } else {
-        timer.cancel();
       }
     });
   }
@@ -219,7 +305,6 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
         builder: (_) => BlockingScreen(
           appName: appName,
           onReturn: () {
-            debugPrint('✅ User returned from blocking screen');
             _resumeTimer();
             if (_isWorking && mounted) {
               appMonitor.startMonitoring(_onBlockedAppDetected);
@@ -243,7 +328,6 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
   }
 
   void _finishSession() async {
-    // Race condition guard
     if (_isFinished || !_isWorking) return;
 
     setState(() {
@@ -251,34 +335,22 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
       _isWorking  = false;
     });
 
-    _countdownTimer?.cancel();
     _saveTimer?.cancel();
     _breakReminderTimer?.cancel();
     appMonitor.stopMonitoring();
 
-    // Wrap everything in try/catch so nothing blocks the dialog
-    try {
-      await sessionService.completeSession();
-    } catch (e) {
-      debugPrint('❌ completeSession error: $e');
-    }
+    // Stop foreground service
+    await FlutterForegroundTask.stopService();
 
-    try {
-      await StreakService().recordFocusSession();
-    } catch (e) {
-      debugPrint('❌ recordFocusSession error: $e');
-    }
-
+    try { await sessionService.completeSession(); } catch (e) { debugPrint('❌ completeSession: $e'); }
+    try { await StreakService().recordFocusSession(); } catch (e) { debugPrint('❌ streak: $e'); }
     try {
       await NotificationService().cancelStreakReminder();
       if (SettingsService().streakReminders) {
         await NotificationService().scheduleStreakReminder();
       }
-    } catch (e) {
-      debugPrint('❌ notification error: $e');
-    }
+    } catch (e) { debugPrint('❌ notification: $e'); }
 
-    // Calculate peas
     final double torchMultiplier = (_torchesOwned  ? 1.15 : 1.0)
         * (_chimesOwned   ? 1.10 : 1.0)
         * (_fountainOwned ? 1.12 : 1.0);
@@ -288,34 +360,15 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
       torchMultiplier: torchMultiplier,
     );
 
-    try {
-      await currency.addPeas(peasEarned);
-    } catch (e) {
-      debugPrint('❌ addPeas error: $e');
-    }
-
-    try {
-      await AchievementService().onFocusSessionCompleted(widget.focusDurationMinutes);
-    } catch (e) {
-      debugPrint('❌ achievement error: $e');
-    }
+    try { await currency.addPeas(peasEarned); } catch (e) { debugPrint('❌ addPeas: $e'); }
+    try { await AchievementService().onFocusSessionCompleted(widget.focusDurationMinutes); } catch (e) { debugPrint('❌ achievement: $e'); }
 
     int earnings = widget.focusDurationMinutes * 5;
     widget.character.earnMoney(earnings);
     widget.character.addFocusMinutes(widget.focusDurationMinutes);
 
-    // Play sounds — non-blocking
-    try {
-      await SoundService().playSessionComplete();
-    } catch (e) {
-      debugPrint('❌ sound error: $e');
-    }
-
-    try {
-      SoundService().playBackgroundMusic();
-    } catch (e) {
-      debugPrint('❌ music error: $e');
-    }
+    try { await SoundService().playSessionComplete(); } catch (e) { debugPrint('❌ sound: $e'); }
+    try { SoundService().playBackgroundMusic(); } catch (e) { debugPrint('❌ music: $e'); }
 
     if (!mounted) return;
 
@@ -356,9 +409,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
             const SizedBox(height: 12),
             Text('${widget.focusDurationMinutes} min focused!',
                 style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.white60,
-                    fontStyle: FontStyle.italic)),
+                    fontSize: 14, color: Colors.white60, fontStyle: FontStyle.italic)),
             if (_torchesOwned || _chimesOwned || _fountainOwned) ...[
               const SizedBox(height: 8),
               if (_torchesOwned)
@@ -401,14 +452,10 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF4CAF50),
                 padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
               child: const Text('Awesome!',
-                  style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white)),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
             ),
           ),
         ],
@@ -430,90 +477,74 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF87CEEB),
-      body: Stack(
-        children: [
-          CustomPaint(
-            size: Size.infinite,
-            painter: GardenPainter(
-              characterAnimation: _characterController.value,
-              isWorking: _isWorking,
-              totalSeconds: widget.focusDurationMinutes * 60,
-              remainingSeconds: _remainingSeconds,
+    return WithForegroundTask(
+      child: Scaffold(
+        backgroundColor: const Color(0xFF87CEEB),
+        body: Stack(
+          children: [
+            CustomPaint(
+              size: Size.infinite,
+              painter: GardenPainter(
+                characterAnimation: _characterController.value,
+                isWorking: _isWorking,
+                totalSeconds: widget.focusDurationMinutes * 60,
+                remainingSeconds: _remainingSeconds,
+              ),
             ),
-          ),
-          if (_isPaused)
+            if (_isPaused)
+              Positioned(
+                top: 120, left: 0, right: 0,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.9),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 10)],
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.pause, color: Colors.white, size: 20),
+                        SizedBox(width: 8),
+                        Text('Timer Paused',
+                            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             Positioned(
-              top: 120, left: 0, right: 0,
+              top: 60, left: 0, right: 0,
               child: Center(
                 child: Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.9),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                          color: Colors.black.withOpacity(0.3), blurRadius: 10)
-                    ],
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.pause, color: Colors.white, size: 20),
-                      SizedBox(width: 8),
-                      Text('Timer Paused',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold)),
-                    ],
+                  padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                  decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(30)),
+                  child: Text(
+                    _formatTime(_remainingSeconds),
+                    style: const TextStyle(
+                        color: Colors.white, fontSize: 40, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
                   ),
                 ),
               ),
             ),
-          Positioned(
-            top: 60, left: 0, right: 0,
-            child: Center(
-              child: Container(
-                padding:
-                const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-                decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(30)),
-                child: Text(
-                  _formatTime(_remainingSeconds),
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 40,
-                      fontWeight: FontWeight.bold,
-                      fontFamily: 'monospace'),
+            Positioned(
+              bottom: 40, left: 0, right: 0,
+              child: Center(
+                child: ElevatedButton(
+                  onPressed: _showStopDialog,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 20),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                  ),
+                  child: const Text('Stop Session',
+                      style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
                 ),
               ),
             ),
-          ),
-          Positioned(
-            bottom: 40, left: 0, right: 0,
-            child: Center(
-              child: ElevatedButton(
-                onPressed: _showStopDialog,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 50, vertical: 20),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30)),
-                ),
-                child: const Text('Stop Session',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold)),
-              ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -533,17 +564,13 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
             children: [
               Text('⏱️', style: TextStyle(fontSize: 48)),
               SizedBox(height: 12),
-              Text(
-                "Don't stop before 5 minutes!",
-                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
-              ),
+              Text("Don't stop before 5 minutes!",
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center),
               SizedBox(height: 8),
-              Text(
-                "You won't earn any peas.",
-                style: TextStyle(color: Colors.white54, fontSize: 14),
-                textAlign: TextAlign.center,
-              ),
+              Text("You won't earn any peas.",
+                  style: TextStyle(color: Colors.white54, fontSize: 14),
+                  textAlign: TextAlign.center),
             ],
           ),
           actions: [
@@ -554,15 +581,14 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
             ),
             TextButton(
               onPressed: () async {
-                _countdownTimer?.cancel();
                 _saveTimer?.cancel();
                 appMonitor.stopMonitoring();
+                await FlutterForegroundTask.stopService();
                 await sessionService.cancelSession();
                 Navigator.pop(context);
                 Navigator.pop(context);
               },
-              child: const Text('Stop Anyway',
-                  style: TextStyle(color: Colors.red)),
+              child: const Text('Stop Anyway', style: TextStyle(color: Colors.red)),
             ),
           ],
         ),
@@ -583,10 +609,8 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
           children: [
             Text('⚠️', style: TextStyle(fontSize: 28)),
             SizedBox(width: 12),
-            Expanded(
-              child: Text('Stop Focus Session?',
-                  style: TextStyle(color: Colors.white, fontSize: 18)),
-            ),
+            Expanded(child: Text('Stop Focus Session?',
+                style: TextStyle(color: Colors.white, fontSize: 18))),
           ],
         ),
         content: Column(
@@ -602,13 +626,9 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Earned so far:',
-                      style: TextStyle(color: Colors.white70)),
+                  const Text('Earned so far:', style: TextStyle(color: Colors.white70)),
                   Text('$peasSoFar 🌱',
-                      style: const TextStyle(
-                          color: Color(0xFF4CAF50),
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold)),
+                      style: const TextStyle(color: Color(0xFF4CAF50), fontSize: 18, fontWeight: FontWeight.bold)),
                 ],
               ),
             ),
@@ -627,31 +647,21 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text('If you stop now:',
-                      style: TextStyle(
-                          color: Colors.white, fontWeight: FontWeight.bold)),
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Text('❌', style: TextStyle(fontSize: 16)),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text('Lose $peasLost peas (20% penalty)',
-                            style: TextStyle(color: Colors.red[300])),
-                      ),
-                    ],
-                  ),
+                  Row(children: [
+                    const Text('❌', style: TextStyle(fontSize: 16)),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text('Lose $peasLost peas (20% penalty)',
+                        style: TextStyle(color: Colors.red[300]))),
+                  ]),
                   const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Text('✅', style: TextStyle(fontSize: 16)),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text('Keep $peasKept peas',
-                            style: const TextStyle(
-                                color: Color(0xFF4CAF50))),
-                      ),
-                    ],
-                  ),
+                  Row(children: [
+                    const Text('✅', style: TextStyle(fontSize: 16)),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text('Keep $peasKept peas',
+                        style: const TextStyle(color: Color(0xFF4CAF50)))),
+                  ]),
                 ],
               ),
             ),
@@ -661,24 +671,20 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Keep Focusing',
-                style: TextStyle(
-                    color: Color(0xFF00d4ff),
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold)),
+                style: TextStyle(color: Color(0xFF00d4ff), fontSize: 16, fontWeight: FontWeight.bold)),
           ),
           TextButton(
             onPressed: () async {
-              _countdownTimer?.cancel();
               _saveTimer?.cancel();
               appMonitor.stopMonitoring();
+              await FlutterForegroundTask.stopService();
               await sessionService.cancelSession();
               if (peasKept > 0) await currency.addPeas(peasKept);
               widget.character.addFocusMinutes(elapsedMinutes);
               Navigator.pop(context);
               Navigator.pop(context);
             },
-            child: const Text('Stop',
-                style: TextStyle(color: Colors.red, fontSize: 16)),
+            child: const Text('Stop', style: TextStyle(color: Colors.red, fontSize: 16)),
           ),
         ],
       ),
@@ -686,9 +692,9 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
 // GARDEN PAINTER — unchanged
-// ═══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
 class GardenPainter extends CustomPainter {
   final double characterAnimation;
   final bool isWorking;
