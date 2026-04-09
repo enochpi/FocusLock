@@ -3,32 +3,38 @@ import 'package:app_usage/app_usage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
 
+// ✅ Top level function required for compute()
+Future<List<AppUsageInfo>> _fetchAppUsage(List<DateTime> args) async {
+  return await AppUsage().getAppUsage(args[0], args[1]);
+}
+
 class AppMonitorService {
   static final AppMonitorService _instance = AppMonitorService._internal();
   factory AppMonitorService() => _instance;
   AppMonitorService._internal();
 
-  // Monitoring state
   Timer? _monitorTimer;
   DateTime? _lastCheck;
   bool _isMonitoring = false;
 
-  // Storage key
-  static const String _blockedAppsKey = 'blocked_apps';
+  // ✅ Track which apps already triggered this session
+  final Set<String> _triggeredThisSession = {};
 
-  // Blocked apps list (package names)
+  // ✅ Cooldown tracking
+  final Map<String, DateTime> _lastTriggered = {};
+  static const int _cooldownSeconds = 30;
+
+  static const String _blockedAppsKey = 'blocked_apps';
   Set<String> _blockedApps = {};
 
-  // Callback when blocked app detected
   Function(String appName, String packageName)? _onBlockedAppDetected;
 
-  // Default blocked apps (will be added on first launch)
   final List<String> _defaultBlockedApps = [
     'com.instagram.android',
     'com.twitter.android',
     'com.facebook.katana',
     'com.snapchat.android',
-    'com.zhiliaoapp.musically', // TikTok
+    'com.zhiliaoapp.musically',
     'com.reddit.frontpage',
     'com.pinterest',
     'com.tumblr',
@@ -40,13 +46,10 @@ class AppMonitorService {
 
   Future<void> init() async {
     await _loadBlockedApps();
-
-    // If no blocked apps stored, use defaults
     if (_blockedApps.isEmpty) {
       _blockedApps = Set.from(_defaultBlockedApps);
       await _saveBlockedApps();
     }
-
     debugPrint('AppMonitorService initialized with ${_blockedApps.length} blocked apps');
   }
 
@@ -54,10 +57,7 @@ class AppMonitorService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final List<String>? stored = prefs.getStringList(_blockedAppsKey);
-
-      if (stored != null) {
-        _blockedApps = Set.from(stored);
-      }
+      if (stored != null) _blockedApps = Set.from(stored);
     } catch (e) {
       debugPrint('Error loading blocked apps: $e');
       _blockedApps = {};
@@ -77,37 +77,41 @@ class AppMonitorService {
   //  MONITORING CONTROL
   // ══════════════════════════════════════════════════════════════
 
-  /// Start monitoring for blocked apps
-  void startMonitoring(Function(String appName, String packageName) onBlockedAppDetected) {
-    if (_isMonitoring) {
-      debugPrint('Already monitoring');
-      return;
-    }
+  void startMonitoring(
+      Function(String appName, String packageName) onBlockedAppDetected) {
+    if (_isMonitoring) return;
 
     _onBlockedAppDetected = onBlockedAppDetected;
     _lastCheck = DateTime.now();
     _isMonitoring = true;
+    _triggeredThisSession.clear();
 
-    // Check every 2 seconds
-    _monitorTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
-      await _checkForBlockedApps();
-    });
+    // ✅ Increased to 3 seconds to reduce frequency of heavy native calls
+    _monitorTimer =
+        Timer.periodic(const Duration(seconds: 3), (timer) async {
+          await _checkForBlockedApps();
+        });
 
     debugPrint('Started monitoring for blocked apps');
   }
 
-  /// Stop monitoring
   void stopMonitoring() {
     _monitorTimer?.cancel();
     _monitorTimer = null;
     _isMonitoring = false;
     _onBlockedAppDetected = null;
     _lastCheck = null;
-
+    _triggeredThisSession.clear();
     debugPrint('Stopped monitoring');
   }
 
-  /// Check if currently monitoring
+  // ✅ Call when blocking screen dismissed
+  void onBlockDismissed(String packageName) {
+    _triggeredThisSession.remove(packageName);
+    _lastTriggered[packageName] = DateTime.now();
+    debugPrint('🔓 Block dismissed for $packageName — cooldown started');
+  }
+
   bool get isMonitoring => _isMonitoring;
 
   // ══════════════════════════════════════════════════════════════
@@ -115,35 +119,41 @@ class AppMonitorService {
   // ══════════════════════════════════════════════════════════════
 
   Future<void> _checkForBlockedApps() async {
-    if (!_isMonitoring || _onBlockedAppDetected == null) {
-      return;
-    }
+    if (!_isMonitoring || _onBlockedAppDetected == null) return;
 
     try {
       final DateTime now = DateTime.now();
-      final DateTime checkFrom = _lastCheck ?? now.subtract(const Duration(seconds: 3));
+      final DateTime checkFrom =
+          _lastCheck ?? now.subtract(const Duration(seconds: 4));
 
-      // Get app usage data
-      List<AppUsageInfo> infos = await AppUsage().getAppUsage(checkFrom, now);
+      // ✅ Run on separate isolate so it NEVER blocks the main thread
+      final List<AppUsageInfo> infos =
+      await compute(_fetchAppUsage, [checkFrom, now]);
 
-      // Check each app
       for (var info in infos) {
-        if (_blockedApps.contains(info.packageName)) {
-          // ⚠️ BLOCKED APP DETECTED!
-          debugPrint('🚫 Blocked app detected: ${info.appName} (${info.packageName})');
+        if (!_blockedApps.contains(info.packageName)) continue;
+        if (_triggeredThisSession.contains(info.packageName)) continue;
 
-          // Trigger callback
-          _onBlockedAppDetected!(info.appName, info.packageName);
-
-          // Only trigger once per check cycle
-          break;
+        final lastTime = _lastTriggered[info.packageName];
+        if (lastTime != null) {
+          final secondsSince = now.difference(lastTime).inSeconds;
+          if (secondsSince < _cooldownSeconds) {
+            debugPrint(
+                '⏳ ${info.packageName} in cooldown ($secondsSince/${_cooldownSeconds}s)');
+            continue;
+          }
         }
+
+        _triggeredThisSession.add(info.packageName);
+        debugPrint(
+            '🚫 Blocked app detected: ${info.appName} (${info.packageName})');
+        _onBlockedAppDetected!(info.appName, info.packageName);
+        break;
       }
 
       _lastCheck = now;
     } catch (e) {
       debugPrint('Error checking for blocked apps: $e');
-      // Don't stop monitoring on error - permission might be temporarily unavailable
     }
   }
 
@@ -151,44 +161,27 @@ class AppMonitorService {
   //  BLOCKED APPS MANAGEMENT
   // ══════════════════════════════════════════════════════════════
 
-  /// Add a blocked app
   Future<void> addBlockedApp(String packageName) async {
     _blockedApps.add(packageName);
     await _saveBlockedApps();
-    debugPrint('✅ Added blocked app: $packageName');
   }
 
-  /// Remove a blocked app
   Future<void> removeBlockedApp(String packageName) async {
     _blockedApps.remove(packageName);
     await _saveBlockedApps();
-    debugPrint('✅ Removed blocked app: $packageName');
   }
 
-  /// Get list of currently blocked apps
-  Future<List<String>> getBlockedApps() async {
-    return _blockedApps.toList();
-  }
+  Future<List<String>> getBlockedApps() async => _blockedApps.toList();
 
-  /// Get list of blocked apps (synchronous)
   Set<String> get blockedApps => Set.from(_blockedApps);
-
-  /// Get count of blocked apps
   int get blockedAppCount => _blockedApps.length;
+  bool isAppBlocked(String packageName) => _blockedApps.contains(packageName);
 
-  /// Check if app is blocked
-  bool isAppBlocked(String packageName) {
-    return _blockedApps.contains(packageName);
-  }
-
-  /// Clear all blocked apps
   Future<void> clearAllBlockedApps() async {
     _blockedApps.clear();
     await _saveBlockedApps();
-    debugPrint('Cleared all blocked apps');
   }
 
-  /// Reset to default blocked apps
   Future<void> resetToDefaults() async {
     _blockedApps = Set.from(_defaultBlockedApps);
     await _saveBlockedApps();
@@ -199,18 +192,17 @@ class AppMonitorService {
   //  INSTALLED APPS DETECTION
   // ══════════════════════════════════════════════════════════════
 
-  /// Get all installed apps (useful for blocked apps manager UI)
   Future<List<AppUsageInfo>> getAllInstalledApps() async {
     try {
       final DateTime endDate = DateTime.now();
-      final DateTime startDate = endDate.subtract(const Duration(days: 30));
+      // ✅ Reduced from 90 to 14 days — much faster query
+      final DateTime startDate = endDate.subtract(const Duration(days: 14));
 
-      // Get apps used in last 30 days
-      List<AppUsageInfo> infos = await AppUsage().getAppUsage(startDate, endDate);
+      // ✅ Also runs on isolate so blocked apps screen doesn't freeze
+      final List<AppUsageInfo> infos =
+      await compute(_fetchAppUsage, [startDate, endDate]);
 
-      // Sort by app name
       infos.sort((a, b) => a.appName.compareTo(b.appName));
-
       return infos;
     } catch (e) {
       debugPrint('Error getting installed apps: $e');
@@ -224,7 +216,6 @@ class AppMonitorService {
 
   static const String _blockCountKey = 'block_count';
 
-  /// Increment block count
   Future<void> incrementBlockCount() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -235,7 +226,6 @@ class AppMonitorService {
     }
   }
 
-  /// Get total times apps were blocked
   Future<int> getTotalBlockCount() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -246,7 +236,6 @@ class AppMonitorService {
     }
   }
 
-  /// Reset block count
   Future<void> resetBlockCount() async {
     try {
       final prefs = await SharedPreferences.getInstance();

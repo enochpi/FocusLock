@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/achievements_service.dart';
 import '../services/currency_service.dart';
 import '../services/upgrade_service.dart';
 import '../utils/number_formatter.dart';
@@ -336,45 +337,36 @@ class _ShopScreenState extends State<ShopScreen> {
       await currency.removePeas(unlock.cost.round());
       await currency.upgradeStage();
 
-      if (!mounted) return;
+      // ✅ Trigger property achievement
+      await AchievementService().onHouseUnlocked(upgrades.currentStage);
 
-      // Show success dialog
+      if (!mounted) return;
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
           backgroundColor: const Color(0xFF2d2d2d),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Row(
             children: [
               Text(unlock.emoji, style: const TextStyle(fontSize: 48)),
               const SizedBox(width: 12),
               const Expanded(
-                child: Text(
-                  'Unlocked!',
-                  style: TextStyle(color: Color(0xFFFFD700)),
-                ),
+                child: Text('Unlocked!', style: TextStyle(color: Color(0xFFFFD700))),
               ),
             ],
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                unlock.name,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              Text(unlock.name,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold)),
               const SizedBox(height: 12),
-              Text(
-                unlock.description,
-                style: const TextStyle(color: Color(0xFF4CAF50)),
-                textAlign: TextAlign.center,
-              ),
+              Text(unlock.description,
+                  style: const TextStyle(color: Color(0xFF4CAF50)),
+                  textAlign: TextAlign.center),
             ],
           ),
           actions: [
@@ -382,22 +374,18 @@ class _ShopScreenState extends State<ShopScreen> {
               onPressed: () {
                 Navigator.pop(context);
                 setState(() {
-                  selectedShopStage = upgrades.currentStage; // Switch to new shop
+                  selectedShopStage = upgrades.currentStage;
                 });
               },
-              child: const Text(
-                'Explore New Shop!',
-                style: TextStyle(
-                  color: Color(0xFFFFD700),
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              child: const Text('Explore New Shop!',
+                  style: TextStyle(
+                      color: Color(0xFFFFD700),
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold)),
             ),
           ],
         ),
       );
-
       setState(() {});
     }
   }
@@ -547,31 +535,36 @@ class _ShopScreenState extends State<ShopScreen> {
   }
 
   Future<bool> _purchaseUpgrade(Upgrade upgrade) async {
-    // Try to purchase
     bool success = await upgrades.purchaseUpgrade(upgrade.id, currency.peas.toDouble());
 
     if (success) {
-      // Deduct peas
       await currency.removePeas(upgrade.cost.round());
 
-      // Show success dialog
+      // ✅ Trigger achievement tracking
+      final totalPurchased = upgrades.getTotalUpgradesPurchased();
+      final stageType = upgrade.stageRequired == 0 ? 'cave'
+          : upgrade.stageRequired == 1 ? 'shack'
+          : 'house';
+      await AchievementService().onUpgradePurchased(totalPurchased, stageType);
+
+      // ✅ Trigger multiplier achievement tracking
+      await AchievementService().onMultiplierReached(upgrades.getTotalMultiplier());
+
+      // ✅ Trigger coins spent tracking
+      await AchievementService().onCoinsSpent(upgrade.cost.round());
+
       if (!mounted) return true;
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
           backgroundColor: const Color(0xFF2d2d2d),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Row(
             children: [
               Text(upgrade.emoji, style: const TextStyle(fontSize: 32)),
               const SizedBox(width: 12),
               const Expanded(
-                child: Text(
-                  'Purchased!',
-                  style: TextStyle(color: Colors.white),
-                ),
+                child: Text('Purchased!', style: TextStyle(color: Colors.white)),
               ),
             ],
           ),
@@ -579,19 +572,14 @@ class _ShopScreenState extends State<ShopScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                upgrade.name,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              Text(upgrade.name,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
-              Text(
-                upgrade.description,
-                style: const TextStyle(color: Color(0xFF4CAF50)),
-              ),
+              Text(upgrade.description,
+                  style: const TextStyle(color: Color(0xFF4CAF50))),
               const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(12),
@@ -603,13 +591,9 @@ class _ShopScreenState extends State<ShopScreen> {
                   children: [
                     const Text('⚡', style: TextStyle(fontSize: 20)),
                     const SizedBox(width: 8),
-                    Text(
-                      'New Multiplier: ${upgrades.getMultiplierString()}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    Text('New Multiplier: ${upgrades.getMultiplierString()}',
+                        style: const TextStyle(
+                            color: Colors.white, fontWeight: FontWeight.bold)),
                   ],
                 ),
               ),
@@ -618,25 +602,17 @@ class _ShopScreenState extends State<ShopScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text(
-                'Awesome!',
-                style: TextStyle(
-                  color: Color(0xFF4CAF50),
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              child: const Text('Awesome!',
+                  style: TextStyle(
+                      color: Color(0xFF4CAF50),
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold)),
             ),
           ],
         ),
       );
-
       return true;
-    } else {
-      // Show error (shouldn't happen with proper checks)
-      if (!mounted) return false;
-
-      return false;
     }
+    return false;
   }
 }

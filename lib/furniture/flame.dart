@@ -20,33 +20,38 @@ class FlameWidget extends StatefulWidget {
 class _FlameWidgetState extends State<FlameWidget>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
-  final List<_Spark> _sparks = [];
   final Random _rng = Random();
   int _frameCount = 0;
+
+  // ✅ Pre-allocated fixed pool — no garbage creation each frame
+  static const int _maxSparks = 5;
+  late final List<_Spark> _sparks;
 
   @override
   void initState() {
     super.initState();
+
+    // ✅ Initialize pool with dead sparks
+    _sparks = List.generate(_maxSparks, (_) => _Spark.dead());
+
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1600),
     )..repeat();
 
     _controller.addListener(_onTick);
-
-    for (int i = 0; i < 3; i++) {
-      _sparks.add(_Spark.random(_rng, widget.width, widget.height));
-    }
   }
 
   void _onTick() {
     _frameCount++;
-    // Only update sparks every 3 frames
     if (_frameCount % 3 == 0) {
-      for (final spark in _sparks) spark.update();
-      _sparks.removeWhere((s) => s.isDead);
-      while (_sparks.length < 3) {
-        _sparks.add(_Spark.random(_rng, widget.width, widget.height));
+      // ✅ Recycle dead sparks instead of creating new ones
+      for (final spark in _sparks) {
+        if (spark.isDead) {
+          spark.reset(_rng, widget.width, widget.height);
+        } else {
+          spark.update();
+        }
       }
     }
   }
@@ -68,12 +73,11 @@ class _FlameWidgetState extends State<FlameWidget>
           animation: _controller,
           builder: (context, _) {
             final t = _controller.value;
-            // Derive all values from single controller
-            final flameHeight   = 0.82 + 0.18 * _sine(t * 2 * pi);
-            final flameSway     = 0.10 * _sine(t * 2 * pi);
+            final flameHeight    = 0.82 + 0.18 * _sine(t * 2 * pi);
+            final flameSway      = 0.10 * _sine(t * 2 * pi);
             final flickerOpacity = 0.65 + 0.35 * _sine(t * 2 * pi * 8.9);
-            final glowSize      = 0.85 + 0.30 * _sine(t * 2 * pi * 1.33);
-            final turbulence    = _sine(t * 2 * pi * 4.0);
+            final glowSize       = 0.85 + 0.30 * _sine(t * 2 * pi * 1.33);
+            final turbulence     = _sine(t * 2 * pi * 4.0);
 
             return CustomPaint(
               size: Size(widget.width, widget.height),
@@ -95,54 +99,55 @@ class _FlameWidgetState extends State<FlameWidget>
   static double _sine(double x) => sin(x);
 }
 
+// ✅ Recyclable spark — no allocations after init
 class _Spark {
-  double x, y, vx, vy, life, size;
-  final double maxLife;
+  double x = 0, y = 0, vx = 0, vy = 0, life = 0, size = 0;
+  double maxLife = 1;
+  bool _dead = true;
 
-  _Spark({
-    required this.x, required this.y,
-    required this.vx, required this.vy,
-    required this.life, required this.size,
-    required this.maxLife,
-  });
+  // ✅ Start as dead — will be reset on first use
+  _Spark.dead();
 
-  factory _Spark.random(Random rng, double w, double h) {
+  void reset(Random rng, double w, double h) {
     final cx = w / 2;
-    return _Spark(
-      x: cx + (rng.nextDouble() - 0.5) * w * 0.3,
-      y: h * 0.45 - rng.nextDouble() * h * 0.25,
-      vx: (rng.nextDouble() - 0.5) * 1.2,
-      vy: -(0.8 + rng.nextDouble() * 1.5),
-      life: 0.6 + rng.nextDouble() * 0.4,
-      size: 0.8 + rng.nextDouble() * 1.8,
-      maxLife: 0.6 + rng.nextDouble() * 0.4,
-    );
+    x = cx + (rng.nextDouble() - 0.5) * w * 0.3;
+    y = h * 0.45 - rng.nextDouble() * h * 0.25;
+    vx = (rng.nextDouble() - 0.5) * 1.2;
+    vy = -(0.8 + rng.nextDouble() * 1.5);
+    maxLife = 0.6 + rng.nextDouble() * 0.4;
+    life = maxLife;
+    size = 0.8 + rng.nextDouble() * 1.8;
+    _dead = false;
   }
 
   void update() {
-    x += vx; y += vy;
-    vx *= 0.97; vy -= 0.04;
+    x += vx;
+    y += vy;
+    vx *= 0.97;
+    vy -= 0.04;
     life -= 0.03;
+    if (life <= 0) _dead = true;
   }
 
-  bool get isDead => life <= 0;
-  double get alpha => (life / maxLife).clamp(0.0, 1.0);
+  bool get isDead => _dead;
+  double get alpha => _dead ? 0.0 : (life / maxLife).clamp(0.0, 1.0);
 }
 
 class _FlamePainter extends CustomPainter {
   final double flameHeight, flameSway, flickerOpacity, glowSize, turbulence;
   final List<_Spark> sparks;
 
-  // Reuse paints to avoid allocations every frame
+  // ✅ Reuse paints to avoid allocations every frame
   static final _glowPaint1  = Paint();
-  static final _glowPaint2  = Paint();
-  static final _shimmerPaint = Paint();
   static final _sparkPaint  = Paint();
 
   _FlamePainter({
-    required this.flameHeight, required this.flameSway,
-    required this.flickerOpacity, required this.glowSize,
-    required this.turbulence, required this.sparks,
+    required this.flameHeight,
+    required this.flameSway,
+    required this.flickerOpacity,
+    required this.glowSize,
+    required this.turbulence,
+    required this.sparks,
   });
 
   @override
@@ -152,7 +157,7 @@ class _FlamePainter extends CustomPainter {
     final swayX = flameSway * s.width * 0.55;
     final turbX = turbulence * s.width * 0.03;
 
-    // ── Outer glow (no blur for performance) ─────────────────
+    // ── Outer glow ────────────────────────────────────────
     _glowPaint1
       ..color = const Color(0xFFFF4400).withOpacity(0.12 * flickerOpacity)
       ..maskFilter = null;
@@ -165,7 +170,7 @@ class _FlamePainter extends CustomPainter {
       _glowPaint1,
     );
 
-    // ── Flame layers ──────────────────────────────────────────
+    // ── Flame layers ──────────────────────────────────────
     _drawFlame(canvas, s, cx, baseY,
         swayX: swayX, turbX: turbX * 1.2,
         topOffset: s.height * 0.03, wf: 0.42, hf: flameHeight,
@@ -191,31 +196,40 @@ class _FlamePainter extends CustomPainter {
         topOffset: s.height * 0.21, wf: 0.07, hf: flameHeight * 0.86,
         c1: const Color(0xFFFFFFFF), c2: const Color(0xFFFFFDE0));
 
-    // ── Sparks ────────────────────────────────────────────────
+    // ── Sparks ────────────────────────────────────────────
     for (final spark in sparks) {
+      if (spark.isDead) continue;
       _sparkPaint.color = Color.lerp(
         const Color(0xFFFFFFAA),
         const Color(0xFFFF8800),
         1.0 - spark.alpha,
       )!.withOpacity(spark.alpha * flickerOpacity);
-      canvas.drawCircle(Offset(spark.x, spark.y), spark.size * spark.alpha, _sparkPaint);
+      canvas.drawCircle(
+          Offset(spark.x, spark.y), spark.size * spark.alpha, _sparkPaint);
     }
 
-    // ── Handle ────────────────────────────────────────────────
+    // ── Handle ────────────────────────────────────────────
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(cx - 4, s.height * 0.47, 8, s.height * 0.53),
         const Radius.circular(2.5),
       ),
-      Paint()..shader = LinearGradient(
-        begin: Alignment.centerLeft,
-        end: Alignment.centerRight,
-        colors: const [Color(0xFF3A1A05), Color(0xFF8B5E3C), Color(0xFF6B4020), Color(0xFF3A1A05)],
-        stops: const [0.0, 0.3, 0.7, 1.0],
-      ).createShader(Rect.fromLTWH(cx - 4, s.height * 0.47, 8, s.height * 0.53)),
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: const [
+            Color(0xFF3A1A05),
+            Color(0xFF8B5E3C),
+            Color(0xFF6B4020),
+            Color(0xFF3A1A05)
+          ],
+          stops: const [0.0, 0.3, 0.7, 1.0],
+        ).createShader(
+            Rect.fromLTWH(cx - 4, s.height * 0.47, 8, s.height * 0.53)),
     );
 
-    // ── Bowl ──────────────────────────────────────────────────
+    // ── Bowl ──────────────────────────────────────────────
     final bowl = Path()
       ..moveTo(cx - 10, s.height * 0.455)
       ..quadraticBezierTo(cx - 9, s.height * 0.44, cx - 8, s.height * 0.44)
@@ -225,19 +239,29 @@ class _FlamePainter extends CustomPainter {
       ..quadraticBezierTo(cx, s.height * 0.538, cx - 7, s.height * 0.530)
       ..close();
 
-    canvas.drawPath(bowl, Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: const [Color(0xFFAA7044), Color(0xFF7A4A20), Color(0xFF4A2A10)],
-      ).createShader(Rect.fromLTWH(cx - 10, s.height * 0.44, 20, s.height * 0.10)));
+    canvas.drawPath(
+        bowl,
+        Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: const [
+              Color(0xFFAA7044),
+              Color(0xFF7A4A20),
+              Color(0xFF4A2A10)
+            ],
+          ).createShader(Rect.fromLTWH(
+              cx - 10, s.height * 0.44, 20, s.height * 0.10)));
   }
 
-  void _drawFlame(Canvas canvas, Size s, double cx, double baseY, {
-    required double swayX, required double turbX,
-    required double topOffset, required double wf, required double hf,
-    required Color c1, required Color c2,
-  }) {
+  void _drawFlame(Canvas canvas, Size s, double cx, double baseY,
+      {required double swayX,
+        required double turbX,
+        required double topOffset,
+        required double wf,
+        required double hf,
+        required Color c1,
+        required Color c2}) {
     final flameH = (baseY - topOffset) * hf;
     final topY   = baseY - flameH;
     final halfW  = s.width * wf;
@@ -254,13 +278,15 @@ class _FlamePainter extends CustomPainter {
           tipX, topY)
       ..close();
 
-    canvas.drawPath(path, Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [c1, c2, c2.withOpacity(0.0)],
-        stops: const [0.0, 0.55, 1.0],
-      ).createShader(Rect.fromLTWH(cx - halfW, topY, halfW * 2, flameH)));
+    canvas.drawPath(
+        path,
+        Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [c1, c2, c2.withOpacity(0.0)],
+            stops: const [0.0, 0.55, 1.0],
+          ).createShader(Rect.fromLTWH(cx - halfW, topY, halfW * 2, flameH)));
   }
 
   @override

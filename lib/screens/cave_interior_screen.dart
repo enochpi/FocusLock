@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/services.dart';
@@ -27,13 +29,23 @@ class CaveInteriorScreen extends StatefulWidget {
 
 class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
   ui.Image? _backgroundImage;
-  bool _showFlash    = false;
-  double _flashOpacity = 0.0;
+  Timer? _skyTimer; // ✅ added
 
   @override
   void initState() {
     super.initState();
     _loadBackgroundImage();
+
+    // ✅ Rebuild every minute so sky color transitions smoothly
+    _skyTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _skyTimer?.cancel(); // ✅ added
+    super.dispose();
   }
 
   Future<void> _loadBackgroundImage() async {
@@ -53,26 +65,6 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
       case 2:  return 'assets/images/house_background.png';
       default: return 'assets/images/cave_background.png';
     }
-  }
-
-  Future<void> _onDoorTapped() async {
-    setState(() { _showFlash = true; _flashOpacity = 0; });
-    for (double i = 0; i <= 1.0; i += 0.1) {
-      await Future.delayed(const Duration(milliseconds: 30));
-      if (mounted) setState(() => _flashOpacity = i);
-    }
-    if (!mounted) return;
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => RoomScreen(roomType: RoomType.houseBedroom),
-      ),
-    );
-    for (double i = 1.0; i >= 0; i -= 0.1) {
-      await Future.delayed(const Duration(milliseconds: 30));
-      if (mounted) setState(() => _flashOpacity = i);
-    }
-    if (mounted) setState(() => _showFlash = false);
   }
 
   @override
@@ -120,17 +112,8 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
                 child: Center(
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: _onDoorTapped,
                     child: Container(width: 80, height: 120),
                   ),
-                ),
-              ),
-
-            // White flash
-            if (_showFlash)
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: Container(color: Colors.white.withOpacity(_flashOpacity)),
                 ),
               ),
 

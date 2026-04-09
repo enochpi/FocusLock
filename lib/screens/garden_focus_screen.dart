@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:focus_life/services/achievements_service.dart';
 import 'package:focus_life/services/streak_service.dart';
+import 'package:rive/rive.dart' hide LinearGradient, RadialGradient;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import 'dart:math' as math;
@@ -21,6 +22,7 @@ import '../services/feedback_service.dart';
 void startCallback() {
   FlutterForegroundTask.setTaskHandler(_FocusTaskHandler());
 }
+
 class _FocusTaskHandler extends TaskHandler {
   int _remainingSeconds = 0;
 
@@ -48,7 +50,7 @@ class _FocusTaskHandler extends TaskHandler {
 
   @override
   Future<void> onReceiveData(Object data) async {
-    if (data == 'pause') _remainingSeconds = -999; // freeze
+    if (data == 'pause') _remainingSeconds = -999;
     if (data == 'resume') {
       _remainingSeconds =
           await FlutterForegroundTask.getData<int>(key: 'remainingSeconds') ?? 0;
@@ -60,8 +62,8 @@ class _FocusTaskHandler extends TaskHandler {
 
   String _format(int s) {
     int h = s ~/ 3600, m = (s % 3600) ~/ 60, sec = s % 60;
-    if (h > 0) return '${h}h ${m.toString().padLeft(2,'0')}m ${sec.toString().padLeft(2,'0')}s';
-    if (m > 0) return '${m}m ${sec.toString().padLeft(2,'0')}s';
+    if (h > 0) return '${h}h ${m.toString().padLeft(2, '0')}m ${sec.toString().padLeft(2, '0')}s';
+    if (m > 0) return '${m}m ${sec.toString().padLeft(2, '0')}s';
     return '${sec}s remaining';
   }
 }
@@ -95,11 +97,13 @@ void _initForegroundTask() {
 class GardenFocusScreen extends StatefulWidget {
   final Character character;
   final int focusDurationMinutes;
+  final int? initialRemainingSeconds; // ✅ new optional param
 
   const GardenFocusScreen({
     super.key,
     required this.character,
     required this.focusDurationMinutes,
+    this.initialRemainingSeconds, // ✅ added
   });
 
   @override
@@ -119,12 +123,17 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
 
   Timer? _breakReminderTimer;
   Timer? _saveTimer;
+  Timer? _uiTimer; // ✅ new — drives UI countdown independently
   bool _isPaused   = false;
   bool _isFinished = false;
 
   bool _torchesOwned  = false;
   bool _chimesOwned   = false;
   bool _fountainOwned = false;
+
+  int _characterTapCount = 0;
+  bool _easterEggActive = false;
+
 
   double get _totalMultiplier =>
       upgrades.getTotalMultiplier()
@@ -135,7 +144,11 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
   @override
   void initState() {
     super.initState();
-    _remainingSeconds = widget.focusDurationMinutes * 60;
+
+    // ✅ Use initialRemainingSeconds if provided (resuming session)
+    // otherwise start from full duration (new session)
+    _remainingSeconds = widget.initialRemainingSeconds
+        ?? widget.focusDurationMinutes * 60;
 
     _characterController = AnimationController(
       vsync: this,
@@ -145,10 +158,10 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     WidgetsBinding.instance.addObserver(this);
     _initForegroundTask();
 
-    // Listen to ticks from the foreground task
     FlutterForegroundTask.addTaskDataCallback(_onTaskData);
 
-    _loadDecorationBoosts().then((_) => _startFocusSession());
+    _startUiTimer();
+    _initSession();
   }
 
   @override
@@ -162,15 +175,19 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     super.dispose();
   }
 
+
   // ── Receive seconds from foreground task ──────────────────────────────
   void _onTaskData(Object data) {
-    if (!mounted) return;
+    if (!mounted || _isFinished) return;
+
     final seconds = data as int;
     if (seconds == -1) {
-      // Timer finished in background
+      _uiTimer?.cancel();
       _finishSession();
     } else {
-      setState(() => _remainingSeconds = seconds);
+      // ✅ Sync UI with foreground task value to correct any drift
+      // The foreground task is authoritative, UI timer just keeps screen alive
+      if (mounted) setState(() => _remainingSeconds = seconds);
     }
   }
 
@@ -184,21 +201,36 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
       });
     }
   }
+  Future<void> _initSession() async {
+    await _loadDecorationBoosts();
+    await _startFocusSession();
+  }
 
-  // ── App lifecycle — tell foreground task to pause/resume ──────────────
+  // ── App lifecycle ─────────────────────────────────────────────────────
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.paused) {
-      // Screen off — foreground task keeps counting, just pause music
-      SoundService().pauseMusic();
+      SoundService().onAppBackground();
+      // ✅ Save remaining time immediately when phone screen turns off
+      // This is the most accurate snapshot before the phone might die
+      if (_isWorking && !_isPaused) {
+        sessionService.updateRemainingTime(_remainingSeconds);
+      }
       if (_isPaused) {
         FlutterForegroundTask.sendDataToTask('pause');
       }
     } else if (state == AppLifecycleState.resumed) {
-      SoundService().resumeMusic();
+      SoundService().onAppForeground();
       if (!_isPaused) {
         FlutterForegroundTask.sendDataToTask('resume');
+      }
+    } else if (state == AppLifecycleState.detached) {
+      SoundService().stopMusic();
+      // ✅ Final save when app is fully killed
+      if (_isWorking) {
+        sessionService.updateRemainingTime(_remainingSeconds);
       }
     }
   }
@@ -251,6 +283,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     if (!_isPaused) {
       _isPaused = true;
       FlutterForegroundTask.sendDataToTask('pause');
+      // ✅ UI timer checks _isPaused flag so it stops counting automatically
     }
   }
 
@@ -258,18 +291,20 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     if (_isPaused && _isWorking && _remainingSeconds > 0) {
       _isPaused = false;
       FlutterForegroundTask.sendDataToTask('resume');
+      // ✅ UI timer resumes automatically since _isPaused is now false
     }
   }
 
-  void _startFocusSession() async {
+  Future<void> _startFocusSession() async {
     setState(() => _isWorking = true);
     await sessionService.startSession(durationMinutes: widget.focusDurationMinutes);
 
-    // Save initial seconds for the foreground task to read
+    // ✅ Use actual remaining seconds not full duration
     await FlutterForegroundTask.saveData(
-        key: 'remainingSeconds', value: _remainingSeconds);
+      key: 'remainingSeconds',
+      value: _remainingSeconds,
+    );
 
-    // Start foreground service
     await FlutterForegroundTask.startService(
       serviceId: 256,
       notificationTitle: 'Focus Life — Keep it up! 🌱',
@@ -283,10 +318,35 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     SoundService().playFocusMusic();
   }
 
+// ✅ UI timer — counts down every second and drives redraws
+// The foreground task is the source of truth for the actual value,
+// but this keeps the screen alive and animated between callbacks
+  void _startUiTimer() {
+    _uiTimer?.cancel();
+    _uiTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted || _isFinished) {
+        timer.cancel();
+        return;
+      }
+      if (_isPaused) return; // don't count down while paused
+
+      setState(() {
+        if (_remainingSeconds > 0) {
+          _remainingSeconds--;
+        } else {
+          // Timer hit zero in UI — trigger finish
+          timer.cancel();
+          _finishSession();
+        }
+      });
+    });
+  }
+
   void _startPeriodicSave() {
     _saveTimer?.cancel();
     _saveTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       if (_isWorking && !_isPaused) {
+        // ✅ Now saves BOTH timestamp and remaining seconds
         sessionService.updateRemainingTime(_remainingSeconds);
       }
     });
@@ -305,6 +365,8 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
         builder: (_) => BlockingScreen(
           appName: appName,
           onReturn: () {
+            // ✅ Tell monitor this block was dismissed so cooldown starts
+            appMonitor.onBlockDismissed(packageName);
             _resumeTimer();
             if (_isWorking && mounted) {
               appMonitor.startMonitoring(_onBlockedAppDetected);
@@ -315,31 +377,32 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     );
   }
 
+
+
   int _calculatePeasSoFar() {
     int elapsedMinutes = widget.focusDurationMinutes - (_remainingSeconds ~/ 60);
-    final double torchMultiplier = (_torchesOwned  ? 1.15 : 1.0)
-        * (_chimesOwned   ? 1.10 : 1.0)
-        * (_fountainOwned ? 1.12 : 1.0);
     return CurrencyService.calculatePeasFromFocus(
       elapsedMinutes,
-      upgradeMultiplier: upgrades.getTotalMultiplier(),
-      torchMultiplier: torchMultiplier,
+      upgradeMultiplier:  upgrades.getTotalMultiplier(),
+      torchMultiplier:    _torchesOwned  ? 1.15 : 1.0,
+      chimesMultiplier:   _chimesOwned   ? 1.10 : 1.0,
+      fountainMultiplier: _fountainOwned ? 1.12 : 1.0,
     );
   }
 
+  // ✅ Single clean version of _finishSession — duplicate removed
   void _finishSession() async {
     if (_isFinished || !_isWorking) return;
 
-    setState(() {
-      _isFinished = true;
-      _isWorking  = false;
-    });
+    _isFinished = true;
+    _isWorking  = false;
 
+    FlutterForegroundTask.removeTaskDataCallback(_onTaskData);
+    _uiTimer?.cancel(); // ✅ added
     _saveTimer?.cancel();
     _breakReminderTimer?.cancel();
     appMonitor.stopMonitoring();
 
-    // Stop foreground service
     await FlutterForegroundTask.stopService();
 
     try { await sessionService.completeSession(); } catch (e) { debugPrint('❌ completeSession: $e'); }
@@ -351,17 +414,20 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
       }
     } catch (e) { debugPrint('❌ notification: $e'); }
 
-    final double torchMultiplier = (_torchesOwned  ? 1.15 : 1.0)
-        * (_chimesOwned   ? 1.10 : 1.0)
-        * (_fountainOwned ? 1.12 : 1.0);
-    int peasEarned = CurrencyService.calculatePeasFromFocus(
+    final int peasEarned = CurrencyService.calculatePeasFromFocus(
       widget.focusDurationMinutes,
-      upgradeMultiplier: upgrades.getTotalMultiplier(),
-      torchMultiplier: torchMultiplier,
+      upgradeMultiplier:  upgrades.getTotalMultiplier(),
+      torchMultiplier:    _torchesOwned  ? 1.15 : 1.0,
+      chimesMultiplier:   _chimesOwned   ? 1.10 : 1.0,
+      fountainMultiplier: _fountainOwned ? 1.12 : 1.0,
     );
 
     try { await currency.addPeas(peasEarned); } catch (e) { debugPrint('❌ addPeas: $e'); }
     try { await AchievementService().onFocusSessionCompleted(widget.focusDurationMinutes); } catch (e) { debugPrint('❌ achievement: $e'); }
+    try { await AchievementService().onSessionsInDay(); } catch (e) { debugPrint('❌ speed_demon: $e'); }
+
+    try { await currency.addPeas(peasEarned); } catch (e) { debugPrint('❌ addPeas: $e'); }
+    try { await AchievementService().onPeasEarned(peasEarned); } catch (e) { debugPrint('❌ peas achievement: $e'); } // ✅ add this
 
     int earnings = widget.focusDurationMinutes * 5;
     widget.character.earnMoney(earnings);
@@ -370,6 +436,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     try { await SoundService().playSessionComplete(); } catch (e) { debugPrint('❌ sound: $e'); }
     try { SoundService().playBackgroundMusic(); } catch (e) { debugPrint('❌ music: $e'); }
 
+    // ✅ Final mounted check after all awaits
     if (!mounted) return;
 
     showDialog(
@@ -482,15 +549,100 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
         backgroundColor: const Color(0xFF87CEEB),
         body: Stack(
           children: [
-            CustomPaint(
-              size: Size.infinite,
-              painter: GardenPainter(
-                characterAnimation: _characterController.value,
-                isWorking: _isWorking,
-                totalSeconds: widget.focusDurationMinutes * 60,
-                remainingSeconds: _remainingSeconds,
+            // Garden painter — yellow man is drawn inside here
+            AnimatedBuilder(
+              animation: _characterController,
+              builder: (context, _) {
+                return CustomPaint(
+                  size: Size.infinite,
+                  painter: GardenPainter(
+                    characterAnimation: _characterController.value,
+                    isWorking: _isWorking,
+                    totalSeconds: widget.focusDurationMinutes * 60,
+                    remainingSeconds: _remainingSeconds,
+                  ),
+                );
+              },
+            ),
+
+            // ✅ Rive overlaid exactly on top of where GardenPainter
+            // draws the yellow man (w*0.55, h*0.68 area)
+            // Fades out when easter egg is active
+            AnimatedOpacity(
+              opacity: _easterEggActive ? 0.0 : 1.0,
+              duration: const Duration(milliseconds: 800),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final w = constraints.maxWidth;
+                  final h = constraints.maxHeight;
+                  // ✅ Match exactly where _drawCharacter puts the character
+                  // cx = w * 0.55, cy = h * 0.68
+                  final charX = w * 0.55;
+                  final charY = h * 0.68;
+
+                  return GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _characterTapCount++;
+                        if (_characterTapCount >= 50) {
+                          _easterEggActive = true;
+                        }
+                      });
+                      if (_characterTapCount == 50) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('🥚 Easter egg found!'),
+                            backgroundColor: Colors.purple,
+                            duration: Duration(seconds: 3),
+                          ),
+                        );
+                      }
+                    },
+                    child: Stack(
+                      children: [
+                        // Invisible full screen tap target aligned to character
+                        Positioned(
+                          left: charX - 70,
+                          top: charY - 90,
+                          width: 140,
+                          height: 170,
+                          child: const RiveAnimation.asset(
+                            'assets/animations/bob_idle.riv',
+                            fit: BoxFit.contain,
+                            stateMachines: ['State Machine 1'],
+                          ),
+                        ),
+
+                        // ✅ Tap counter hint at 25 taps
+                        if (_characterTapCount >= 25 && !_easterEggActive)
+                          Positioned(
+                            left: charX - 50,
+                            top: charY + 90,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.purple.withOpacity(0.8),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                '${50 - _characterTapCount} more...',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                },
               ),
             ),
+
+            // Paused indicator
             if (_isPaused)
               Positioned(
                 top: 120, left: 0, right: 0,
@@ -500,7 +652,8 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                     decoration: BoxDecoration(
                       color: Colors.orange.withOpacity(0.9),
                       borderRadius: BorderRadius.circular(20),
-                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 10)],
+                      boxShadow: [BoxShadow(
+                          color: Colors.black.withOpacity(0.3), blurRadius: 10)],
                     ),
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
@@ -508,26 +661,38 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                         Icon(Icons.pause, color: Colors.white, size: 20),
                         SizedBox(width: 8),
                         Text('Timer Paused',
-                            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold)),
                       ],
                     ),
                   ),
                 ),
               ),
+
+            // Timer display
             Positioned(
               top: 60, left: 0, right: 0,
               child: Center(
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-                  decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(30)),
+                  decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(30)),
                   child: Text(
                     _formatTime(_remainingSeconds),
                     style: const TextStyle(
-                        color: Colors.white, fontSize: 40, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
+                        color: Colors.white,
+                        fontSize: 40,
+                        fontWeight: FontWeight.bold,
+                        fontFamily: 'monospace'),
                   ),
                 ),
               ),
             ),
+
+            // Stop button
             Positioned(
               bottom: 40, left: 0, right: 0,
               child: Center(
@@ -535,11 +700,16 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                   onPressed: _showStopDialog,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red,
-                    padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 20),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 50, vertical: 20),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30)),
                   ),
                   child: const Text('Stop Session',
-                      style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold)),
                 ),
               ),
             ),
@@ -581,10 +751,13 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
             ),
             TextButton(
               onPressed: () async {
+                _uiTimer?.cancel(); // ✅ added
                 _saveTimer?.cancel();
+                _breakReminderTimer?.cancel();
                 appMonitor.stopMonitoring();
                 await FlutterForegroundTask.stopService();
                 await sessionService.cancelSession();
+                SoundService().switchToBackgroundMusic();
                 Navigator.pop(context);
                 Navigator.pop(context);
               },
@@ -675,12 +848,15 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
           ),
           TextButton(
             onPressed: () async {
+              _uiTimer?.cancel(); // ✅ added
               _saveTimer?.cancel();
+              _breakReminderTimer?.cancel();
               appMonitor.stopMonitoring();
               await FlutterForegroundTask.stopService();
               await sessionService.cancelSession();
               if (peasKept > 0) await currency.addPeas(peasKept);
               widget.character.addFocusMinutes(elapsedMinutes);
+              SoundService().switchToBackgroundMusic();;
               Navigator.pop(context);
               Navigator.pop(context);
             },
@@ -693,7 +869,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// GARDEN PAINTER — unchanged
+// GARDEN PAINTER
 // ══════════════════════════════════════════════════════════════════════
 class GardenPainter extends CustomPainter {
   final double characterAnimation;
@@ -1102,13 +1278,17 @@ class GardenPainter extends CustomPainter {
   }
 
   void _drawSparkle(Canvas canvas, double x, double y, double s) {
-    final p = Paint()..color = const Color(0xFFFFD700)..strokeWidth = 3..strokeCap = StrokeCap.round;
+    final p = Paint()
+      ..color = const Color(0xFFFFD700)
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
     canvas.drawLine(Offset(x, y - s), Offset(x, y + s), p);
     canvas.drawLine(Offset(x - s, y), Offset(x + s, y), p);
     canvas.drawLine(Offset(x - s*0.7, y - s*0.7), Offset(x + s*0.7, y + s*0.7), p);
     canvas.drawLine(Offset(x - s*0.7, y + s*0.7), Offset(x + s*0.7, y - s*0.7), p);
+    // ✅ Removed MaskFilter.blur — was expensive, barely visible anyway
     canvas.drawCircle(Offset(x, y), s * 0.3,
-        Paint()..color = const Color(0xFFFFD700)..maskFilter = MaskFilter.blur(BlurStyle.normal, s * 0.5));
+        Paint()..color = const Color(0xFFFFD700));
   }
 
   void _drawFlowers(Canvas canvas, double w, double h) {
@@ -1142,5 +1322,5 @@ class GardenPainter extends CustomPainter {
   double sin(double r) => math.sin(r);
 
   @override
-  bool shouldRepaint(covariant CustomPainter old) => true;
+  bool shouldRepaint(covariant CustomPainter old) => false;
 }

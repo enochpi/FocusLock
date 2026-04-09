@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'achievements_service.dart';
 import 'currency_service.dart';
 import 'upgrade_service.dart';
 import 'furniture_service.dart';
@@ -17,6 +18,14 @@ class SaveDataService {
 
   Future<Map<String, dynamic>> _buildSaveData() async {
     final prefs = await SharedPreferences.getInstance();
+
+    // ✅ Read raw achievement progress string and decode it
+    // so it exports in the same ID-keyed format we now save it in
+    final achievementJson = prefs.getString('achievement_progress');
+    final achievementData = achievementJson != null
+        ? jsonDecode(achievementJson)
+        : null;
+
     return {
       'version': 1,
       'exported_at': DateTime.now().toIso8601String(),
@@ -47,6 +56,7 @@ class SaveDataService {
         'daily_claimed': prefs.getBool('daily_reward_claimed') ?? false,
         'last_claim': prefs.getString('daily_reward_last_claim') ?? '',
       },
+      'achievements': achievementData, // ✅ now included in export
     };
   }
 
@@ -101,7 +111,7 @@ class SaveDataService {
       if (currency != null) {
         await prefs.setString('peas', currency['peas'].toString());
         await prefs.setString('coins', currency['coins'].toString());
-        await prefs.setInt('current_stage', currency['stage'] as int? ?? 0);
+        await prefs.setInt('crop_stage', currency['stage'] as int? ?? 0); // ✅ bug #2 fix
         await CurrencyService().init();
       }
 
@@ -139,6 +149,13 @@ class SaveDataService {
           await prefs.setString('daily_reward_last_claim', streak['last_claim']);
         }
         await StreakService().init();
+      }
+
+      // ✅ Restore achievement progress — was completely missing before
+      final achievements = data['achievements'] as Map<String, dynamic>?;
+      if (achievements != null) {
+        await prefs.setString('achievement_progress', jsonEncode(achievements));
+        await AchievementService().init();
       }
 
       return true;

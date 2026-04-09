@@ -129,5 +129,8 @@ class WoodenWindowPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(WoodenWindowPainter old) => old.cycle.hour != cycle.hour;
+  bool shouldRepaint(WoodenWindowPainter old) {
+    // ✅ Same fix — fractional comparison
+    return (old.cycle.hour - cycle.hour).abs() > 0.001;
+  }
 }

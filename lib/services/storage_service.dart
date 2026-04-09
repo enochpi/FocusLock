@@ -55,7 +55,8 @@ class StorageService {
 
     // Upgrades
     await prefs.remove('upgrades');
-    await prefs.remove('current_stage');
+    await prefs.remove('current_stage'); // house stage
+    await prefs.remove('crop_stage');    // ✅ crop stage
 
     // Achievements
     await prefs.remove('achievement_progress');

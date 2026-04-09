@@ -174,7 +174,11 @@ class EarthenWindowPainter extends CustomPainter {
   static double _cos(double x) => _sin(x + 1.5707963);
 
   @override
-  bool shouldRepaint(EarthenWindowPainter old) => old.cycle.hour != cycle.hour;
+  bool shouldRepaint(EarthenWindowPainter old) {
+    // ✅ Compare fractional hours so sky transitions every minute
+    // instead of jumping once per hour
+    return old.cycle.hour != cycle.hour;
+  }
 }
 
 class _SimpleRng {

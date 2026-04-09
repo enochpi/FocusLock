@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/achievements_service.dart';
 import '../services/currency_service.dart';
 import '../services/sound_service.dart';
 import '../utils/number_formatter.dart';
@@ -141,6 +142,8 @@ class _ConverterDialogState extends State<ConverterDialog> {
                     bool success = await currency.convertPeasToCoins(peasToConvert);
                     if (success) {
                       SoundService().playCoinConvert();
+                      // ✅ Track conversion achievements
+                      await AchievementService().onPeasConverted(peasToConvert);
                       Navigator.pop(context, true);
                     }
                   },

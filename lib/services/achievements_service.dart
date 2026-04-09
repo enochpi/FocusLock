@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'package:flutter/foundation.dart'; // ✅ add this line
 
 enum AchievementCategory {
   focus,
@@ -90,6 +91,8 @@ class Achievement {
 
 class AchievementService {
   static final AchievementService _instance = AchievementService._internal();
+  static const String _sessionsInDayKey = 'achievement_sessions_today';
+  static const String _sessionsInDayDateKey = 'achievement_sessions_today_date';
   factory AchievementService() => _instance;
   AchievementService._internal();
 
@@ -344,7 +347,7 @@ class AchievementService {
         description: 'Own all furniture items',
         emoji: '🎯',
         category: AchievementCategory.furniture,
-        targetValue: 20,
+        targetValue: 22,
         rewards: [
           AchievementReward(type: RewardType.coins, value: 1000, displayText: '1,000 coins'),
         ],
@@ -674,17 +677,48 @@ class AchievementService {
 
   Future<void> _saveProgress() async {
     final prefs = await SharedPreferences.getInstance();
-    final progressData = _achievements.map((a) => a.toJson()).toList();
-    await prefs.setString('achievement_progress', json.encode(progressData));
+    // ✅ Save as a map keyed by ID instead of a positional list
+    // so reordering or adding achievements never corrupts saved progress
+    final Map<String, dynamic> progressMap = {};
+    for (final achievement in _achievements) {
+      progressMap[achievement.id] = achievement.toJson();
+    }
+    await prefs.setString('achievement_progress', json.encode(progressMap));
   }
 
   Future<void> _loadProgress() async {
     final prefs = await SharedPreferences.getInstance();
     final progressJson = prefs.getString('achievement_progress');
     if (progressJson == null) return;
-    final List<dynamic> progressData = json.decode(progressJson);
-    for (var i = 0; i < progressData.length && i < _achievements.length; i++) {
-      _achievements[i] = Achievement.fromJson(progressData[i], _achievements[i]);
+
+    final decoded = json.decode(progressJson);
+
+    // ✅ Handle both old format (List) and new format (Map)
+    // so existing players don't lose their progress on first update
+    if (decoded is List) {
+      // Old index-based format — migrate it gracefully
+      // Match by position for the last time, then next save
+      // will write the new ID-keyed format automatically
+      debugPrint('📦 Migrating achievement progress to ID-keyed format');
+      for (var i = 0; i < decoded.length && i < _achievements.length; i++) {
+        final data = decoded[i] as Map<String, dynamic>;
+        _achievements[i] = Achievement.fromJson(data, _achievements[i]);
+      }
+    } else if (decoded is Map<String, dynamic>) {
+      // New ID-keyed format — match each saved entry to its achievement by ID
+      for (final achievement in _achievements) {
+        final data = decoded[achievement.id];
+        if (data != null) {
+          final updated = Achievement.fromJson(
+            data as Map<String, dynamic>,
+            achievement,
+          );
+          final index = _achievements.indexOf(achievement);
+          _achievements[index] = updated;
+        }
+        // If no saved data for this achievement ID, it stays at default
+        // which is correct for newly added achievements
+      }
     }
   }
 
@@ -717,7 +751,9 @@ class AchievementService {
   }
 
   Future<void> onFurniturePurchased(int totalOwned) async {
-    await incrementProgress('first_furniture');
+    // ✅ updateProgress sets the value directly — won't go backwards
+    // and won't increment past 1 for first_furniture
+    await updateProgress('first_furniture', totalOwned);
     await updateProgress('furniture_3', totalOwned);
     await updateProgress('furniture_5', totalOwned);
     await updateProgress('furniture_all_cave', totalOwned);
@@ -762,7 +798,30 @@ class AchievementService {
     }
   }
 
-  Future<void> onSessionsInDay(int count) async {
+  Future<void> onSessionsInDay() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // Check if we're still on the same day
+    final today = DateTime.now();
+    final todayStr = '${today.year}-${today.month}-${today.day}';
+    final savedDate = prefs.getString(_sessionsInDayDateKey) ?? '';
+
+    int count;
+    if (savedDate != todayStr) {
+      // New day — reset counter
+      count = 1;
+    } else {
+      // Same day — increment
+      count = (prefs.getInt(_sessionsInDayKey) ?? 0) + 1;
+    }
+
+    // Save updated count and date
+    await prefs.setInt(_sessionsInDayKey, count);
+    await prefs.setString(_sessionsInDayDateKey, todayStr);
+
+    // Now check achievement
     await updateProgress('speed_demon', count);
+
+    debugPrint('📊 Sessions today: $count');
   }
 }

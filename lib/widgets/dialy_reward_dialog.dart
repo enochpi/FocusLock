@@ -10,11 +10,9 @@ Future<void> showDailyRewardDialog(BuildContext context) async {
   final rewardService = DailyRewardService();
 
   if (!rewardService.canClaimReward()) {
-    // Already claimed today - show "come back tomorrow" message
     return _showAlreadyClaimedDialog(context);
   }
 
-  // Can claim! Show reward dialog
   return showDialog(
     context: context,
     barrierDismissible: false,
@@ -37,17 +35,23 @@ class _DailyRewardDialogState extends State<DailyRewardDialog>
   late AnimationController _bounceController;
   bool _claimed = false;
 
+  // Store today's reward so it doesn't change after claiming
+  late Map<String, int> _todayReward;
+
   @override
   void initState() {
     super.initState();
 
-    // Glow animation
+    // Calculate today's reward BEFORE claiming so the display
+    // shows the correct amount (getNextReward previews tomorrow)
+    final streak = _rewardService.currentStreak;
+    _todayReward = _rewardService.calculateTodayReward(streak + 1);
+
     _glowController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
 
-    // Bounce animation
     _bounceController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
@@ -64,7 +68,6 @@ class _DailyRewardDialogState extends State<DailyRewardDialog>
   Future<void> _claimReward() async {
     setState(() => _claimed = true);
 
-    // Bounce animation
     await _bounceController.forward();
 
     // Claim the reward
@@ -72,12 +75,10 @@ class _DailyRewardDialogState extends State<DailyRewardDialog>
     final coins = rewards['coins']!;
     final crops = rewards['crops']!;
 
-    // Grant rewards (addPeas works for all crop types!)
     await CurrencyService().addCoins(coins);
     await CurrencyService().addPeas(crops);
     SoundService().playDailyReward();
 
-    // Wait a moment to show the animation
     await Future.delayed(const Duration(milliseconds: 500));
     if (mounted) {
       Navigator.pop(context);
@@ -88,7 +89,6 @@ class _DailyRewardDialogState extends State<DailyRewardDialog>
   Widget build(BuildContext context) {
     final streak = _rewardService.currentStreak;
     final nextStreak = streak + 1;
-    final reward = _rewardService.getNextReward();
     final multiplier = _rewardService.getStreakMultiplier();
     final milestone = _rewardService.getNextMilestone();
 
@@ -153,7 +153,7 @@ class _DailyRewardDialogState extends State<DailyRewardDialog>
 
                   const SizedBox(height: 24),
 
-                  // Reward display
+                  // Reward display — shows TODAY's reward, not tomorrow's
                   AnimatedBuilder(
                     animation: _bounceController,
                     builder: (context, child) {
@@ -192,7 +192,7 @@ class _DailyRewardDialogState extends State<DailyRewardDialog>
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
-                                        NumberFormatter.format(reward['coins']!),
+                                        NumberFormatter.format(_todayReward['coins']!),
                                         style: const TextStyle(
                                           color: Color(0xFFFFD700),
                                           fontSize: 24,
@@ -211,7 +211,7 @@ class _DailyRewardDialogState extends State<DailyRewardDialog>
 
                                   const SizedBox(width: 40),
 
-                                  // Crops (dynamic: peas/carrots/corn/strawberries/wheat)
+                                  // Crops
                                   Column(
                                     children: [
                                       Text(
@@ -220,7 +220,7 @@ class _DailyRewardDialogState extends State<DailyRewardDialog>
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
-                                        NumberFormatter.format(reward['crops']!),
+                                        NumberFormatter.format(_todayReward['crops']!),
                                         style: const TextStyle(
                                           color: Color(0xFF4CAF50),
                                           fontSize: 24,
@@ -356,7 +356,7 @@ class _DailyRewardDialogState extends State<DailyRewardDialog>
               ),
             ),
 
-            // Trophy icon at top
+            // Gift icon at top
             Positioned(
               top: 0,
               left: 0,
@@ -435,9 +435,9 @@ Future<void> _showAlreadyClaimedDialog(BuildContext context) async {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
+          const Text(
             'You already claimed today\'s reward!',
-            style: const TextStyle(
+            style: TextStyle(
               color: Colors.white70,
               fontSize: 16,
             ),

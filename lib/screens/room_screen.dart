@@ -22,12 +22,6 @@ extension RoomTypeExtension on RoomType {
     }
   }
 
-  RoomType? get nextRoom {
-    switch (this) {
-      case RoomType.houseBedroom: return null;
-    }
-  }
-
   Color get fallbackColor {
     switch (this) {
       case RoomType.houseBedroom: return const Color(0xFF3a2a4a);
@@ -63,27 +57,6 @@ class _RoomScreenState extends State<RoomScreen> {
     } catch (e) {
       debugPrint('Background not found: $e');
     }
-  }
-
-  void _onDoorTapped() async {
-    final next = widget.roomType.nextRoom;
-    if (next == null) return;
-
-    setState(() => _showFlash = true);
-    for (double i = 0; i <= 1.0; i += 0.1) {
-      await Future.delayed(const Duration(milliseconds: 30));
-      if (mounted) setState(() => _flashOpacity = i);
-    }
-    if (!mounted) return;
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => RoomScreen(roomType: next)),
-    );
-    for (double i = 1.0; i >= 0; i -= 0.1) {
-      await Future.delayed(const Duration(milliseconds: 30));
-      if (mounted) setState(() => _flashOpacity = i);
-    }
-    if (mounted) setState(() => _showFlash = false);
   }
 
   bool _isOwned(String furnitureId) =>
@@ -242,7 +215,6 @@ class _RoomScreenState extends State<RoomScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final hasNextRoom = widget.roomType.nextRoom != null;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0a0a0a),
@@ -281,27 +253,6 @@ class _RoomScreenState extends State<RoomScreen> {
                 );
               }),
             ),
-
-            // ── Door to next room ─────────────────────────────────────────
-            if (hasNextRoom)
-              Positioned(
-                bottom: 370, left: 0, right: 0,
-                child: Center(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: _onDoorTapped,
-                    child: Container(width: 50, height: 100, color: Colors.transparent),
-                  ),
-                ),
-              ),
-
-            // ── White flash overlay ───────────────────────────────────────
-            if (_showFlash)
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: Container(color: Colors.white.withOpacity(_flashOpacity)),
-                ),
-              ),
 
             // ── Room title ────────────────────────────────────────────────
             Positioned(

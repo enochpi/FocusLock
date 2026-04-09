@@ -220,9 +220,7 @@ class UpgradeService {
     if (currentPeas < unlock.cost) return false;
     if (CurrencyService().coins < unlock.coinCost) return false;
 
-    await CurrencyService().removePeas(unlock.cost.toInt());
-    await CurrencyService().removeCoins(unlock.coinCost);
-
+    // ✅ Currency deduction is handled by the caller (shop_screen.dart)
     unlock.isPurchased = true;
     _currentStage = unlock.unlocksStage;
     await saveUpgrades();
@@ -301,12 +299,9 @@ class UpgradeService {
   }
 
   int getTotalUpgradesPurchased() {
-    int total = 0;
-    for (int stage = 0; stage < 3; stage++) {
-      for (var u in getUpgradesForStage(stage)) {
-        if (isPurchased(u.id)) total++;
-      }
-    }
-    return total;
+    // ✅ Count directly from the upgrades list instead of
+    // looping through hardcoded stage numbers — automatically
+    // handles any number of stages added in future
+    return _upgrades.where((u) => u.isPurchased).length;
   }
 }

@@ -60,7 +60,7 @@ String _getHouseImage(int stage) {
   }
 }
 
-class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderStateMixin {
+class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderStateMixin, WidgetsBindingObserver {
   StorageService storage = StorageService();
   final CurrencyService currency = CurrencyService();
 
@@ -117,10 +117,14 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
         : _viewingStage;
     return stage.clamp(0, 2);
   }
+  void resetViewingStage() {
+    if (mounted) setState(() => _viewingStage = -1);
+  }
   // ── initState ────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     _walkController = AnimationController(
       vsync: this,
@@ -150,9 +154,14 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
 
     if (!SoundService().isPlaying) SoundService().playBackgroundMusic();
 
-    AchievementService().onAchievementUnlocked = (achievement) {
-      _grantAchievementRewards(achievement);
+    AchievementService().onAchievementUnlocked = (achievement) async {
+      // ✅ Grant rewards first
+      await _grantAchievementRewards(achievement);
+      // ✅ Refresh UI so coins/peas update immediately
+      if (mounted) setState(() {});
+      // ✅ Play sound
       SoundService().playAchievement();
+      // ✅ Show popup
       if (mounted && SettingsService().achievementAlerts) {
         showAchievementUnlocked(context, achievement);
       }
@@ -172,11 +181,24 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _walkController?.dispose();
     _butterflyController?.dispose();
     _chimesController?.dispose();
     _fountainController?.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.paused) {
+      SoundService().onAppBackground();
+    } else if (state == AppLifecycleState.resumed) {
+      SoundService().onAppForeground();
+    } else if (state == AppLifecycleState.detached) {
+      SoundService().stopMusic();
+    }
   }
 
   // ── Torch persistence ─────────────────────────────────────────────────
@@ -227,7 +249,15 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
   Widget _stageTab(int stage, String label) {
     final isActive = displayStage == stage;
     return GestureDetector(
-      onTap: () => setState(() => _viewingStage = stage),
+      onTap: () => setState(() {
+        // ✅ If tapping the current unlocked stage, reset to auto-follow
+        // so future unlocks automatically switch the view
+        if (stage == UpgradeService().currentStage) {
+          _viewingStage = -1;
+        } else {
+          _viewingStage = stage;
+        }
+      }),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
@@ -549,7 +579,9 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
         ),
       ),
     ).then((_) {
-      setState(() {});
+      setState(() {
+        _viewingStage = -1; // ✅ reset so displayStage follows currentStage
+      });
       widget.onUpdate();
     });
   }
@@ -612,7 +644,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
   }
 
   // ── Achievement rewards ───────────────────────────────────────────────
-  void _grantAchievementRewards(Achievement achievement) async {
+  Future<void> _grantAchievementRewards(Achievement achievement) async {
     final currency = CurrencyService();
     for (var reward in achievement.rewards) {
       switch (reward.type) {
@@ -621,6 +653,8 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
           break;
         case RewardType.peas:
           await currency.addPeas(reward.value as int);
+          // ✅ Track peas earned for wealth achievements
+          await AchievementService().onPeasEarned(reward.value as int);
           break;
         case RewardType.furniture:
           FurnitureService().ownedFurniture.add(reward.value as String);
@@ -1113,10 +1147,13 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
 
     int peasEarned = CurrencyService.calculatePeasFromFocus(
       session.durationMinutes,
-      upgradeMultiplier: UpgradeService().getTotalMultiplier(),
-      torchMultiplier: torchMultiplier,
+      upgradeMultiplier:  UpgradeService().getTotalMultiplier(),
+      torchMultiplier:    _CaveSceneScreenState.torchesOwned  ? 1.15 : 1.0,
+      chimesMultiplier:   _CaveSceneScreenState.chimesOwned   ? 1.10 : 1.0, // ✅
+      fountainMultiplier: _CaveSceneScreenState.fountainOwned ? 1.12 : 1.0, // ✅
     );
     await CurrencyService().addPeas(peasEarned);
+    await AchievementService().onPeasEarned(peasEarned); // ✅ add this
     int earnings = session.durationMinutes * 5;
     widget.character.earnMoney(earnings);
     widget.character.addFocusMinutes(session.durationMinutes);
@@ -1237,18 +1274,16 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                   builder: (_) => GardenFocusScreen(
                     character: widget.character,
                     focusDurationMinutes: session.durationMinutes,
+                    initialRemainingSeconds: session.remainingSeconds, // ✅
                   ),
                 ),
-              ).then((_) {
-                setState(() {});
-                widget.onUpdate();
-              });
+              );
             },
             style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF4CAF50)),
             child: const Text('Resume',
-                style:
-                TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                style: TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -1748,17 +1783,15 @@ class _TimerPickerDialogState extends State<TimerPickerDialog> {
     else if (hours > 0)             timeDisplay = '${hours}hr';
     else                            timeDisplay = '${mins}min';
 
-    // Combined multiplier including torch and chimes boosts
     double totalMultiplier = UpgradeService().getTotalMultiplier()
-        * (_CaveSceneScreenState.torchesOwned  ? 1.15 : 1.0)
-        * (_CaveSceneScreenState.chimesOwned   ? 1.10 : 1.0)
-        * (_CaveSceneScreenState.fountainOwned ? 1.12 : 1.0);
+        * (_CaveSceneScreenState.torchesOwned ? 1.15 : 1.0);
 
     int peaEarnings = CurrencyService.calculatePeasFromFocus(
       minutes,
-      upgradeMultiplier: totalMultiplier,
+      upgradeMultiplier:  totalMultiplier,
+      chimesMultiplier:   _CaveSceneScreenState.chimesOwned   ? 1.10 : 1.0, // ✅
+      fountainMultiplier: _CaveSceneScreenState.fountainOwned ? 1.12 : 1.0, // ✅
     );
-
     return AlertDialog(
       backgroundColor: const Color(0xFF16213e),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -1829,7 +1862,7 @@ class _TimerPickerDialogState extends State<TimerPickerDialog> {
               trackHeight:        6,
             ),
             child: Slider(
-              value: selectedMinutes, min: 1, max: 420, divisions: 84,
+              value: selectedMinutes, min: 0, max: 420, divisions: 84,
               onChanged: (v) => setState(() => selectedMinutes = (v / 5).round() * 5.0),
             ),
           ),
@@ -1876,7 +1909,8 @@ class _TimerPickerDialogState extends State<TimerPickerDialog> {
               style: TextStyle(color: Colors.white54, fontSize: 16)),
         ),
         ElevatedButton(
-          onPressed: () => Navigator.pop(context, selectedMinutes.round()),
+          onPressed: selectedMinutes < 1 ? null : () => Navigator.pop(context, selectedMinutes.round()),
+          // ✅ Disables the button if slider is at 0 so user can't start a 0 minute session
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF4CAF50),
             padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),

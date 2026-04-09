@@ -49,19 +49,20 @@ class CurrencyService {
   ///   totalBase   = base + timeBonus
   ///   final       = totalBase * furniture * upgrade * streak
   static int calculatePeasFromFocus(int minutes, {
-    double upgradeMultiplier = 1.0,
-    double torchMultiplier   = 1.0,
+    double upgradeMultiplier  = 1.0,
+    double torchMultiplier    = 1.0,
+    double chimesMultiplier   = 1.0,  // ✅ new parameter
+    double fountainMultiplier = 1.0,  // ✅ new parameter
   }) {
-    final double furnitureMultiplier  = FurnitureService().getBoostMultiplier();
-    final double windchimesMultiplier = FurnitureService().isFurnitureOwned('windchimes') ? 1.10 : 1.0;
-    final double fountainMultiplier   = FurnitureService().isFurnitureOwned('fountain')   ? 1.10 : 1.0;
+    final double furnitureMultiplier = FurnitureService().getBoostMultiplier();
 
     final int finalPeas = (minutes
         * furnitureMultiplier
         * upgradeMultiplier
         * torchMultiplier
-        * windchimesMultiplier
-        * fountainMultiplier).round();
+        * chimesMultiplier    // ✅ now actually applied
+        * fountainMultiplier  // ✅ now actually applied
+    ).round();
 
     return finalPeas;
   }
@@ -70,7 +71,7 @@ class CurrencyService {
   Future<bool> upgradeStage() async {
     if (_currentStage >= cropStages.length - 1) return false;
     _currentStage++;
-    _peas = 0;
+    // _peas = 0; // remove this if you want to keep remaining peas
     await saveCurrencies();
     return true;
   }
@@ -118,12 +119,12 @@ class CurrencyService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('peas',  _peas.toString());
     await prefs.setString('coins', _coins.toString());
-    await prefs.setInt('current_stage', _currentStage);
+    await prefs.setInt('crop_stage', _currentStage); // ✅ unique key
   }
 
   Future<void> loadCurrencies() async {
     final prefs = await SharedPreferences.getInstance();
-    _currentStage = prefs.getInt('current_stage') ?? 0;
+    _currentStage = prefs.getInt('crop_stage') ?? 0; // ✅ unique key
 
     final rawPeas = prefs.get('peas');
     _peas = rawPeas is String ? (int.tryParse(rawPeas) ?? 0)

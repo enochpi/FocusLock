@@ -33,7 +33,6 @@ class _PermissionScreenState extends State<PermissionScreen> {
       debugPrint('Permission not granted yet: $e');
     }
 
-    // Mark as seen and go to game regardless
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('permission_screen_shown', true);
 
@@ -46,31 +45,43 @@ class _PermissionScreenState extends State<PermissionScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF16213e),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(30),
+        // ✅ SingleChildScrollView prevents overflow on small screens
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(28),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Text('🔒', style: TextStyle(fontSize: 80)),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
+              const Text('🔒', style: TextStyle(fontSize: 70)),
+              const SizedBox(height: 20),
+
+              // ✅ Simpler title
               const Text(
-                "One quick thing",
+                'One Quick Step',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 26,
+                  fontSize: 24,
                   fontWeight: FontWeight.bold,
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
+
+              // ✅ Much shorter description
               const Text(
-                "Focus Life can block distracting apps while you focus. To do this it needs Usage Access permission.\n\nThis is optional — you can skip it and still use the app.",
-                style: TextStyle(color: Colors.white70, fontSize: 15, height: 1.6),
+                'To block distracting apps during focus sessions, we need Usage Access permission.\n\nThis is optional — you can skip it.',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 14,
+                  height: 1.5,
+                ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
+
+              // ✅ Simpler instructions
               Container(
-                padding: const EdgeInsets.all(18),
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.06),
                   borderRadius: BorderRadius.circular(16),
@@ -79,49 +90,70 @@ class _PermissionScreenState extends State<PermissionScreen> {
                 child: const Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text("How to enable:",
-                        style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+                    Text('How to enable:',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold)),
                     SizedBox(height: 10),
                     Text(
-                      "1. Tap 'Open Settings' below\n"
-                          "2. Find 'Focus Life' in the list\n"
-                          "3. Toggle it ON\n"
-                          "4. Come back and tap 'Done'",
-                      style: TextStyle(color: Colors.white60, fontSize: 14, height: 1.7),
+                      '1. Tap "Open Settings"\n'
+                          '2. Find Focus Life in the list\n'
+                          '3. Toggle it ON\n'
+                          '4. Come back and tap Done',
+                      style: TextStyle(
+                          color: Colors.white60,
+                          fontSize: 13,
+                          height: 1.6),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
+
+              // Open Settings button
               ElevatedButton(
                 onPressed: () async {
-                  await AppSettings.openAppSettings(type: AppSettingsType.settings);
+                  await AppSettings.openAppSettings(
+                      type: AppSettingsType.settings);
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF4CAF50),
-                  minimumSize: const Size(double.infinity, 52),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  minimumSize: const Size(double.infinity, 50),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
                 ),
-                child: const Text("Open Settings",
-                    style: TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold)),
+                child: const Text('Open Settings',
+                    style: TextStyle(
+                        fontSize: 15,
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold)),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
+
+              // Done button
               OutlinedButton(
                 onPressed: isChecking ? null : checkPermission,
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: Colors.white30),
-                  minimumSize: const Size(double.infinity, 52),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  minimumSize: const Size(double.infinity, 50),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
                 ),
                 child: isChecking
                     ? const SizedBox(
-                  width: 20, height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white),
                 )
-                    : const Text("Done →",
-                    style: TextStyle(fontSize: 16, color: Colors.white70)),
+                    : const Text('Done →',
+                    style: TextStyle(
+                        fontSize: 15, color: Colors.white70)),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
+
+              // Skip button
               TextButton(
                 onPressed: () async {
                   final prefs = await SharedPreferences.getInstance();
@@ -129,9 +161,11 @@ class _PermissionScreenState extends State<PermissionScreen> {
                   if (!mounted) return;
                   _goToGame();
                 },
-                child: const Text("Skip for now",
-                    style: TextStyle(color: Colors.white38, fontSize: 14)),
+                child: const Text('Skip for now',
+                    style: TextStyle(
+                        color: Colors.white38, fontSize: 13)),
               ),
+              const SizedBox(height: 10),
             ],
           ),
         ),

@@ -1,4 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart';
 import 'dart:math' as math;
 
 import 'currency_service.dart';
@@ -32,6 +33,15 @@ class DailyRewardService {
     final now = DateTime.now();
     final lastClaim = _lastClaimDate!;
 
+    // ✅ Guard against clock being set backwards —
+    // if "now" is somehow before the last claim, something is wrong.
+    // Don't allow a claim and don't reset the streak.
+    if (now.isBefore(lastClaim)) {
+      debugPrint('⚠️ Clock appears to have moved backwards — blocking claim');
+      _hasClaimedToday = true;
+      return;
+    }
+
     // Same day - already claimed
     if (_isSameDay(now, lastClaim)) {
       _hasClaimedToday = true;
@@ -52,12 +62,34 @@ class DailyRewardService {
 
   /// Check if user can claim today's reward
   bool canClaimReward() {
-    return !_hasClaimedToday;
+    if (_hasClaimedToday) return false;
+    if (_lastClaimDate == null) return true;
+
+    final now = DateTime.now();
+
+    // ✅ Block if clock was moved backwards
+    if (now.isBefore(_lastClaimDate!)) {
+      debugPrint('⚠️ Clock manipulation detected — blocking daily reward');
+      return false;
+    }
+
+    // ✅ Enforce minimum 20 hours between claims
+    // This stops someone from claiming at 11:59 PM then
+    // immediately again at 12:01 AM by blocking claims
+    // that are less than 20 hours apart
+    final hoursSinceLastClaim = now.difference(_lastClaimDate!).inHours;
+    if (hoursSinceLastClaim < 20) {
+      debugPrint('⏰ Too soon to claim again ($hoursSinceLastClaim hours since last claim)');
+      return false;
+    }
+
+    return true;
   }
 
   /// Claim today's reward - returns (coins, crops)
   Future<Map<String, int>> claimReward() async {
-    if (_hasClaimedToday) {
+    // ✅ Re-validate at claim time, not just at dialog open time
+    if (!canClaimReward()) {
       return {'coins': 0, 'crops': 0};
     }
 
@@ -78,21 +110,57 @@ class DailyRewardService {
     return rewards;
   }
 
+  // Base rewards guaranteed for the first 7 days
+  // so new players always get something meaningful
+  static const List<Map<String, int>> _baseRewards = [
+    {'coins': 0,  'crops': 0},    // index 0 — unused, streak starts at 1
+    {'coins': 5,  'crops': 100},  // day 1  — welcome bonus
+    {'coins': 8,  'crops': 150},  // day 2
+    {'coins': 10, 'crops': 200},  // day 3
+    {'coins': 12, 'crops': 250},  // day 4
+    {'coins': 15, 'crops': 300},  // day 5
+    {'coins': 18, 'crops': 400},  // day 6
+    {'coins': 20, 'crops': 500},  // day 7 — week milestone
+  ];
+
   Map<String, int> _calculateReward(int day) {
-    if (day == 1) return {'coins': 0, 'crops': 0};
+    // Days 1-7: guaranteed base rewards so new players
+    // always get something regardless of their balance
+    if (day <= 7) {
+      return {
+        'coins': _baseRewards[day]['coins']!,
+        'crops': _baseRewards[day]['crops']!,
+      };
+    }
+
+    // Day 8+: percentage of current balance
+    // with a guaranteed minimum floor so it never returns zero
     final currency = CurrencyService();
-    final percent = (0.20 + (day - 1) * 0.01).clamp(0.20, 1.0);
+    final percent = (0.20 + (day - 8) * 0.005).clamp(0.20, 1.0);
+
     final coins = (currency.coins * percent).round();
     final crops = (currency.peas * percent).round();
-    return {'coins': coins, 'crops': crops};
+
+    // Minimum floor grows every 7 days so it's always worth logging in
+    final minCoins = 25 + (day ~/ 7) * 5;
+    final minCrops = 500 + (day ~/ 7) * 100;
+
+    return {
+      'coins': coins < minCoins ? minCoins : coins,
+      'crops': crops < minCrops ? minCrops : crops,
+    };
   }
+
+  /// Public wrapper so the dialog can preview today's reward before claiming
+  Map<String, int> calculateTodayReward(int day) => _calculateReward(day);
+
   double getStreakMultiplier() {
     if (_currentStreak == 0) return 1.0;
 
-    // Square root component - big jumps early (reduced from 0.05 to 0.03)
+    // Square root component - big jumps early
     final sqrtBonus = math.sqrt(_currentStreak) * 0.03;
 
-    // Logarithmic component - keeps growing forever but slower (reduced from 0.03 to 0.02)
+    // Logarithmic component - keeps growing forever but slower
     final logBonus = math.log(_currentStreak + 1) * 0.02;
 
     return 1.0 + sqrtBonus + logBonus;

@@ -470,9 +470,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const Divider(color: Colors.white24),
               _buildStatRow('Coins', '${currency.coins} 🪙'),
               const Divider(color: Colors.white24),
-              _buildStatRow('Current Streak',
-                  '${streak.currentStreak} ${streak.streakEmoji}'),
-              const Divider(color: Colors.white24),
+              _buildStatRow('Current Streak', '${streak.displayStreak} ${streak.streakEmoji}'),
               _buildStatRow(
                   'Longest Streak', '${streak.longestStreak} days'),
               const Divider(color: Colors.white24),

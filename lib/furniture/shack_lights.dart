@@ -13,11 +13,8 @@ class _ShackStringLightsState extends State<ShackStringLights>
   late AnimationController _controller;
   final Random _rng = Random();
 
-  // Per-bulb flicker state: brightness 0.0–1.0
-  final List<double> _brightness = List.filled(10, 1.0);
-  // Per-bulb flicker speed (different for each bulb)
+  // Per-bulb flicker speed and phase — fixed at init, never change
   final List<double> _flickerSpeed = [];
-  // Per-bulb flicker phase
   final List<double> _flickerPhase = [];
 
   @override
@@ -25,8 +22,8 @@ class _ShackStringLightsState extends State<ShackStringLights>
     super.initState();
 
     for (int i = 0; i < 10; i++) {
-      _flickerSpeed.add(1.5 + _rng.nextDouble() * 4.0); // 1.5–5.5 Hz
-      _flickerPhase.add(_rng.nextDouble() * pi * 2);    // random start phase
+      _flickerSpeed.add(1.5 + _rng.nextDouble() * 4.0);
+      _flickerPhase.add(_rng.nextDouble() * pi * 2);
     }
 
     _controller = AnimationController(
@@ -34,20 +31,7 @@ class _ShackStringLightsState extends State<ShackStringLights>
       duration: const Duration(seconds: 1),
     )..repeat();
 
-    _controller.addListener(() {
-      final t = _controller.value * pi * 2;
-      setState(() {
-        for (int i = 0; i < 10; i++) {
-          // Base sine wave flicker
-          double base = (sin(t * _flickerSpeed[i] + _flickerPhase[i]) + 1) / 2;
-
-          // Occasionally punch a bulb dim for a realistic flicker spike
-          double spike = _rng.nextDouble() < 0.01 ? 0.1 : 1.0;
-
-          _brightness[i] = (base * 0.35 + 0.65) * spike; // clamp between 0.65–1.0 normally
-        }
-      });
-    });
+    // ✅ No addListener + setState here anymore
   }
 
   @override
@@ -56,11 +40,32 @@ class _ShackStringLightsState extends State<ShackStringLights>
     super.dispose();
   }
 
+  // ✅ Brightness is now calculated inside the painter on each frame
+  // instead of being stored in state and triggering setState
+  List<double> _computeBrightness(double t) {
+    final brightness = <double>[];
+    for (int i = 0; i < 10; i++) {
+      double base = (sin(t * pi * 2 * _flickerSpeed[i] + _flickerPhase[i]) + 1) / 2;
+      double spike = _rng.nextDouble() < 0.01 ? 0.1 : 1.0;
+      brightness.add((base * 0.35 + 0.65) * spike);
+    }
+    return brightness;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _StringLightsPainter(brightness: List.from(_brightness)),
-      size: Size.infinite,
+    // ✅ AnimatedBuilder handles rebuilds efficiently —
+    // no setState, no listener, no risk of calling setState after dispose
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        return CustomPaint(
+          painter: _StringLightsPainter(
+            brightness: _computeBrightness(_controller.value),
+          ),
+          size: Size.infinite,
+        );
+      },
     );
   }
 }
@@ -76,12 +81,12 @@ class _StringLightsPainter extends CustomPainter {
       ..color = const Color(0xFF5C4A3A)
       ..strokeWidth = 1.5;
 
-    // Very subtle sag — wire stays near the top
+    // Wire sag
     final wirePath = Path();
     wirePath.moveTo(0, s.height * 0.15);
     for (int i = 1; i <= 100; i++) {
       final x = s.width * i / 100;
-      final sag = sin(i / 100 * pi) * s.height * 0.25; // tiny sag
+      final sag = sin(i / 100 * pi) * s.height * 0.25;
       final y = s.height * 0.15 + sag;
       wirePath.lineTo(x, y);
     }
@@ -98,7 +103,6 @@ class _StringLightsPainter extends CustomPainter {
 
       final double b = brightness[i];
 
-      // Very short cord
       final double bulbY = wireY + s.height * 0.30;
       canvas.drawLine(Offset(x, wireY), Offset(x, bulbY - 4), wire);
 
