@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
-import 'package:focus_life/services/achievements_service.dart';
-import 'package:focus_life/services/streak_service.dart';
+import 'package:berry_focused/services/achievements_service.dart';
+import 'package:berry_focused/services/streak_service.dart';
 import 'package:rive/rive.dart' hide LinearGradient, RadialGradient;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
@@ -25,15 +25,19 @@ void startCallback() {
 
 class _FocusTaskHandler extends TaskHandler {
   int _remainingSeconds = 0;
+  bool _isPaused = false; // ✅ FIX #1: Track pause state in task
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
     _remainingSeconds =
         await FlutterForegroundTask.getData<int>(key: 'remainingSeconds') ?? 0;
+    _isPaused = false;
   }
 
   @override
   void onRepeatEvent(DateTime timestamp) async {
+    if (_isPaused) return; // ✅ FIX #1: Skip countdown when paused
+
     if (_remainingSeconds > 0) {
       _remainingSeconds--;
       await FlutterForegroundTask.saveData(
@@ -50,10 +54,15 @@ class _FocusTaskHandler extends TaskHandler {
 
   @override
   Future<void> onReceiveData(Object data) async {
-    if (data == 'pause') _remainingSeconds = -999;
+    if (data == 'pause') {
+      _isPaused = true; // ✅ FIX #1: Just flag as paused, don't clobber value
+    }
     if (data == 'resume') {
+      // ✅ FIX #1: Reload the latest saved value (which the task itself
+      // wrote on its last tick before pause) then unflag
       _remainingSeconds =
           await FlutterForegroundTask.getData<int>(key: 'remainingSeconds') ?? 0;
+      _isPaused = false;
     }
   }
 
@@ -97,13 +106,13 @@ void _initForegroundTask() {
 class GardenFocusScreen extends StatefulWidget {
   final Character character;
   final int focusDurationMinutes;
-  final int? initialRemainingSeconds; // ✅ new optional param
+  final int? initialRemainingSeconds;
 
   const GardenFocusScreen({
     super.key,
     required this.character,
     required this.focusDurationMinutes,
-    this.initialRemainingSeconds, // ✅ added
+    this.initialRemainingSeconds,
   });
 
   @override
@@ -123,7 +132,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
 
   Timer? _breakReminderTimer;
   Timer? _saveTimer;
-  Timer? _uiTimer; // ✅ new — drives UI countdown independently
+  Timer? _uiTimer;
   bool _isPaused   = false;
   bool _isFinished = false;
 
@@ -145,8 +154,6 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
   void initState() {
     super.initState();
 
-    // ✅ Use initialRemainingSeconds if provided (resuming session)
-    // otherwise start from full duration (new session)
     _remainingSeconds = widget.initialRemainingSeconds
         ?? widget.focusDurationMinutes * 60;
 
@@ -160,7 +167,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
 
     FlutterForegroundTask.addTaskDataCallback(_onTaskData);
 
-    _startUiTimer();
+    // ✅ FIX #3: Don't start UI timer here — start it after foreground task launches
     _initSession();
   }
 
@@ -168,6 +175,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
   void dispose() {
     FlutterForegroundTask.removeTaskDataCallback(_onTaskData);
     _characterController.dispose();
+    _uiTimer?.cancel(); // ✅ FIX #5: Cancel UI timer in dispose
     _saveTimer?.cancel();
     _breakReminderTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
@@ -185,8 +193,9 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
       _uiTimer?.cancel();
       _finishSession();
     } else {
-      // ✅ Sync UI with foreground task value to correct any drift
-      // The foreground task is authoritative, UI timer just keeps screen alive
+      // ✅ FIX #2: Foreground task is authoritative — just sync UI to it
+      // The UI timer only exists as a fallback display driver,
+      // but the real value always comes from here
       if (mounted) setState(() => _remainingSeconds = seconds);
     }
   }
@@ -204,6 +213,8 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
   Future<void> _initSession() async {
     await _loadDecorationBoosts();
     await _startFocusSession();
+    // ✅ FIX #3: Start UI timer AFTER foreground task is launched
+    _startUiTimer();
   }
 
   // ── App lifecycle ─────────────────────────────────────────────────────
@@ -214,21 +225,26 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     if (state == AppLifecycleState.paused) {
       SoundService().onAppBackground();
       // ✅ Save remaining time immediately when phone screen turns off
-      // This is the most accurate snapshot before the phone might die
       if (_isWorking && !_isPaused) {
         sessionService.updateRemainingTime(_remainingSeconds);
+        // ✅ FIX #1: Also sync to foreground task storage so resume reads correct value
+        FlutterForegroundTask.saveData(
+          key: 'remainingSeconds',
+          value: _remainingSeconds,
+        );
       }
       if (_isPaused) {
         FlutterForegroundTask.sendDataToTask('pause');
       }
     } else if (state == AppLifecycleState.resumed) {
       SoundService().onAppForeground();
-      if (!_isPaused) {
-        FlutterForegroundTask.sendDataToTask('resume');
+      // ✅ FIX: Don't send 'resume' if task wasn't paused — it's already running fine
+      if (_isPaused) {
+        // Only send resume if we actually paused the task
+        // (this shouldn't happen since paused sessions don't un-pause on app resume)
       }
     } else if (state == AppLifecycleState.detached) {
       SoundService().stopMusic();
-      // ✅ Final save when app is fully killed
       if (_isWorking) {
         sessionService.updateRemainingTime(_remainingSeconds);
       }
@@ -282,16 +298,26 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
   void _pauseTimer() {
     if (!_isPaused) {
       _isPaused = true;
+      // ✅ FIX #1: Save current value to foreground task storage BEFORE pausing
+      // so when we resume, the task reads the correct value
+      FlutterForegroundTask.saveData(
+        key: 'remainingSeconds',
+        value: _remainingSeconds,
+      );
       FlutterForegroundTask.sendDataToTask('pause');
-      // ✅ UI timer checks _isPaused flag so it stops counting automatically
     }
   }
 
   void _resumeTimer() {
     if (_isPaused && _isWorking && _remainingSeconds > 0) {
       _isPaused = false;
+      // ✅ FIX #1: Save current UI value to foreground task storage
+      // BEFORE telling it to resume, so it picks up the right number
+      FlutterForegroundTask.saveData(
+        key: 'remainingSeconds',
+        value: _remainingSeconds,
+      );
       FlutterForegroundTask.sendDataToTask('resume');
-      // ✅ UI timer resumes automatically since _isPaused is now false
     }
   }
 
@@ -299,7 +325,6 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     setState(() => _isWorking = true);
     await sessionService.startSession(durationMinutes: widget.focusDurationMinutes);
 
-    // ✅ Use actual remaining seconds not full duration
     await FlutterForegroundTask.saveData(
       key: 'remainingSeconds',
       value: _remainingSeconds,
@@ -318,9 +343,10 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     SoundService().playFocusMusic();
   }
 
-// ✅ UI timer — counts down every second and drives redraws
-// The foreground task is the source of truth for the actual value,
-// but this keeps the screen alive and animated between callbacks
+  // ✅ FIX #2: UI timer is now a display-only fallback
+  // It only decrements locally to keep the screen updating smoothly.
+  // The foreground task's _onTaskData callback overwrites with the
+  // authoritative value every second anyway.
   void _startUiTimer() {
     _uiTimer?.cancel();
     _uiTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -328,13 +354,12 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
         timer.cancel();
         return;
       }
-      if (_isPaused) return; // don't count down while paused
+      if (_isPaused) return;
 
       setState(() {
         if (_remainingSeconds > 0) {
           _remainingSeconds--;
         } else {
-          // Timer hit zero in UI — trigger finish
           timer.cancel();
           _finishSession();
         }
@@ -346,8 +371,12 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     _saveTimer?.cancel();
     _saveTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       if (_isWorking && !_isPaused) {
-        // ✅ Now saves BOTH timestamp and remaining seconds
         sessionService.updateRemainingTime(_remainingSeconds);
+        // ✅ FIX: Also keep foreground task storage in sync
+        FlutterForegroundTask.saveData(
+          key: 'remainingSeconds',
+          value: _remainingSeconds,
+        );
       }
     });
   }
@@ -365,7 +394,6 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
         builder: (_) => BlockingScreen(
           appName: appName,
           onReturn: () {
-            // ✅ Tell monitor this block was dismissed so cooldown starts
             appMonitor.onBlockDismissed(packageName);
             _resumeTimer();
             if (_isWorking && mounted) {
@@ -390,7 +418,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     );
   }
 
-  // ✅ Single clean version of _finishSession — duplicate removed
+  // ✅ FIX: Single clean _finishSession with duplicate addPeas removed
   void _finishSession() async {
     if (_isFinished || !_isWorking) return;
 
@@ -398,7 +426,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     _isWorking  = false;
 
     FlutterForegroundTask.removeTaskDataCallback(_onTaskData);
-    _uiTimer?.cancel(); // ✅ added
+    _uiTimer?.cancel();
     _saveTimer?.cancel();
     _breakReminderTimer?.cancel();
     appMonitor.stopMonitoring();
@@ -422,12 +450,11 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
       fountainMultiplier: _fountainOwned ? 1.12 : 1.0,
     );
 
+    // ✅ FIX: Only add peas ONCE (was duplicated before)
     try { await currency.addPeas(peasEarned); } catch (e) { debugPrint('❌ addPeas: $e'); }
     try { await AchievementService().onFocusSessionCompleted(widget.focusDurationMinutes); } catch (e) { debugPrint('❌ achievement: $e'); }
     try { await AchievementService().onSessionsInDay(); } catch (e) { debugPrint('❌ speed_demon: $e'); }
-
-    try { await currency.addPeas(peasEarned); } catch (e) { debugPrint('❌ addPeas: $e'); }
-    try { await AchievementService().onPeasEarned(peasEarned); } catch (e) { debugPrint('❌ peas achievement: $e'); } // ✅ add this
+    try { await AchievementService().onPeasEarned(peasEarned); } catch (e) { debugPrint('❌ peas achievement: $e'); }
 
     int earnings = widget.focusDurationMinutes * 5;
     widget.character.earnMoney(earnings);
@@ -436,7 +463,6 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
     try { await SoundService().playSessionComplete(); } catch (e) { debugPrint('❌ sound: $e'); }
     try { SoundService().playBackgroundMusic(); } catch (e) { debugPrint('❌ music: $e'); }
 
-    // ✅ Final mounted check after all awaits
     if (!mounted) return;
 
     showDialog(
@@ -549,7 +575,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
         backgroundColor: const Color(0xFF87CEEB),
         body: Stack(
           children: [
-            // Garden painter — yellow man is drawn inside here
+            // Garden painter
             AnimatedBuilder(
               animation: _characterController,
               builder: (context, _) {
@@ -565,9 +591,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
               },
             ),
 
-            // ✅ Rive overlaid exactly on top of where GardenPainter
-            // draws the yellow man (w*0.55, h*0.68 area)
-            // Fades out when easter egg is active
+            // Rive character overlay
             AnimatedOpacity(
               opacity: _easterEggActive ? 0.0 : 1.0,
               duration: const Duration(milliseconds: 800),
@@ -575,8 +599,6 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                 builder: (context, constraints) {
                   final w = constraints.maxWidth;
                   final h = constraints.maxHeight;
-                  // ✅ Match exactly where _drawCharacter puts the character
-                  // cx = w * 0.55, cy = h * 0.68
                   final charX = w * 0.55;
                   final charY = h * 0.68;
 
@@ -600,7 +622,6 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                     },
                     child: Stack(
                       children: [
-                        // Invisible full screen tap target aligned to character
                         Positioned(
                           left: charX - 70,
                           top: charY - 90,
@@ -613,7 +634,6 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
                           ),
                         ),
 
-                        // ✅ Tap counter hint at 25 taps
                         if (_characterTapCount >= 25 && !_easterEggActive)
                           Positioned(
                             left: charX - 50,
@@ -751,7 +771,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
             ),
             TextButton(
               onPressed: () async {
-                _uiTimer?.cancel(); // ✅ added
+                _uiTimer?.cancel();
                 _saveTimer?.cancel();
                 _breakReminderTimer?.cancel();
                 appMonitor.stopMonitoring();
@@ -848,7 +868,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
           ),
           TextButton(
             onPressed: () async {
-              _uiTimer?.cancel(); // ✅ added
+              _uiTimer?.cancel();
               _saveTimer?.cancel();
               _breakReminderTimer?.cancel();
               appMonitor.stopMonitoring();
@@ -856,7 +876,7 @@ class _GardenFocusScreenState extends State<GardenFocusScreen>
               await sessionService.cancelSession();
               if (peasKept > 0) await currency.addPeas(peasKept);
               widget.character.addFocusMinutes(elapsedMinutes);
-              SoundService().switchToBackgroundMusic();;
+              SoundService().switchToBackgroundMusic();
               Navigator.pop(context);
               Navigator.pop(context);
             },
@@ -1286,7 +1306,6 @@ class GardenPainter extends CustomPainter {
     canvas.drawLine(Offset(x - s, y), Offset(x + s, y), p);
     canvas.drawLine(Offset(x - s*0.7, y - s*0.7), Offset(x + s*0.7, y + s*0.7), p);
     canvas.drawLine(Offset(x - s*0.7, y + s*0.7), Offset(x + s*0.7, y - s*0.7), p);
-    // ✅ Removed MaskFilter.blur — was expensive, barely visible anyway
     canvas.drawCircle(Offset(x, y), s * 0.3,
         Paint()..color = const Color(0xFFFFD700));
   }
@@ -1321,6 +1340,9 @@ class GardenPainter extends CustomPainter {
   double cos(double r) => math.cos(r);
   double sin(double r) => math.sin(r);
 
+  // ✅ FIX #2: shouldRepaint now correctly returns true when values change
   @override
-  bool shouldRepaint(covariant CustomPainter old) => false;
+  bool shouldRepaint(GardenPainter old) =>
+      old.remainingSeconds != remainingSeconds ||
+          old.characterAnimation != characterAnimation;
 }

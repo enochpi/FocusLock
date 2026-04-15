@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:focus_life/main.dart';
+import 'package:berry_focused/main.dart';
 
 void main() {
   testWidgets('smoke test', (WidgetTester tester) async {

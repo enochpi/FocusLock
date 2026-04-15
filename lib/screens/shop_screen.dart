@@ -16,6 +16,7 @@ class _ShopScreenState extends State<ShopScreen> {
   final UpgradeService upgrades = UpgradeService();
 
   int selectedShopStage = 0; // Which shop tab is selected
+  bool _purchasing = false;
 
   @override
   Widget build(BuildContext context) {
@@ -305,7 +306,7 @@ class _ShopScreenState extends State<ShopScreen> {
 
                 // Buy button
                 ElevatedButton(
-                  onPressed: canAfford ? () => _purchaseUnlock(unlock) : null,
+                  onPressed: (canAfford && !_purchasing) ? () => _purchaseUnlock(unlock) : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: canAfford ? Colors.white : Colors.grey[600],
                     padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
@@ -331,6 +332,8 @@ class _ShopScreenState extends State<ShopScreen> {
   }
 
   Future<void> _purchaseUnlock(HouseUnlock unlock) async {
+    if (_purchasing) return;
+    setState(() => _purchasing = true);
     bool success = await upgrades.purchaseHouseUnlock(unlock.id, currency.peas.toDouble());
 
     if (success) {
@@ -388,6 +391,7 @@ class _ShopScreenState extends State<ShopScreen> {
       );
       setState(() {});
     }
+    if (mounted) setState(() => _purchasing = false);
   }
 
   Widget _buildUpgradeCard(Upgrade upgrade) {

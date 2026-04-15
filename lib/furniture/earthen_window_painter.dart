@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:focus_life/services/day_night_cycle.dart';
+import 'package:berry_focused/services/day_night_cycle.dart';
 
 /// Earthen cave window — carved into rock, matches cave wall tones.
 /// Uses DayNightCycle for the sky visible through the opening.

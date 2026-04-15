@@ -3,14 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/services.dart';
-import 'package:focus_life/furniture/earthen_window_painter.dart';
-import 'package:focus_life/furniture/wooden_window_painter.dart';
-import 'package:focus_life/services/furniture_service.dart';
+import 'package:berry_focused/furniture/earthen_window_painter.dart';
+import 'package:berry_focused/furniture/wooden_window_painter.dart';
+import 'package:berry_focused/services/furniture_service.dart';
 import '../furniture/shack_lights.dart';
 import '../models/character.dart';
 import '../services/currency_service.dart';
-import 'package:focus_life/services/day_night_cycle.dart';
-import 'room_screen.dart';
+import 'package:berry_focused/services/day_night_cycle.dart';
 
 
 class CaveInteriorScreen extends StatefulWidget {
@@ -29,14 +28,14 @@ class CaveInteriorScreen extends StatefulWidget {
 
 class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
   ui.Image? _backgroundImage;
-  Timer? _skyTimer; // ✅ added
+  Timer? _skyTimer;
+  bool _dialogShowing = false;
 
   @override
   void initState() {
     super.initState();
     _loadBackgroundImage();
 
-    // ✅ Rebuild every minute so sky color transitions smoothly
     _skyTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -44,7 +43,7 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
 
   @override
   void dispose() {
-    _skyTimer?.cancel(); // ✅ added
+    _skyTimer?.cancel();
     super.dispose();
   }
 
@@ -60,10 +59,10 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
 
   String _bgPath(int stage) {
     switch (stage) {
-      case 0:  return 'assets/images/cave_background.png';
-      case 1:  return 'assets/images/shack_background.png';
-      case 2:  return 'assets/images/house_background.png';
-      default: return 'assets/images/cave_background.png';
+      case 0:  return 'assets/images/cave_background.webp';
+      case 1:  return 'assets/images/shack_background.webp';
+      case 2:  return 'assets/images/house_background.webp';
+      default: return 'assets/images/cave_background.webp';
     }
   }
 
@@ -238,6 +237,8 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
 
   // ── _showBuyDialog ────────────────────────────────────────────────────
   void _showBuyDialog(String furnitureId, int price, {double boost = 0.0}) {
+    if (_dialogShowing) return;
+    _dialogShowing = true;
     final canAfford = CurrencyService().coins >= price;
     final boostPercent = (boost * 100).toStringAsFixed(0);
 
@@ -321,7 +322,7 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
             ),
         ],
       ),
-    );
+    ).then((_) => _dialogShowing = false);
   }
 
   // ── Furniture layout ──────────────────────────────────────────────────
@@ -339,49 +340,38 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
       FurnitureService().isFurnitureOwned(furnitureId);
 
   // ── CAVE ──────────────────────────────────────────────────────────────
-  // Prices: cheap start (10c) → mid (30c) → expensive (80c)
-  // Boosts: 3% → 5% → 8% (small early, bigger as you invest)
   List<Widget> _caveFurniture(
       double left, double top, double roomW, double roomH) {
     final s = roomW / 420.0;
     return [
-      // Rug FIRST (bottom layer)
       _buyableImage(left + roomW * 0.01, top + roomH * 0.44, 250 * s, 250 * s,
-          'assets/images/stone_rug.png', 'stone_rug', 8, boost: 0.22),
+          'assets/images/stone_rug.webp', 'stone_rug', 8, boost: 0.22),
 
-      // Bed
       _buyableImage(left + roomW * 0.09, top + roomH * 0.42, 200 * s, 120 * s,
-          'assets/images/stone_bed.png', 'stone_bed', 80, boost: 0.55),
+          'assets/images/stone_bed.webp', 'stone_bed', 80, boost: 0.55),
 
-      // Table
       _buyableImage(left + roomW * 0.57, top + roomH * 0.45, 150 * s, 150 * s,
-          'assets/images/stone_table.png', 'stone_table', 150, boost: 0.72),
+          'assets/images/stone_table.webp', 'stone_table', 150, boost: 0.72),
 
-      // Window
       _buyablePainter(left + roomW * 0.40, top + roomH * 0.17, 80 * s, 70 * s,
           EarthenWindowPainter(cycle: DayNightCycle.current()),
           'stone_window', 3, boost: 0.10),
 
-      // Fire LAST (top layer — easiest to tap)
       _buyableImage(left + roomW * 0.42, top + roomH * 0.58, 90 * s, 90 * s,
-          'assets/images/stone_fire.png', 'stone_fire', 20, boost: 0.30),
+          'assets/images/stone_fire.webp', 'stone_fire', 20, boost: 0.30),
 
-      // Chair LAST (top layer)
       _buyableImage(left + roomW * 0.65, top + roomH * 0.70, 80 * s, 80 * s,
-          'assets/images/stone_chair.png', 'stone_chair', 40, boost: 0.38),
+          'assets/images/stone_chair.webp', 'stone_chair', 40, boost: 0.38),
     ];
   }
 
   // ── SHACK ─────────────────────────────────────────────────────────────
-  // Prices: 50c → 200c (mid-game range)
-  // Boosts: 5% → 10%
   List<Widget> _shackFurniture(
       double left, double top, double roomW, double roomH) {
     final s = roomW / 420.0;
     final lightsOwned = _isOwned('shack_lights');
 
     return [
-      // String lights — cheapest shack item
       Positioned(
         left: left + roomW * 0.05,
         top: top + roomH * 0.07,
@@ -418,54 +408,43 @@ class _CaveInteriorScreenState extends State<CaveInteriorScreen> {
         ),
       ),
 
-      // Wooden window
-      // String lights — cheapest shack item
-// (shack_lights is in the Positioned block above, update that onTap price to 100)
-
       _buyablePainter(left + roomW * 0.414, top + roomH * 0.2, 70 * s, 60 * s,
           WoodenWindowPainter(cycle: DayNightCycle.current()),
           'shack_window', 400, boost: 0.22),
 
       _buyableImage(left + roomW * 0.08, top + roomH * 0.20, 80 * s, 60 * s,
-          'assets/images/shack_picture.png', 'shack_picture', 1000, boost: 0.22),
+          'assets/images/shack_picture.webp', 'shack_picture', 1000, boost: 0.22),
 
       _buyableImage(left + roomW * 0, top + roomH * 0.41, 170 * s, 150 * s,
-          'assets/images/shack_bed.png', 'shack_bed', 4000, boost: 0.42),
+          'assets/images/shack_bed.webp', 'shack_bed', 4000, boost: 0.42),
 
       _buyableImage(left + roomW * 0.31, top + roomH * 0.56, 180 * s, 140 * s,
-          'assets/images/shack_table.png', 'shack_table', 2000, boost: 0.28),
+          'assets/images/shack_table.webp', 'shack_table', 2000, boost: 0.28),
 
       _buyableImage(left + roomW * 0.73, top + roomH * 0.33, 90 * s, 130 * s,
-          'assets/images/shack_stove.png', 'shack_stove', 8000, boost: 0.55),
+          'assets/images/shack_stove.webp', 'shack_stove', 8000, boost: 0.55),
     ];
   }
 
   // ── HOUSE (kitchen) ───────────────────────────────────────────────────
-  // Prices: 200c → 800c (late game)
-  // Boosts: 8% → 15%
   List<Widget> _houseFurniture(
       double left, double top, double roomW, double roomH) {
     final s = roomW / 420.0;
     return [
-      // Ceiling light — cheapest house item
       _buyableImage(left + roomW * 0.41, top + roomH * 0.04, 70 * s, 44 * s,
-          'assets/images/house_light.png', 'house_light', 200, boost: 0.08),
+          'assets/images/house_light.webp', 'house_light', 200, boost: 0.08),
 
-      // Cabinet
       _buyableImage(left + roomW * 0.16, top + roomH * 0.06, 100 * s, 90 * s,
-          'assets/images/house_cabinet.png', 'house_cabinet', 300, boost: 0.08),
+          'assets/images/house_cabinet.webp', 'house_cabinet', 300, boost: 0.08),
 
-      // Table
       _buyableImage(left + roomW * 0.59, top + roomH * 0.50, 150 * s, 75 * s,
-          'assets/images/house_table.png', 'house_table', 400, boost: 0.10),
+          'assets/images/house_table.webp', 'house_table', 400, boost: 0.10),
 
-      // Gas stove
       _buyableImage(left + roomW * 0.13, top + roomH * 0.37, 120 * s, 110 * s,
-          'assets/images/house_stove.png', 'house_stove', 600, boost: 0.12),
+          'assets/images/house_stove.webp', 'house_stove', 600, boost: 0.12),
 
-      // Fridge — most expensive house item
       _buyableImage(left - roomW * 0.04, top + roomH * 0.24, 100 * s, 150 * s,
-          'assets/images/house_fridge.png', 'house_fridge', 800, boost: 0.15),
+          'assets/images/house_fridge.webp', 'house_fridge', 800, boost: 0.15),
     ];
   }
 

@@ -10,9 +10,9 @@ class CurrencyService {
   // ── Crop stage system ─────────────────────────────────────
   // Conversion rate: how many crops = 1 coin
   static const List<Map<String, dynamic>> cropStages = [
-    {'name': 'Peas',    'emoji': '🌱', 'rate': 100},  // 100 peas = 1 coin
-    {'name': 'Carrots', 'emoji': '🥕', 'rate': 70},   // 70 carrots = 1 coin
-    {'name': 'Corn',    'emoji': '🌽', 'rate': 50},   // 50 corn = 1 coin
+    {'name': 'Strawberries',    'emoji': '🍓', 'rate': 100},
+    {'name': 'Strawberries', 'emoji': '🍓', 'rate': 70},
+    {'name': 'Strawberries',    'emoji': '🍓', 'rate': 50},
   ];
 
   int _currentStage = 0;

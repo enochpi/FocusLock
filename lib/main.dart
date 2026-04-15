@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:focus_life/services/achievements_service.dart';
-import 'package:focus_life/services/app_monitor_service.dart';
-import 'package:focus_life/services/daily_reward_service.dart';
-import 'package:focus_life/services/notification_service.dart';
-import 'package:focus_life/services/sound_service.dart';
+import 'package:berry_focused/services/achievements_service.dart';
+import 'package:berry_focused/services/app_monitor_service.dart';
+import 'package:berry_focused/services/daily_reward_service.dart';
+import 'package:berry_focused/services/notification_service.dart';
+import 'package:berry_focused/services/sound_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/permission_screen.dart';
 import 'screens/main_game_screen.dart';

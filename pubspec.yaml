@@ -1,4 +1,4 @@
-name: focus_life
+name: berry_focused
 description: A focus app with life progression
 publish_to: 'none'
 version: 1.0.0+3
@@ -49,32 +49,32 @@ flutter:
   uses-material-design: true
   assets:
     - assets/animations/bob_idle.riv
-    - assets/images/cave_background.png
-    - assets/images/house.png
-    - assets/images/shack.png
-    - assets/images/cave.png
-    - assets/images/shack_background.png
-    - assets/images/house_background.png
-    - assets/images/house_bedroom_background.png
-    - assets/images/stone_fire.png
-    - assets/images/stone_bed.png
-    - assets/images/stone_rug.png
-    - assets/images/stone_table.png
-    - assets/images/stone_chair.png
-    - assets/images/shack_bed.png
-    - assets/images/shack_stove.png
-    - assets/images/shack_table.png
-    - assets/images/shack_picture.png
-    - assets/images/house_table.png
-    - assets/images/house_stove.png
-    - assets/images/house_cabinet.png
-    - assets/images/house_light.png
-    - assets/images/house_fridge.png
-    - assets/images/house_bunkbed.png
-    - assets/images/house_bed.png
-    - assets/images/house_desk.png
-    - assets/images/house_clock.png
-    - assets/images/house_picture.png
+    - assets/images/cave_background.webp
+    - assets/images/house.webp
+    - assets/images/shack.webp
+    - assets/images/cave.webp
+    - assets/images/shack_background.webp
+    - assets/images/house_background.webp
+    - assets/images/house_bedroom_background.webp
+    - assets/images/stone_fire.webp
+    - assets/images/stone_bed.webp
+    - assets/images/stone_rug.webp
+    - assets/images/stone_table.webp
+    - assets/images/stone_chair.webp
+    - assets/images/shack_bed.webp
+    - assets/images/shack_stove.webp
+    - assets/images/shack_table.webp
+    - assets/images/shack_picture.webp
+    - assets/images/house_table.webp
+    - assets/images/house_stove.webp
+    - assets/images/house_cabinet.webp
+    - assets/images/house_light.webp
+    - assets/images/house_fridge.webp
+    - assets/images/house_bunkbed.webp
+    - assets/images/house_bed.webp
+    - assets/images/house_desk.webp
+    - assets/images/house_clock.webp
+    - assets/images/house_picture.webp
     - assets/sounds/achievement.wav
     - assets/sounds/background_music.mp3
     - assets/sounds/coin_convert.wav

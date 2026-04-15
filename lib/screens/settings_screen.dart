@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:focus_life/screens/blocked_apps_screen.dart';
-import 'package:focus_life/services/app_monitor_service.dart';
-import 'package:focus_life/services/furniture_service.dart';
-import 'package:focus_life/services/upgrade_service.dart';
+import 'package:berry_focused/screens/blocked_apps_screen.dart';
+import 'package:berry_focused/services/app_monitor_service.dart';
+import 'package:berry_focused/services/furniture_service.dart';
+import 'package:berry_focused/services/upgrade_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/character.dart';
 import '../services/achievements_service.dart';
@@ -13,7 +13,7 @@ import '../services/sound_service.dart';
 import '../services/streak_service.dart';
 import '../services/currency_service.dart';
 import '../services/storage_service.dart';
-import 'package:focus_life/screens/cave_scene_screen.dart';
+import 'package:berry_focused/screens/cave_scene_screen.dart';
 
 import '../widgets/import_save_dialog.dart';
 

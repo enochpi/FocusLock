@@ -1,31 +1,30 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
-import 'package:focus_life/painters/outdoor_sky_painter.dart';
-import 'package:focus_life/screens/achievements_screen.dart';
-import 'package:focus_life/services/achievements_service.dart';
-import 'package:focus_life/services/daily_reward_service.dart';
-import 'package:focus_life/services/stage_theme.dart';
-import 'package:focus_life/services/streak_service.dart';
-import 'package:focus_life/widgets/dialy_reward_dialog.dart';
+import 'package:berry_focused/painters/outdoor_sky_painter.dart';
+import 'package:berry_focused/screens/achievements_screen.dart';
+import 'package:berry_focused/services/achievements_service.dart';
+import 'package:berry_focused/services/daily_reward_service.dart';
+import 'package:berry_focused/services/stage_theme.dart';
+import 'package:berry_focused/services/streak_service.dart';
+import 'package:berry_focused/widgets/dialy_reward_dialog.dart';
 import 'dart:async';
 import 'dart:ui' as ui;
 import 'dart:math' as math;
 import 'dart:math' show Random;
 import 'package:rive/rive.dart' hide LinearGradient, RadialGradient, Image;
-import 'package:focus_life/models/character.dart';
-import 'package:focus_life/models/farm.dart';
-import 'package:focus_life/services/storage_service.dart';
-import 'package:focus_life/screens/garden_focus_screen.dart';
-import 'package:focus_life/screens/cave_interior_screen.dart';
-import 'package:focus_life/services/currency_service.dart';
-import 'package:focus_life/widgets/converter_dialog.dart';
-import 'package:focus_life/services/upgrade_service.dart';
-import 'package:focus_life/services/furniture_service.dart';
-import 'package:focus_life/services/facts_service.dart';
-import 'package:focus_life/utils/number_formatter.dart';
-import 'package:focus_life/painters/garden_painters.dart';
-import 'package:focus_life/services/focus_session_service.dart';
-import 'package:focus_life/widgets/achievement_notification.dart';
+import 'package:berry_focused/models/character.dart';
+import 'package:berry_focused/services/storage_service.dart';
+import 'package:berry_focused/screens/garden_focus_screen.dart';
+import 'package:berry_focused/screens/cave_interior_screen.dart';
+import 'package:berry_focused/services/currency_service.dart';
+import 'package:berry_focused/widgets/converter_dialog.dart';
+import 'package:berry_focused/services/upgrade_service.dart';
+import 'package:berry_focused/services/furniture_service.dart';
+import 'package:berry_focused/services/facts_service.dart';
+import 'package:berry_focused/utils/number_formatter.dart';
+import 'package:berry_focused/painters/garden_painters.dart';
+import 'package:berry_focused/services/focus_session_service.dart';
+import 'package:berry_focused/widgets/achievement_notification.dart';
 
 import '../furniture/flame.dart';
 import '../services/settings_service.dart';
@@ -36,13 +35,11 @@ void resetCaveBoostFlags() {
 
 class CaveSceneScreen extends StatefulWidget {
   final Character character;
-  final Farm farm;
   final VoidCallback onUpdate;
 
   const CaveSceneScreen({
     super.key,
     required this.character,
-    required this.farm,
     required this.onUpdate,
   });
 
@@ -53,12 +50,13 @@ class CaveSceneScreen extends StatefulWidget {
 
 String _getHouseImage(int stage) {
   switch (stage) {
-    case 0: return 'assets/images/cave.png';
-    case 1: return 'assets/images/shack.png';
-    case 2: return 'assets/images/house.png';
-    default: return 'assets/images/cave.png';
+    case 0: return 'assets/images/cave.webp';
+    case 1: return 'assets/images/shack.webp';
+    case 2: return 'assets/images/house.webp';
+    default: return 'assets/images/cave.webp';
   }
 }
+
 
 class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderStateMixin, WidgetsBindingObserver {
   StorageService storage = StorageService();
@@ -102,6 +100,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
   AnimationController? _walkController;
   AnimationController? _butterflyController;
   bool isWalking = false;
+  Timer? _walkStopTimer;
 
   double butterflyX = -50;
   double butterflyY = 0;
@@ -109,6 +108,8 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
 
   double _caveScale   = 1.0;
   double _gardenScale = 1.0;
+
+  bool _dialogShowing = false;
 
   // ── displayStage ─────────────────────────────────────────────────────
   int get displayStage {
@@ -182,6 +183,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _walkStopTimer?.cancel();
     _walkController?.dispose();
     _butterflyController?.dispose();
     _chimesController?.dispose();
@@ -284,7 +286,8 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
 
   // ── Torch purchase dialog ─────────────────────────────────────────────
   void _onTorchSpotTapped() {
-    if (_torchPurchased) return;
+    if (_torchPurchased || _dialogShowing) return;
+    _dialogShowing = true;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -317,7 +320,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: Colors.orange, width: 1.5),
               ),
-              child: const Text('+15% 🌱 Pea Boost',
+              child: const Text('+15% 🍓 Strawberry Boost',
                   style: TextStyle(
                       color: Colors.orange, fontSize: 16, fontWeight: FontWeight.bold)),
             ),
@@ -375,12 +378,13 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
           ),
         ],
       ),
-    );
+    ).then((_) => _dialogShowing = false);
   }
 
   // ── Wind chimes purchase dialog ───────────────────────────────────────
   void _onWindChimesTapped() {
-    if (_windChimesPurchased) return;
+    if (_windChimesPurchased || _dialogShowing) return;
+    _dialogShowing = true;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -409,7 +413,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: Colors.tealAccent, width: 1.5),
               ),
-              child: const Text('+10% 🥕 Carrot Boost',
+              child: const Text('+10% 🍓 Strawberry Boost',
                   style: TextStyle(
                       color: Colors.tealAccent,
                       fontSize: 16,
@@ -471,12 +475,13 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
           ),
         ],
       ),
-    );
+    ).then((_) => _dialogShowing = false);
   }
 
   // ── Fountain purchase dialog ──────────────────────────────────────────
   void _onFountainTapped() {
-    if (_fountainPurchased) return;
+    if (_fountainPurchased || _dialogShowing) return;
+    _dialogShowing = true;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -505,7 +510,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: Colors.blueAccent, width: 1.5),
               ),
-              child: const Text('+12% 🌽 Corn Boost',
+              child: const Text('+12% 🍓 strawberry Boost',
                   style: TextStyle(
                       color: Colors.blueAccent,
                       fontSize: 16,
@@ -567,7 +572,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
           ),
         ],
       ),
-    );
+    ).then((_) => _dialogShowing = false);
   }
   void openCave() {
     Navigator.push(
@@ -638,7 +643,8 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
       alexY    = y - 60;
       isWalking = true;
     });
-    Future.delayed(const Duration(milliseconds: 500), () {
+    _walkStopTimer?.cancel();
+    _walkStopTimer = Timer(const Duration(milliseconds: 500), () {
       if (mounted) setState(() => isWalking = false);
     });
   }
@@ -691,10 +697,6 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
                 // Peas counter
                 // Peas counter
                 GestureDetector(
-                  onLongPress: () async {
-                    await currency.addPeas(1000000000000);
-                    setState(() {});
-                  },
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                     decoration: BoxDecoration(
@@ -1032,6 +1034,8 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
 
   // ── Helper widgets / dialogs ──────────────────────────────────────────
   void _showRandomFact() {
+    if (_dialogShowing) return;
+    _dialogShowing = true;
     final fact = FactsService().getRandomFact();
     showDialog(
       context: context,
@@ -1091,7 +1095,7 @@ class _CaveSceneScreenState extends State<CaveSceneScreen> with TickerProviderSt
           ),
         ],
       ),
-    );
+    ).then((_) => _dialogShowing = false);
   }
 
   Widget _buildAlex() {

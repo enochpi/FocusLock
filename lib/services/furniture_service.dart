@@ -1,7 +1,7 @@
-import 'package:focus_life/services/achievements_service.dart';
+import 'package:berry_focused/services/achievements_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
-import 'package:focus_life/services/upgrade_service.dart';
+import 'package:berry_focused/services/upgrade_service.dart';
 
 enum FurnitureCategory {
   bed,

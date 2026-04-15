@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/character.dart';
-import '../models/farm.dart';
 import 'furniture_service.dart';
 
 class StorageService {
@@ -81,63 +80,6 @@ class StorageService {
     }
 
     debugPrint("🗑️ Full reset complete");
-  }
-
-  // Save farm
-  Future<void> saveFarm(Farm farm) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-
-      List<Map<String, dynamic>> cropsJson = farm.crops.map((crop) => {
-        'type': crop.type,
-        'growthProgress': crop.growthProgress,
-        'growthRequired': crop.growthRequired,
-        'sellPrice': crop.sellPrice,
-        'plantedAt': crop.plantedAt.toIso8601String(),
-      }).toList();
-
-      Map<String, dynamic> farmData = {
-        'crops': cropsJson,
-        'maxPlots': farm.maxPlots,
-      };
-
-      await prefs.setString(FARM_KEY, jsonEncode(farmData));
-      debugPrint("💾 Farm saved! ${farm.crops.length} crops");
-    } catch (e) {
-      debugPrint("❌ Error saving farm: $e");
-    }
-  }
-
-  // Load farm
-  Future<Farm> loadFarm() async {
-    Farm farm = Farm();
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final json = prefs.getString(FARM_KEY);
-
-      if (json != null) {
-        Map<String, dynamic> farmData = jsonDecode(json);
-        List<dynamic> cropsJson = farmData['crops'] ?? [];
-        farm.maxPlots = farmData['maxPlots'] ?? 5;
-
-        farm.crops = cropsJson.map((c) {
-          Crop crop = Crop(
-            type: c['type'],
-            growthRequired: c['growthRequired'],
-            sellPrice: c['sellPrice'],
-          );
-          crop.growthProgress = c['growthProgress'];
-          return crop;
-        }).toList();
-
-        debugPrint("📂 Farm loaded! ${farm.crops.length} crops");
-      }
-    } catch (e) {
-      debugPrint("❌ Error loading farm: $e");
-    }
-
-    return farm;
   }
 
   // Clear all data (for testing)

@@ -11,7 +11,7 @@ plugins {
 }
 
 android {
-    namespace = "com.spartalabs.focuslife"
+    namespace = "com.spartalabs.berryfocused"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "27.0.12077973"
 
@@ -26,7 +26,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.spartalabs.focuslife"
+        applicationId = "com.spartalabs.berryfocused"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

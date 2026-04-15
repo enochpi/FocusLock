@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/services.dart';
-import 'package:focus_life/services/currency_service.dart';
-import 'package:focus_life/services/furniture_service.dart';
+import 'package:berry_focused/services/currency_service.dart';
+import 'package:berry_focused/services/furniture_service.dart';
 
 enum RoomType {
   houseBedroom,
@@ -18,7 +18,7 @@ extension RoomTypeExtension on RoomType {
   String get imagePath {
     switch (this) {
       case RoomType.houseBedroom:
-        return 'assets/images/house_bedroom_background.png';
+        return 'assets/images/house_bedroom_background.webp';
     }
   }
 
@@ -28,7 +28,6 @@ extension RoomTypeExtension on RoomType {
     }
   }
 }
-
 class RoomScreen extends StatefulWidget {
   final RoomType roomType;
   const RoomScreen({super.key, required this.roomType});
@@ -41,6 +40,7 @@ class _RoomScreenState extends State<RoomScreen> {
   ui.Image? _backgroundImage;
   bool _showFlash = false;
   double _flashOpacity = 0.0;
+  bool _dialogShowing = false;
 
   @override
   void initState() {
@@ -103,6 +103,8 @@ class _RoomScreenState extends State<RoomScreen> {
   }
 
   void _showBuyDialog(String furnitureId, int price, {double boost = 0.0}) {
+    if (_dialogShowing) return;
+    _dialogShowing = true;
     final canAfford = CurrencyService().coins >= price;
     final boostPercent = (boost * 100).toStringAsFixed(0);
 
@@ -186,7 +188,7 @@ class _RoomScreenState extends State<RoomScreen> {
             ),
         ],
       ),
-    );
+    ).then((_) => _dialogShowing = false);
   }
 
   // ── BEDROOM furniture ─────────────────────────────────────────────────
@@ -197,19 +199,19 @@ class _RoomScreenState extends State<RoomScreen> {
     final s = roomW / 420.0;
     return [
       _buyableImage(left + roomW * 0.435, top + roomH * 0.20, 50 * s, 50 * s,
-          'assets/images/house_clock.png', 'bedroom_clock', 15000, boost: 0.54),
+          'assets/images/house_clock.webp', 'bedroom_clock', 15000, boost: 0.54),
 
       _buyableImage(left + roomW * 0.76, top + roomH * 0.20, 60 * s, 60 * s,
-          'assets/images/house_picture.png', 'bedroom_picture', 25000, boost: 0.54),
+          'assets/images/house_picture.webp', 'bedroom_picture', 25000, boost: 0.54),
 
       _buyableImage(left + roomW * 0.58, top + roomH * 0.37, 80 * s, 80 * s,
-          'assets/images/house_desk.png', 'bedroom_desk', 45000, boost: 0.78),
+          'assets/images/house_desk.webp', 'bedroom_desk', 45000, boost: 0.78),
 
       _buyableImage(left + roomW * 0.001, top + roomH * 0.22, 200 * s, 160 * s,
-          'assets/images/house_bunkbed.png', 'bedroom_bunkbed', 80000, boost: 1.00),
+          'assets/images/house_bunkbed.webp', 'bedroom_bunkbed', 80000, boost: 1.00),
 
       _buyableImage(left + roomW * 0.66, top + roomH * 0.42, 150 * s, 100 * s,
-          'assets/images/house_bed.png', 'bedroom_bed', 150000, boost: 1.30),
+          'assets/images/house_bed.webp', 'bedroom_bed', 150000, boost: 1.30),
     ];
   }
 

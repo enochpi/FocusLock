@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../models/character.dart';
-import '../models/farm.dart';
 import '../services/storage_service.dart';
 import 'cave_scene_screen.dart';
 import 'shop_screen.dart';
@@ -16,7 +15,6 @@ class MainGameScreen extends StatefulWidget {
 class _MainGameScreenState extends State<MainGameScreen> {
   int _currentIndex = 1;
   Character character = Character();
-  Farm farm = Farm();
   StorageService storage = StorageService();
   bool isLoading = true;
 
@@ -28,11 +26,9 @@ class _MainGameScreenState extends State<MainGameScreen> {
 
   Future<void> loadData() async {
     Character? loaded = await storage.loadCharacter();
-    Farm loadedFarm = await storage.loadFarm();
 
     setState(() {
       character = loaded ?? Character(name: "Bob");
-      farm = loadedFarm;
       isLoading = false;
     });
 
@@ -46,7 +42,6 @@ class _MainGameScreenState extends State<MainGameScreen> {
     const ShopScreen(),
     CaveSceneScreen(
       character: character,
-      farm: farm,
       onUpdate: () => setState(() {}),
     ),
     SettingsScreen(character: character),
