@@ -65,7 +65,7 @@ class StageTheme {
     groundColor: Color(0xFF3e2723),
     groundAccent: Color(0xFF4e342e),
     houseEmoji: '🏔️',
-    gardenEmoji: '🌱',
+    gardenEmoji: '🍓',
   );
 
   // ========================================
@@ -90,7 +90,7 @@ class StageTheme {
     groundColor: Color(0xFF4e342e),
     groundAccent: Color(0xFF6d4c41),
     houseEmoji: '🏚️',
-    gardenEmoji: '🥕',
+    gardenEmoji: '🍓',
   );
 
   // ========================================
@@ -115,7 +115,7 @@ class StageTheme {
     groundColor: Color(0xFF2e7d32),
     groundAccent: Color(0xFF388E3C),
     houseEmoji: '🏠',
-    gardenEmoji: '🌽',
+    gardenEmoji: '🍓',
   );
 
   // ========================================

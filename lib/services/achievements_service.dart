@@ -112,11 +112,11 @@ class AchievementService {
         id: 'first_focus',
         name: 'First Steps',
         description: 'Complete your first focus session',
-        emoji: '🌱',
+        emoji: '🍓',
         category: AchievementCategory.focus,
         targetValue: 1,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 50, displayText: '50 peas'),
+          AchievementReward(type: RewardType.peas, value: 50, displayText: '50 strawberries'),
           AchievementReward(type: RewardType.coins, value: 5, displayText: '5 coins'),
         ],
       ),
@@ -128,7 +128,7 @@ class AchievementService {
         category: AchievementCategory.focus,
         targetValue: 5,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 200, displayText: '200 peas'),
+          AchievementReward(type: RewardType.peas, value: 200, displayText: '200 strawberries'),
           AchievementReward(type: RewardType.coins, value: 10, displayText: '10 coins'),
         ],
       ),
@@ -140,7 +140,7 @@ class AchievementService {
         category: AchievementCategory.focus,
         targetValue: 10,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 500, displayText: '500 peas'),
+          AchievementReward(type: RewardType.peas, value: 500, displayText: '500 strawberries'),
           AchievementReward(type: RewardType.coins, value: 20, displayText: '20 coins'),
         ],
       ),
@@ -152,7 +152,7 @@ class AchievementService {
         category: AchievementCategory.focus,
         targetValue: 50,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 3000, displayText: '3,000 peas'),
+          AchievementReward(type: RewardType.peas, value: 3000, displayText: '3,000 strawberries'),
           AchievementReward(type: RewardType.coins, value: 100, displayText: '100 coins'),
         ],
       ),
@@ -164,7 +164,7 @@ class AchievementService {
         category: AchievementCategory.focus,
         targetValue: 100,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 8000, displayText: '8,000 peas'),
+          AchievementReward(type: RewardType.peas, value: 8000, displayText: '8,000 strawberries'),
           AchievementReward(type: RewardType.coins, value: 300, displayText: '300 coins'),
         ],
       ),
@@ -189,7 +189,7 @@ class AchievementService {
         category: AchievementCategory.focus,
         targetValue: 30,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 100, displayText: '100 peas'),
+          AchievementReward(type: RewardType.peas, value: 100, displayText: '100 strawberries'),
         ],
       ),
       Achievement(
@@ -200,7 +200,7 @@ class AchievementService {
         category: AchievementCategory.focus,
         targetValue: 60,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 300, displayText: '300 peas'),
+          AchievementReward(type: RewardType.peas, value: 300, displayText: '300 strawberries'),
           AchievementReward(type: RewardType.coins, value: 5, displayText: '5 coins'),
         ],
       ),
@@ -212,7 +212,7 @@ class AchievementService {
         category: AchievementCategory.focus,
         targetValue: 300,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 1500, displayText: '1,500 peas'),
+          AchievementReward(type: RewardType.peas, value: 1500, displayText: '1,500 strawberries'),
           AchievementReward(type: RewardType.coins, value: 20, displayText: '20 coins'),
         ],
       ),
@@ -224,7 +224,7 @@ class AchievementService {
         category: AchievementCategory.focus,
         targetValue: 600,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 4000, displayText: '4,000 peas'),
+          AchievementReward(type: RewardType.peas, value: 4000, displayText: '4,000 strawberries'),
           AchievementReward(type: RewardType.coins, value: 50, displayText: '50 coins'),
         ],
       ),
@@ -260,7 +260,7 @@ class AchievementService {
         category: AchievementCategory.focus,
         targetValue: 3,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 300, displayText: '300 peas'),
+          AchievementReward(type: RewardType.peas, value: 300, displayText: '300 strawberries'),
           AchievementReward(type: RewardType.coins, value: 5, displayText: '5 coins'),
         ],
       ),
@@ -272,7 +272,7 @@ class AchievementService {
         category: AchievementCategory.focus,
         targetValue: 7,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 1000, displayText: '1,000 peas'),
+          AchievementReward(type: RewardType.peas, value: 1000, displayText: '1,000 strawberries'),
           AchievementReward(type: RewardType.coins, value: 20, displayText: '20 coins'),
         ],
       ),
@@ -301,7 +301,7 @@ class AchievementService {
         category: AchievementCategory.furniture,
         targetValue: 1,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 100, displayText: '100 peas'),
+          AchievementReward(type: RewardType.peas, value: 100, displayText: '100 strawberries'),
           AchievementReward(type: RewardType.coins, value: 3, displayText: '3 coins'),
         ],
       ),
@@ -313,7 +313,7 @@ class AchievementService {
         category: AchievementCategory.furniture,
         targetValue: 3,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 300, displayText: '300 peas'),
+          AchievementReward(type: RewardType.peas, value: 300, displayText: '300 strawberries'),
           AchievementReward(type: RewardType.coins, value: 8, displayText: '8 coins'),
         ],
       ),
@@ -325,7 +325,7 @@ class AchievementService {
         category: AchievementCategory.furniture,
         targetValue: 5,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 600, displayText: '600 peas'),
+          AchievementReward(type: RewardType.peas, value: 600, displayText: '600 strwaberries'),
           AchievementReward(type: RewardType.coins, value: 15, displayText: '15 coins'),
         ],
       ),
@@ -337,7 +337,7 @@ class AchievementService {
         category: AchievementCategory.furniture,
         targetValue: 6,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 2000, displayText: '2,000 peas'),
+          AchievementReward(type: RewardType.peas, value: 2000, displayText: '2,000 strawberries'),
           AchievementReward(type: RewardType.coins, value: 50, displayText: '50 coins'),
         ],
       ),
@@ -360,30 +360,30 @@ class AchievementService {
       Achievement(
         id: 'earn_500_peas',
         name: 'First Harvest',
-        description: 'Earn 500 total peas',
+        description: 'Earn 500 total strawberries',
         emoji: '🌾',
         category: AchievementCategory.wealth,
         targetValue: 500,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 100, displayText: '100 peas'),
+          AchievementReward(type: RewardType.peas, value: 100, displayText: '100 strawberries'),
         ],
       ),
       Achievement(
         id: 'earn_5k_peas',
         name: 'Growing Farm',
-        description: 'Earn 5,000 total peas',
+        description: 'Earn 5,000 total strawberries',
         emoji: '🌿',
         category: AchievementCategory.wealth,
         targetValue: 5000,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 500, displayText: '500 peas'),
+          AchievementReward(type: RewardType.peas, value: 500, displayText: '500 strawberries'),
           AchievementReward(type: RewardType.coins, value: 5, displayText: '5 coins'),
         ],
       ),
       Achievement(
         id: 'earn_50k_peas',
         name: 'Big Farmer',
-        description: 'Earn 50,000 total peas',
+        description: 'Earn 50,000 total strawberries',
         emoji: '🚜',
         category: AchievementCategory.wealth,
         targetValue: 50000,
@@ -394,7 +394,7 @@ class AchievementService {
       Achievement(
         id: 'earn_1m_peas',
         name: 'Millionaire Farmer',
-        description: 'Earn 1 million total peas',
+        description: 'Earn 1 million total strawberries',
         emoji: '💚',
         category: AchievementCategory.wealth,
         targetValue: 1000000,
@@ -405,23 +405,23 @@ class AchievementService {
       Achievement(
         id: 'convert_first',
         name: 'Money Changer',
-        description: 'Convert peas to coins for the first time',
+        description: 'Convert strawberries to coins for the first time',
         emoji: '🔄',
         category: AchievementCategory.wealth,
         targetValue: 1,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 200, displayText: '200 peas'),
+          AchievementReward(type: RewardType.peas, value: 200, displayText: '200 strawberries'),
         ],
       ),
       Achievement(
         id: 'convert_1k',
         name: 'Currency Trader',
-        description: 'Convert 1,000 peas to coins',
+        description: 'Convert 1,000 strawberries to coins',
         emoji: '💱',
         category: AchievementCategory.wealth,
         targetValue: 1000,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 500, displayText: '500 peas'),
+          AchievementReward(type: RewardType.peas, value: 500, displayText: '500 strawberries'),
           AchievementReward(type: RewardType.coins, value: 10, displayText: '10 coins'),
         ],
       ),
@@ -433,7 +433,7 @@ class AchievementService {
         category: AchievementCategory.wealth,
         targetValue: 50,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 300, displayText: '300 peas'),
+          AchievementReward(type: RewardType.peas, value: 300, displayText: '300 strawberries'),
         ],
       ),
       Achievement(
@@ -487,7 +487,7 @@ class AchievementService {
         category: AchievementCategory.power,
         targetValue: 1,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 150, displayText: '150 peas'),
+          AchievementReward(type: RewardType.peas, value: 150, displayText: '150 strawberries'),
         ],
       ),
       Achievement(
@@ -498,7 +498,7 @@ class AchievementService {
         category: AchievementCategory.power,
         targetValue: 5,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 500, displayText: '500 peas'),
+          AchievementReward(type: RewardType.peas, value: 500, displayText: '500 strawberries'),
           AchievementReward(type: RewardType.coins, value: 10, displayText: '10 coins'),
         ],
       ),
@@ -510,7 +510,7 @@ class AchievementService {
         category: AchievementCategory.power,
         targetValue: 10,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 1500, displayText: '1,500 peas'),
+          AchievementReward(type: RewardType.peas, value: 1500, displayText: '1,500 strawberries'),
           AchievementReward(type: RewardType.coins, value: 30, displayText: '30 coins'),
         ],
       ),
@@ -522,7 +522,7 @@ class AchievementService {
         category: AchievementCategory.power,
         targetValue: 10,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 3000, displayText: '3,000 peas'),
+          AchievementReward(type: RewardType.peas, value: 3000, displayText: '3,000 strawberries'),
           AchievementReward(type: RewardType.coins, value: 100, displayText: '100 coins'),
         ],
       ),
@@ -534,7 +534,7 @@ class AchievementService {
         category: AchievementCategory.power,
         targetValue: 2,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 200, displayText: '200 peas'),
+          AchievementReward(type: RewardType.peas, value: 200, displayText: '200 strawberries'),
         ],
       ),
       Achievement(
@@ -545,7 +545,7 @@ class AchievementService {
         category: AchievementCategory.power,
         targetValue: 5,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 800, displayText: '800 peas'),
+          AchievementReward(type: RewardType.peas, value: 800, displayText: '800 strawberries'),
           AchievementReward(type: RewardType.coins, value: 20, displayText: '20 coins'),
         ],
       ),
@@ -585,7 +585,7 @@ class AchievementService {
         targetValue: 1,
         isSecret: true,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 500, displayText: '500 peas'),
+          AchievementReward(type: RewardType.peas, value: 500, displayText: '500 strawberries'),
           AchievementReward(type: RewardType.coins, value: 10, displayText: '10 coins'),
         ],
       ),
@@ -598,7 +598,7 @@ class AchievementService {
         targetValue: 1,
         isSecret: true,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 800, displayText: '800 peas'),
+          AchievementReward(type: RewardType.peas, value: 800, displayText: '800 strawberries'),
           AchievementReward(type: RewardType.coins, value: 20, displayText: '20 coins'),
         ],
       ),
@@ -611,7 +611,7 @@ class AchievementService {
         targetValue: 5,
         isSecret: true,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 1000, displayText: '1,000 peas'),
+          AchievementReward(type: RewardType.peas, value: 1000, displayText: '1,000 strawberries'),
           AchievementReward(type: RewardType.coins, value: 15, displayText: '15 coins'),
         ],
       ),
@@ -624,7 +624,7 @@ class AchievementService {
         targetValue: 1,
         isSecret: true,
         rewards: [
-          AchievementReward(type: RewardType.peas, value: 500, displayText: '500 peas'),
+          AchievementReward(type: RewardType.peas, value: 500, displayText: '500 strawberries'),
           AchievementReward(type: RewardType.coins, value: 10, displayText: '10 coins'),
         ],
       ),

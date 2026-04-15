@@ -65,7 +65,7 @@ class NotificationService {
 
     await _plugin.zonedSchedule(
       1,
-      'Time to Focus! 🌱',
+      'Time to Focus! 🍓',
       'Start a focus session and grow your farm.',
       _nextInstanceOfTime(hour, minute),
       const NotificationDetails(

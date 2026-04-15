@@ -83,51 +83,51 @@ class UpgradeService {
     // ║  CAVE — 10 upgrades                      ║
     // ║  First upgrade reachable in ~5 sessions  ║
     // ╚══════════════════════════════════════════╝
-    Upgrade(id: 'cave_hoe',        name: 'Basic Hoe',        emoji: '⛏️', description: '+25% peas/focus', cost: 1,   multiplier: 0.25, stageRequired: 0),
-    Upgrade(id: 'cave_seeds',      name: 'Good Seeds',       emoji: '🌱', description: '+22% peas/focus', cost: 20,   multiplier: 0.22, stageRequired: 0),
-    Upgrade(id: 'cave_bucket',     name: 'Water Bucket',     emoji: '🪣', description: '+20% peas/focus', cost: 50,  multiplier: 0.20, stageRequired: 0),
-    Upgrade(id: 'cave_tools',      name: 'Sharp Tools',      emoji: '🔨', description: '+18% peas/focus', cost: 100,  multiplier: 0.18, stageRequired: 0),
-    Upgrade(id: 'cave_fertilizer', name: 'Fertilizer',       emoji: '🌿', description: '+16% peas/focus', cost: 200,  multiplier: 0.16, stageRequired: 0),
-    Upgrade(id: 'cave_watering',   name: 'Watering Can',     emoji: '💧', description: '+14% peas/focus', cost: 350,  multiplier: 0.14, stageRequired: 0),
-    Upgrade(id: 'cave_soil',       name: 'Rich Soil',        emoji: '🪴', description: '+13% peas/focus', cost: 550,  multiplier: 0.13, stageRequired: 0),
-    Upgrade(id: 'cave_compost',    name: 'Compost',          emoji: '♻️', description: '+12% peas/focus', cost: 800, multiplier: 0.12, stageRequired: 0),
-    Upgrade(id: 'cave_greenhouse', name: 'Mini Greenhouse',  emoji: '🏡', description: '+11% peas/focus', cost: 1000, multiplier: 0.11, stageRequired: 0),
-    Upgrade(id: 'cave_irrigation', name: 'Basic Irrigation', emoji: '💦', description: '+10% peas/focus', cost: 5000, multiplier: 0.10, stageRequired: 0),
+    Upgrade(id: 'cave_hoe',        name: 'Basic Hoe',        emoji: '⛏️', description: '+25% strawberries/focus', cost: 1,   multiplier: 0.25, stageRequired: 0),
+    Upgrade(id: 'cave_seeds',      name: 'Good Seeds',       emoji: '🌱', description: '+22% strawberries/focus', cost: 20,   multiplier: 0.22, stageRequired: 0),
+    Upgrade(id: 'cave_bucket',     name: 'Water Bucket',     emoji: '🪣', description: '+20% strawberries/focus', cost: 50,  multiplier: 0.20, stageRequired: 0),
+    Upgrade(id: 'cave_tools',      name: 'Sharp Tools',      emoji: '🔨', description: '+18% strawberries/focus', cost: 100,  multiplier: 0.18, stageRequired: 0),
+    Upgrade(id: 'cave_fertilizer', name: 'Fertilizer',       emoji: '🌿', description: '+16% strawberries/focus', cost: 200,  multiplier: 0.16, stageRequired: 0),
+    Upgrade(id: 'cave_watering',   name: 'Watering Can',     emoji: '💧', description: '+14% strawberries/focus', cost: 350,  multiplier: 0.14, stageRequired: 0),
+    Upgrade(id: 'cave_soil',       name: 'Rich Soil',        emoji: '🪴', description: '+13% strawberries/focus', cost: 550,  multiplier: 0.13, stageRequired: 0),
+    Upgrade(id: 'cave_compost',    name: 'Compost',          emoji: '♻️', description: '+12% strawberries/focus', cost: 800, multiplier: 0.12, stageRequired: 0),
+    Upgrade(id: 'cave_greenhouse', name: 'Mini Greenhouse',  emoji: '🏡', description: '+11% strawberries/focus', cost: 1000, multiplier: 0.11, stageRequired: 0),
+    Upgrade(id: 'cave_irrigation', name: 'Basic Irrigation', emoji: '💦', description: '+10% strawberries/focus', cost: 5000, multiplier: 0.10, stageRequired: 0),
 
-    // ╔══════════════════════════════════════════╗
-    // ║  SHACK — 12 upgrades                     ║
-    // ╚══════════════════════════════════════════╝
-    Upgrade(id: 'shack_advanced_hoe',     name: 'Advanced Hoe',       emoji: '⚒️',  description: '+24% carrots/focus', cost: 1500,   multiplier: 0.24, stageRequired: 1),
-    Upgrade(id: 'shack_premium_seeds',    name: 'Premium Seeds',      emoji: '🌾',  description: '+22% carrots/focus', cost: 3500,   multiplier: 0.22, stageRequired: 1),
-    Upgrade(id: 'shack_sprinklers',       name: 'Sprinkler System',   emoji: '🚿',  description: '+20% carrots/focus', cost: 7000,   multiplier: 0.20, stageRequired: 1),
-    Upgrade(id: 'shack_pro_tools',        name: 'Professional Tools', emoji: '🔧',  description: '+18% carrots/focus', cost: 13000,  multiplier: 0.18, stageRequired: 1),
-    Upgrade(id: 'shack_super_fertilizer', name: 'Super Fertilizer',   emoji: '🧪',  description: '+16% carrots/focus', cost: 22000,  multiplier: 0.16, stageRequired: 1),
-    Upgrade(id: 'shack_auto_water',       name: 'Auto Watering',      emoji: '⚡',  description: '+15% carrots/focus', cost: 36000,  multiplier: 0.15, stageRequired: 1),
-    Upgrade(id: 'shack_premium_soil',     name: 'Premium Soil Mix',   emoji: '🌱',  description: '+13% carrots/focus', cost: 52000,  multiplier: 0.13, stageRequired: 1),
-    Upgrade(id: 'shack_biotech',          name: 'Bio-Technology',     emoji: '🧬',  description: '+12% carrots/focus', cost: 70000,  multiplier: 0.12, stageRequired: 1),
-    Upgrade(id: 'shack_climate',          name: 'Climate Control',    emoji: '🌡️', description: '+11% carrots/focus', cost: 88000,  multiplier: 0.11, stageRequired: 1),
-    Upgrade(id: 'shack_hydroponics',      name: 'Hydroponic System',  emoji: '💧',  description: '+10% carrots/focus', cost: 107000, multiplier: 0.10, stageRequired: 1),
-    Upgrade(id: 'shack_led_grow',         name: 'LED Grow Lights',    emoji: '💡',  description: '+9% carrots/focus',  cost: 128000, multiplier: 0.09, stageRequired: 1),
-    Upgrade(id: 'shack_master_gardener',  name: 'Master Gardener',    emoji: '👨‍🌾', description: '+8% carrots/focus', cost: 150000, multiplier: 0.08, stageRequired: 1),
+// ╔══════════════════════════════════════════╗
+// ║  SHACK — 12 upgrades                     ║
+// ╚══════════════════════════════════════════╝
+    Upgrade(id: 'shack_advanced_hoe',     name: 'Advanced Hoe',       emoji: '⚒️',  description: '+24% strawberries/focus', cost: 1500,   multiplier: 0.24, stageRequired: 1),
+    Upgrade(id: 'shack_premium_seeds',    name: 'Premium Seeds',      emoji: '🌾',  description: '+22% strawberries/focus', cost: 3500,   multiplier: 0.22, stageRequired: 1),
+    Upgrade(id: 'shack_sprinklers',       name: 'Sprinkler System',   emoji: '🚿',  description: '+20% strawberries/focus', cost: 7000,   multiplier: 0.20, stageRequired: 1),
+    Upgrade(id: 'shack_pro_tools',        name: 'Professional Tools', emoji: '🔧',  description: '+18% strawberries/focus', cost: 13000,  multiplier: 0.18, stageRequired: 1),
+    Upgrade(id: 'shack_super_fertilizer', name: 'Super Fertilizer',   emoji: '🧪',  description: '+16% strawberries/focus', cost: 22000,  multiplier: 0.16, stageRequired: 1),
+    Upgrade(id: 'shack_auto_water',       name: 'Auto Watering',      emoji: '⚡',   description: '+15% strawberries/focus', cost: 36000,  multiplier: 0.15, stageRequired: 1),
+    Upgrade(id: 'shack_premium_soil',     name: 'Premium Soil Mix',   emoji: '🌱',  description: '+13% strawberries/focus', cost: 52000,  multiplier: 0.13, stageRequired: 1),
+    Upgrade(id: 'shack_biotech',          name: 'Bio-Technology',     emoji: '🧬',  description: '+12% strawberries/focus', cost: 70000,  multiplier: 0.12, stageRequired: 1),
+    Upgrade(id: 'shack_climate',          name: 'Climate Control',    emoji: '🌡️',  description: '+11% strawberries/focus', cost: 88000,  multiplier: 0.11, stageRequired: 1),
+    Upgrade(id: 'shack_hydroponics',      name: 'Hydroponic System',  emoji: '💧',  description: '+10% strawberries/focus', cost: 107000, multiplier: 0.10, stageRequired: 1),
+    Upgrade(id: 'shack_led_grow',         name: 'LED Grow Lights',    emoji: '💡',  description: '+9% strawberries/focus',  cost: 128000, multiplier: 0.09, stageRequired: 1),
+    Upgrade(id: 'shack_master_gardener',  name: 'Master Gardener',    emoji: '👨‍🌾',  description: '+8% strawberries/focus', cost: 150000, multiplier: 0.08, stageRequired: 1),
 
-    // ╔══════════════════════════════════════════╗
-    // ║  HOUSE — 15 upgrades                     ║
-    // ╚══════════════════════════════════════════╝
-    Upgrade(id: 'house_quantum_hoe',      name: 'Quantum Hoe',            emoji: '⚛️',  description: '+15% corn/focus', cost: 500000,       multiplier: 0.15, stageRequired: 2),
-    Upgrade(id: 'house_genetic_seeds',    name: 'GMO Seeds',              emoji: '🔬',  description: '+14% corn/focus', cost: 860514,       multiplier: 0.14, stageRequired: 2),
-    Upgrade(id: 'house_laser_irrigation', name: 'Laser Irrigation',       emoji: '🔴',  description: '+13% corn/focus', cost: 1480968,      multiplier: 0.13, stageRequired: 2),
-    Upgrade(id: 'house_ai_tools',         name: 'AI-Powered Tools',       emoji: '🤖',  description: '+12% corn/focus', cost: 2548787,      multiplier: 0.12, stageRequired: 2),
-    Upgrade(id: 'house_nano_fertilizer',  name: 'Nano-Fertilizer',        emoji: '🔭',  description: '+11% corn/focus', cost: 4386533,      multiplier: 0.11, stageRequired: 2),
-    Upgrade(id: 'house_plasma_water',     name: 'Plasma Water',           emoji: '💥',  description: '+10% corn/focus', cost: 7549345,      multiplier: 0.10, stageRequired: 2),
-    Upgrade(id: 'house_cosmic_soil',      name: 'Cosmic Soil',            emoji: '🌌',  description: '+9% corn/focus',  cost: 12992632,     multiplier: 0.09, stageRequired: 2),
-    Upgrade(id: 'house_dimension_tech',   name: 'Dimensional Tech',       emoji: '🌀',  description: '+8% corn/focus',  cost: 22360679,     multiplier: 0.08, stageRequired: 2),
-    Upgrade(id: 'house_fusion_climate',   name: 'Fusion Climate',         emoji: '☢️',  description: '+8% corn/focus',  cost: 38483348,     multiplier: 0.08, stageRequired: 2),
-    Upgrade(id: 'house_mega_hydro',       name: 'Mega-Hydroponic Array',  emoji: '🏭',  description: '+7% corn/focus',  cost: 66230907,     multiplier: 0.07, stageRequired: 2),
-    Upgrade(id: 'house_neural_network',   name: 'Neural Network Farm',    emoji: '🧠',  description: '+6% corn/focus',  cost: 113985225,    multiplier: 0.06, stageRequired: 2),
-    Upgrade(id: 'house_photon_boost',     name: 'Photon Accelerator',     emoji: '🌟',  description: '+5% corn/focus',  cost: 196171728,    multiplier: 0.05, stageRequired: 2),
-    Upgrade(id: 'house_dark_matter',      name: 'Dark Matter Fertilizer', emoji: '🕳️', description: '+5% corn/focus',  cost: 337616975,    multiplier: 0.05, stageRequired: 2),
-    Upgrade(id: 'house_antimatter',       name: 'Antimatter Generator',   emoji: '💫',  description: '+4% corn/focus',  cost: 581048161,    multiplier: 0.04, stageRequired: 2),
-    Upgrade(id: 'house_singularity',      name: 'Singularity Core',       emoji: '⚫',  description: '+3% corn/focus',  cost: 999999972,    multiplier: 0.03, stageRequired: 2),
+// ╔══════════════════════════════════════════╗
+// ║  HOUSE — 15 upgrades                     ║
+// ╚══════════════════════════════════════════╝
+    Upgrade(id: 'house_quantum_hoe',      name: 'Quantum Hoe',            emoji: '⚛️',  description: '+15% strawberries/focus', cost: 500000,       multiplier: 0.15, stageRequired: 2),
+    Upgrade(id: 'house_genetic_seeds',    name: 'GMO Seeds',              emoji: '🔬',  description: '+14% strawberries/focus', cost: 860514,       multiplier: 0.14, stageRequired: 2),
+    Upgrade(id: 'house_laser_irrigation', name: 'Laser Irrigation',       emoji: '🔴',  description: '+13% strawberries/focus', cost: 1480968,      multiplier: 0.13, stageRequired: 2),
+    Upgrade(id: 'house_ai_tools',         name: 'AI-Powered Tools',       emoji: '🤖',  description: '+12% strawberries/focus', cost: 2548787,      multiplier: 0.12, stageRequired: 2),
+    Upgrade(id: 'house_nano_fertilizer',  name: 'Nano-Fertilizer',        emoji: '🔭',  description: '+11% strawberries/focus', cost: 4386533,      multiplier: 0.11, stageRequired: 2),
+    Upgrade(id: 'house_plasma_water',     name: 'Plasma Water',           emoji: '💥',  description: '+10% strawberries/focus', cost: 7549345,      multiplier: 0.10, stageRequired: 2),
+    Upgrade(id: 'house_cosmic_soil',      name: 'Cosmic Soil',            emoji: '🌌',  description: '+9% strawberries/focus',  cost: 12992632,     multiplier: 0.09, stageRequired: 2),
+    Upgrade(id: 'house_dimension_tech',   name: 'Dimensional Tech',       emoji: '🌀',  description: '+8% strawberries/focus',  cost: 22360679,     multiplier: 0.08, stageRequired: 2),
+    Upgrade(id: 'house_fusion_climate',   name: 'Fusion Climate',         emoji: '☢️',  description: '+8% strawberries/focus',  cost: 38483348,     multiplier: 0.08, stageRequired: 2),
+    Upgrade(id: 'house_mega_hydro',       name: 'Mega-Hydroponic Array',  emoji: '🏭',  description: '+7% strawberries/focus',  cost: 66230907,     multiplier: 0.07, stageRequired: 2),
+    Upgrade(id: 'house_neural_network',   name: 'Neural Network Farm',    emoji: '🧠',  description: '+6% strawberries/focus',  cost: 113985225,    multiplier: 0.06, stageRequired: 2),
+    Upgrade(id: 'house_photon_boost',     name: 'Photon Accelerator',     emoji: '🌟',  description: '+5% strawberries/focus',  cost: 196171728,    multiplier: 0.05, stageRequired: 2),
+    Upgrade(id: 'house_dark_matter',      name: 'Dark Matter Fertilizer', emoji: '🕳️', description: '+5% strawberries/focus',  cost: 337616975,    multiplier: 0.05, stageRequired: 2),
+    Upgrade(id: 'house_antimatter',       name: 'Antimatter Generator',   emoji: '💫',  description: '+4% strawberries/focus',  cost: 581048161,    multiplier: 0.04, stageRequired: 2),
+    Upgrade(id: 'house_singularity',      name: 'Singularity Core',       emoji: '⚫',  description: '+3% strawberries/focus',  cost: 999999972,    multiplier: 0.03, stageRequired: 2),
   ];
 
   final List<HouseUnlock> _houseUnlocks = [
