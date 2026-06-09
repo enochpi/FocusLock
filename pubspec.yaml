@@ -1,7 +1,7 @@
 name: berry_focused
 description: A focus app with life progression
 publish_to: 'none'
-version: 1.0.0+3
+version: 1.0.0+7f
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
