@@ -2,7 +2,10 @@ import java.util.Properties
 
 val keyProperties = Properties()
 val keyPropertiesFile = rootProject.file("key.properties")
-if (keyPropertiesFile.exists()) keyProperties.load(keyPropertiesFile.inputStream())
+
+if (keyPropertiesFile.exists()) {
+    keyProperties.load(keyPropertiesFile.inputStream())
+}
 
 plugins {
     id("com.android.application")
@@ -12,7 +15,8 @@ plugins {
 
 android {
     namespace = "com.spartalabs.berryfocused"
-    compileSdk = flutter.compileSdkVersion
+
+    compileSdk = 36
     ndkVersion = "27.0.12077973"
 
     compileOptions {
@@ -27,8 +31,10 @@ android {
 
     defaultConfig {
         applicationId = "com.spartalabs.berryfocused"
+
         minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        targetSdk = 36
+
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
@@ -37,7 +43,9 @@ android {
         create("release") {
             keyAlias = keyProperties["keyAlias"] as String
             keyPassword = keyProperties["keyPassword"] as String
-            storeFile = keyProperties["storeFile"]?.let { file(it as String) }
+            storeFile = keyProperties["storeFile"]?.let {
+                file(it as String)
+            }
             storePassword = keyProperties["storePassword"] as String
         }
     }
@@ -50,7 +58,9 @@ android {
 }
 
 dependencies {
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")
+    coreLibraryDesugaring(
+        "com.android.tools:desugar_jdk_libs:2.0.3"
+    )
 }
 
 flutter {
